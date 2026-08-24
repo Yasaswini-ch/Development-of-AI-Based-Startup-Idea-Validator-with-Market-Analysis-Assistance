@@ -15,3 +15,6 @@ frontend/dist/
 # Editor / OS
 .DS_Store
 ~$*
+
+# Claude Code local config
+.claude/
