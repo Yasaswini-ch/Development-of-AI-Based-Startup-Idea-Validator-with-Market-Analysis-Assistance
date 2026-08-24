@@ -3,49 +3,80 @@
 Development of an AI-based startup idea validator with market analysis assistance.
 
 The project lets a founder enter a startup idea, target customer, and problem statement,
-and get back an initial validation summary. It is an early-stage build — the current
-version captures and displays input; AI-driven scoring and market analysis are planned
-next (see [Roadmap](#roadmap)).
+and get back an initial validation summary backed by real web search results (via
+Tavily). Milestone 1 is in progress — see [`docs/milestone1-plan.md`](docs/milestone1-plan.md)
+for the current task breakdown and timeline.
 
-## Current Architecture
+## Architecture
 
-The app is currently a single Streamlit service — there is no separate backend or
-database yet.
+The app is being split into a proper frontend/backend, per
+[`docs/architecture.md`](docs/architecture.md):
 
 | Layer      | Tech                                  |
 |------------|----------------------------------------|
-| Frontend   | [Streamlit](https://streamlit.io) (`app.py`) |
-| Backend    | None yet — logic runs inline in the Streamlit process |
+| Frontend   | React + Tailwind CSS (`frontend/`) |
+| Backend    | FastAPI (`backend/`) — exposes `POST /validate` |
+| Search agent | Python module calling the Tavily API (`backend/agent/search_agent.py`) |
 | Database   | None yet |
 | Deployment | [Render](https://render.com) (`render.yaml`) |
 | Version control | Git / GitHub |
+
+The original single-file Streamlit prototype (`app.py`) is kept for reference but is
+superseded by the `frontend/` + `backend/` split going forward.
 
 ## Project Structure
 
 ```
 .
-├── app.py            # Streamlit app: UI + form handling + validation display
-├── requirements.txt  # Python dependencies
-├── render.yaml        # Render deployment config
+├── frontend/           # React + Tailwind app (idea submission UI)
+├── backend/            # FastAPI app + Tavily search agent
+│   ├── main.py           # POST /validate route
+│   └── agent/
+│       └── search_agent.py
+├── docs/
+│   ├── architecture.md       # system design, data flow, API contract
+│   ├── milestone1-plan.md    # task division + timeline
+│   └── frontend-spec.md      # UI design spec
+├── app.py               # legacy Streamlit prototype
+├── requirements.txt      # Streamlit prototype dependencies
+├── render.yaml           # Render deployment config
 └── README.md
 ```
 
 ## Getting Started
 
 ### Prerequisites
-- Python 3.9+
-- pip
+- Node.js 18+ and npm
+- Python 3.10+ and pip
+- A [Tavily](https://tavily.com) API key
 
-### Local setup
+### Backend
 
 ```bash
-git clone https://github.com/<your-org>/<repo>.git
-cd "AI Based Startup Idea Validator"
+cd backend
+pip install -r requirements.txt
+cp .env.example .env   # then fill in TAVILY_API_KEY
+uvicorn main:app --reload --port 8000
+```
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+cp .env.example .env   # VITE_API_URL should point at the backend, e.g. http://127.0.0.1:8000
+npm run dev
+```
+
+The frontend will be available at `http://localhost:5173` and calls the backend at the
+URL set in `VITE_API_URL`.
+
+### Legacy Streamlit prototype
+
+```bash
 pip install -r requirements.txt
 streamlit run app.py
 ```
-
-The app will be available at `http://localhost:8501`.
 
 ## Branching Strategy
 
@@ -58,36 +89,13 @@ Workflow: branch off `staging` for a feature/fix → open a PR into `staging` �
 ## Deployment
 
 Deployment is handled via Render, configured in [`render.yaml`](render.yaml).
-
-**Current service:**
-
-| Service | Type | Branch | Build | Start |
-|---|---|---|---|---|
-| `startup-validator-staging` | web (Python) | `staging` | `pip install -r requirements.txt` | `streamlit run app.py --server.port $PORT --server.address 0.0.0.0` |
-
-Render auto-deploys on every push to the `staging` branch. A separate `main`-tracking
-service can be added once the app is ready for stable releases.
-
-## Roadmap
-
-The project is planned to grow from a single Streamlit script into a proper
-frontend/backend split:
-
-- **Backend** — introduce a FastAPI service to hold business logic (idea validation,
-  market analysis, AI/LLM calls) behind a REST API, instead of embedding it in the
-  Streamlit script.
-- **Database** — add a managed Postgres instance (via Render) with SQLAlchemy/SQLModel
-  models and Alembic migrations, to persist submitted ideas and validation results.
-- **Frontend** — Streamlit remains the UI but becomes a thin client calling the backend
-  API rather than doing the work itself.
-- **Deployment** — split into two Render services (`frontend`, `backend`) plus a managed
-  Postgres service, wired together via environment variables.
-- **AI integration** — connect an LLM/market-data API to generate real scores,
-  competitor insights, and recommendations (currently placeholder metrics in the UI).
+`render.yaml` currently deploys the legacy Streamlit prototype — updating it for the new
+frontend + backend split is part of the Milestone 1 integration/deployment task (see
+[`docs/milestone1-plan.md`](docs/milestone1-plan.md)).
 
 ## Contributing
 
 1. Create a branch off `staging`.
-2. Make your changes and test locally with `streamlit run app.py`.
+2. Make your changes and test locally (see Getting Started above).
 3. Open a PR into `staging`.
 4. Once verified, changes are promoted to `main`.
