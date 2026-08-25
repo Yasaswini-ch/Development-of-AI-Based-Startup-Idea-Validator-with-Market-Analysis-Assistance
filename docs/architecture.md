@@ -27,20 +27,28 @@ responses before they reach the UI.
 
 ## 2. Agent Breakdown
 
+Agents are built with **CrewAI** and orchestrated by a **LangGraph** `StateGraph`. Each
+pipeline stage is one LangGraph node wrapping one CrewAI crew (agent + task + tools).
+This is deliberate even though Milestone 1 only has one agent: it means Milestone 2-4
+agents are added as new graph nodes without restructuring the backend.
+
 **Milestone 1 has a single agent: the Web Search Agent.**
 
 - **Input**: `{ idea, targetCustomer, problem }` from the submitted form
-- **Responsibility**: build a search query from these fields, call Tavily, and reduce
-  the raw results into `{ summary, results[] }`
-- **Output**: a short synthesized summary (not raw Tavily dump) plus a list of
-  `{ title, snippet, url }` result cards
+- **CrewAI role**: "Web Search Agent" — goal: retrieve live, relevant market/competitor
+  data; tool: Tavily search
+- **LangGraph node**: `web_search` — runs the crew, parses its structured
+  (`output_pydantic`) result into pipeline state
+- **Output**: `{ summary, results[] }` where `results` is `{ title, snippet, url }[]`,
+  produced directly by the CrewAI task's structured output (not text-parsed)
 
-**Future extension point (Milestone 2+, not built now):** additional agents — e.g. a
-Scoring Agent (rates the idea on clarity/market potential/competition) or a Competitor
-Comparison Agent — would sit alongside the Search Agent behind the same `/validate`
-endpoint, or behind a new endpoint that composes multiple agents. The backend is
-structured so a new agent is just a new module called from the same request handler,
-not a rewrite.
+**Future extension point (Milestone 2+):** Market Opportunity, Competitor Discovery,
+SWOT/Risk, MVP Recommendation, GTM, and Report Generation agents each become a new
+CrewAI crew wrapped in a new LangGraph node (e.g. `market_opportunity`,
+`competitor_discovery`, ...), wired into the same graph with `add_edge`. LangGraph's
+state dict carries each stage's output forward so later agents can consume earlier
+agents' results (context passing), and partial failures are handled per-node rather
+than crashing the whole pipeline.
 
 ## 3. Data Flow
 
@@ -94,7 +102,10 @@ should build against this without needing to sync on every field.
 |---|---|---|
 | Frontend | React (Vite) + Tailwind CSS | Team wants a premium, polished UI — faster to achieve with component reuse + utility classes than hand-rolled CSS. **Note:** this deviates from the milestone guide's plain HTML/CSS/JS wording; flagging that explicitly since it's a deliberate call. |
 | Backend | FastAPI | Lightweight, async-friendly, minimal boilerplate for a single endpoint, easy to extend with more agents later. |
-| Search | Tavily API | Specified by the milestone guide. |
+| Orchestration | LangGraph | Owns pipeline state and node wiring — each agent is a graph node, so M2-M4 agents are added without restructuring the backend. |
+| Agents | CrewAI | Role/goal/tool-based agent definitions, one Agent+Task per pipeline stage — matches the brief's named-agent structure directly. |
+| Search | Tavily API | Specified by the milestone guide; exposed to the Web Search Agent as a CrewAI tool. |
+| Reasoning LLM | OpenAI (via CrewAI/LiteLLM) | Default provider for agent reasoning; configurable via `OPENAI_API_KEY`. |
 | Hosting | Render | Already set up for this repo (see `render.yaml`). |
 
 ## 6. Deployment Topology
