@@ -89,10 +89,20 @@ Workflow: branch off `staging` for a feature/fix → open a PR into `staging` �
 
 ## Deployment
 
-Deployment is handled via Render, configured in [`render.yaml`](render.yaml).
-`render.yaml` currently deploys the legacy Streamlit prototype — updating it for the new
-frontend + backend split is part of the Milestone 1 integration/deployment task (see
-[`docs/milestone1-plan.md`](docs/milestone1-plan.md)).
+Deployment is handled via Render, configured in [`render.yaml`](render.yaml) as two
+services:
+
+| Service | Type | Root dir | Notes |
+|---|---|---|---|
+| `startup-validator-backend` | Python web service | `backend/` | Needs `TAVILY_API_KEY` and `GROQ_API_KEY` set manually in the Render dashboard (not in `render.yaml`, never committed) |
+| `startup-validator-frontend` | Static site | `frontend/` | Built with `npm run build`; calls the backend via `VITE_API_URL` |
+
+Both auto-deploy on push to `staging`. After the first deploy, double-check the actual
+Render-assigned URLs match what's hardcoded in `render.yaml` for `FRONTEND_ORIGIN` and
+`VITE_API_URL` — if Render assigns different subdomains, update those env vars in the
+dashboard to match.
+
+The legacy Streamlit prototype (`app.py`) is no longer deployed by this config.
 
 ## Contributing
 
