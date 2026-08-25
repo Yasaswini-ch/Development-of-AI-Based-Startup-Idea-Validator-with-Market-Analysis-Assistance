@@ -105,7 +105,7 @@ should build against this without needing to sync on every field.
 | Orchestration | LangGraph | Owns pipeline state and node wiring — each agent is a graph node, so M2-M4 agents are added without restructuring the backend. |
 | Agents | CrewAI | Role/goal/tool-based agent definitions, one Agent+Task per pipeline stage — matches the brief's named-agent structure directly. |
 | Search | Tavily API | Specified by the milestone guide; exposed to the Web Search Agent as a CrewAI tool. |
-| Reasoning LLM | Groq (via CrewAI/LiteLLM) | Default provider for agent reasoning (`groq/qwen/qwen3.6-27b`), configurable via `LLM_MODEL` + provider API key (`GROQ_API_KEY`). Switched from `openai/gpt-oss-120b` after it repeatedly hallucinated tool calls not in our toolset. |
+| Reasoning LLM | Google Gemini (via CrewAI/LiteLLM) | Default provider for agent reasoning (`gemini/gemini-2.0-flash`), configurable via `LLM_MODEL` + provider API key (`GEMINI_API_KEY`). Tried Groq first (`openai/gpt-oss-120b`, then `qwen/qwen3.6-27b`); switched to Gemini for a much higher free-tier rate limit after repeatedly hitting Groq's 8k tokens/min cap during testing. |
 | Hosting | Render | Already set up for this repo (see `render.yaml`). |
 
 ## 6. Deployment Topology
