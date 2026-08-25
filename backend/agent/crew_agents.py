@@ -1,12 +1,19 @@
 from crewai import Agent, Crew, Process, Task
 
 from .llm import get_llm
-from .schemas import SearchOutput
 from .tools import tavily_search
 
 
 def build_search_crew(idea: str, target_customer: str, problem: str) -> Crew:
     """One-agent crew for Milestone 1: the Web Search Agent.
+
+    The task's expected_output is deliberately plain prose, not a forced
+    structured schema - CrewAI's output_pydantic/function-calling conversion
+    proved unreliable with our tested models (Groq would repeatedly fail to
+    "call a function" for the conversion step, then silently fall back to
+    garbage text). The real, structured search results are fetched directly
+    via agent/tools.py's fetch_results() in graph.py instead, so the LLM's
+    only job here is writing a short grounded summary paragraph.
 
     Future milestones add more agents (Market Opportunity, Competitor Discovery,
     SWOT/Risk, MVP Recommendation, GTM, Report Generation) as additional
@@ -35,12 +42,11 @@ def build_search_crew(idea: str, target_customer: str, problem: str) -> Crew:
             "sources before answering."
         ),
         expected_output=(
-            "A short 2-3 sentence summary of the market/competitive landscape, plus "
-            "a list of the most relevant sources found, each with a title, a "
-            "one-line snippet, and the source URL."
+            "A short 2-3 sentence plain-text summary of the market/competitive "
+            "landscape based on what the search tool returned. Do not use JSON, "
+            "code blocks, or any structured format - just a plain paragraph."
         ),
         agent=search_agent,
-        output_pydantic=SearchOutput,
     )
 
     return Crew(
