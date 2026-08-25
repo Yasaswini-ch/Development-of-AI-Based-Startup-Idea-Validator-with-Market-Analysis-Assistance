@@ -1,8 +1,10 @@
+import json
 from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
 from .crew_agents import build_search_crew
+from .schemas import SearchOutput
 
 
 class PipelineState(TypedDict, total=False):
@@ -27,6 +29,18 @@ def web_search_node(state: PipelineState) -> PipelineState:
         )
         crew_output = crew.kickoff()
         data = crew_output.pydantic
+
+        if data is None:
+            # Some models don't reliably hit CrewAI's structured-output path;
+            # fall back to parsing the raw text response as JSON.
+            raw = crew_output.raw.strip()
+            if raw.startswith("```"):
+                raw = raw.strip("`")
+                raw = raw[raw.find("\n") + 1 :] if "\n" in raw else raw
+                if raw.lower().startswith("json"):
+                    raw = raw[4:]
+            data = SearchOutput.model_validate(json.loads(raw))
+
         return {**state, "summary": data.summary, "results": [r.model_dump() for r in data.results]}
     except Exception as exc:
         return {**state, "error": str(exc)}
