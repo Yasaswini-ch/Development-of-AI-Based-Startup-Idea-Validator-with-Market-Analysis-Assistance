@@ -6,6 +6,18 @@ from . import retrieval
 from .crew_agents import build_search_crew
 
 
+def _strip_reasoning(text: str) -> str:
+    """Some reasoning models (e.g. Groq's qwen3.6) emit a <think>...</think>
+    block before their real answer, which leaks into the output when we're
+    not forcing structured output. Keep only what comes after the last
+    </think> tag, if present.
+    """
+    marker = "</think>"
+    if marker in text:
+        text = text.rsplit(marker, 1)[-1]
+    return text.strip()
+
+
 class PipelineState(TypedDict, total=False):
     idea: str
     targetCustomer: str
@@ -37,7 +49,7 @@ def web_search_node(state: PipelineState) -> PipelineState:
     try:
         crew = build_search_crew(idea, target_customer, problem)
         crew_output = crew.kickoff()
-        summary = crew_output.raw.strip()
+        summary = _strip_reasoning(crew_output.raw)
     except Exception:
         # The summary is a nice-to-have on top of the real results above;
         # if the LLM step fails, still return the genuine search results.
