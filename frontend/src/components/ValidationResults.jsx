@@ -16,7 +16,14 @@ export default function ValidationResults({ summary, results }) {
               rel="noreferrer"
               className="rounded-xl border border-border bg-panel p-4 transition-colors hover:border-accent"
             >
-              <h3 className="text-sm font-medium text-text mb-1.5 line-clamp-2">{r.title}</h3>
+              <div className="flex items-start justify-between gap-2 mb-1.5">
+                <h3 className="text-sm font-medium text-text line-clamp-2">{r.title}</h3>
+                {typeof r.score === 'number' && (
+                  <span className="shrink-0 rounded-full bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent">
+                    {Math.round(r.score * 100)}%
+                  </span>
+                )}
+              </div>
               <p className="text-sm text-muted leading-relaxed line-clamp-3">{r.snippet}</p>
             </a>
           ))}

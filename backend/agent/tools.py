@@ -22,6 +22,8 @@ def fetch_results(query: str, max_results: int = 5) -> list[dict]:
             "title": r.get("title", ""),
             "snippet": r.get("content", ""),
             "url": r.get("url", ""),
+            "query": query,
+            "score": r.get("score", 0.0),
         }
         for r in response.get("results", [])
     ]
