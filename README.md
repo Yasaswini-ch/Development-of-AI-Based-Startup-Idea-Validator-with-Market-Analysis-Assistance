@@ -14,6 +14,26 @@ and timeline.
 The app is being split into a proper frontend/backend, per
 [`docs/architecture.md`](docs/architecture.md):
 
+```mermaid
+flowchart TD
+    User(["Founder"]) -->|submits idea| Frontend["React + Tailwind\nfrontend/"]
+    Frontend -->|POST /validate| Backend["FastAPI\nbackend/main.py"]
+    Backend --> Pipeline["LangGraph Pipeline\nagent/graph.py"]
+
+    Pipeline --> Retrieval["Multi-angle Retrieval\nagent/retrieval.py"]
+    Retrieval --> Tavily["Tavily API\n(primary)"]
+    Retrieval -.fallback.-> Free["DuckDuckGo + Wikipedia\n+ Hacker News\n(zero-cost)"]
+
+    Pipeline --> Crew["CrewAI Web Search Agent\nagent/crew_agents.py"]
+    Crew --> LLM["Groq LLM\nqwen3.6-27b"]
+
+    Retrieval --> Response["summary + results"]
+    Crew --> Response
+    Response --> Backend
+    Backend -->|JSON| Frontend
+    Frontend -->|renders results| User
+```
+
 | Layer        | Tech                                  |
 |--------------|----------------------------------------|
 | Frontend     | React + Tailwind CSS (`frontend/`) |

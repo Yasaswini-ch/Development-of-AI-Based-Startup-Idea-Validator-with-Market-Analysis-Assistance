@@ -16,10 +16,24 @@ The system has three pieces:
 
 Flow at a glance:
 
-```
-User → Frontend (React) → Backend API (FastAPI) → Search Agent → Tavily (or free fallback)
-                                                          ↓
-User ← Frontend (renders results) ← Backend API ← shaped response
+```mermaid
+flowchart TD
+    User(["Founder"]) -->|submits idea| Frontend["React + Tailwind\nfrontend/"]
+    Frontend -->|POST /validate| Backend["FastAPI\nbackend/main.py"]
+    Backend --> Pipeline["LangGraph Pipeline\nagent/graph.py"]
+
+    Pipeline --> Retrieval["Multi-angle Retrieval\nagent/retrieval.py"]
+    Retrieval --> Tavily["Tavily API\n(primary)"]
+    Retrieval -.fallback.-> Free["DuckDuckGo + Wikipedia\n+ Hacker News\n(zero-cost)"]
+
+    Pipeline --> Crew["CrewAI Web Search Agent\nagent/crew_agents.py"]
+    Crew --> LLM["Groq LLM\nqwen3.6-27b"]
+
+    Retrieval --> Response["summary + results"]
+    Crew --> Response
+    Response --> Backend
+    Backend -->|JSON| Frontend
+    Frontend -->|renders results| User
 ```
 
 The frontend never talks to the search sources directly — it only ever calls our own
@@ -72,6 +86,35 @@ than crashing the whole pipeline.
      idea")
 5. Backend shapes the response into the shared contract and returns `200`
 6. Frontend renders the summary + result cards below the form
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant F as Frontend
+    participant B as Backend - /validate
+    participant S as Search - Tavily or fallback
+    participant L as Groq LLM
+
+    U->>F: Fill form, submit
+    F->>B: POST /validate
+    alt idea is empty
+        B-->>F: 400 (error)
+        F-->>U: inline field error
+    else idea provided
+        B->>S: expand into search angles, fetch each
+        alt all sources fail
+            S-->>B: exception
+            B-->>F: 502 (error)
+            F-->>U: ErrorState + Try again
+        else results returned (possibly empty)
+            S-->>B: results list
+            B->>L: summarize grounded in results
+            L-->>B: summary text
+            B-->>F: 200 (summary, results)
+            F-->>U: EmptyState (0 results) or grouped result cards
+        end
+    end
+```
 
 ## 4. API Contract
 
