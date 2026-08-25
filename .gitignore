@@ -18,3 +18,9 @@ frontend/dist/
 
 # Claude Code local config
 .claude/
+
+# Future milestone planning docs (not ready for mentor review yet)
+docs/milestone2-plan.md
+docs/milestone3-plan.md
+docs/milestone4-plan.md
+docs/claude-code-prompts.md
