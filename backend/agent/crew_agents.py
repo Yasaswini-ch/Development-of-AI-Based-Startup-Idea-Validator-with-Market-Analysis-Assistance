@@ -1,5 +1,6 @@
 from crewai import Agent, Crew, Process, Task
 
+from .llm import get_llm
 from .schemas import SearchOutput
 from .tools import tavily_search
 
@@ -20,6 +21,7 @@ def build_search_crew(idea: str, target_customer: str, problem: str) -> Crew:
             "credible sources instead of relying on general knowledge."
         ),
         tools=[tavily_search],
+        llm=get_llm(),
         verbose=False,
     )
 
