@@ -10,20 +10,20 @@ The system has three pieces:
    validation results.
 2. **Backend API** — a small FastAPI service exposing `POST /validate`. Receives the
    submitted idea, calls the search agent, and returns a shaped response.
-3. **Web Search Agent** — a Python module (used by the backend) that queries the Tavily
-   API for market/competitor information related to the submitted idea.
+3. **Web Search Agent** — a Python module (used by the backend) that searches the web
+   (Tavily when configured, otherwise DuckDuckGo/Wikipedia/Hacker News as a free
+   fallback) for market/competitor information related to the submitted idea.
 
 Flow at a glance:
 
 ```
-User → Frontend (React) → Backend API (FastAPI) → Search Agent → Tavily API
+User → Frontend (React) → Backend API (FastAPI) → Search Agent → Tavily (or free fallback)
                                                           ↓
 User ← Frontend (renders results) ← Backend API ← shaped response
 ```
 
-The frontend never talks to Tavily directly — it only ever calls our own backend. This
-keeps the Tavily API key server-side only and gives us one place to shape/validate
-responses before they reach the UI.
+The frontend never talks to the search sources directly — it only ever calls our own
+backend. This gives us one place to shape/validate responses before they reach the UI.
 
 ## 2. Agent Breakdown
 
@@ -36,11 +36,16 @@ agents are added as new graph nodes without restructuring the backend.
 
 - **Input**: `{ idea, targetCustomer, problem }` from the submitted form
 - **CrewAI role**: "Web Search Agent" — goal: retrieve live, relevant market/competitor
-  data; tool: Tavily search
-- **LangGraph node**: `web_search` — runs the crew, parses its structured
-  (`output_pydantic`) result into pipeline state
-- **Output**: `{ summary, results[] }` where `results` is `{ title, snippet, url }[]`,
-  produced directly by the CrewAI task's structured output (not text-parsed)
+  data; tool: web search (Tavily primary, DuckDuckGo/Wikipedia/Hacker News fallback)
+- **LangGraph node**: `web_search` — runs two things: (1) `agent/retrieval.py` expands
+  the idea into several search angles (market size, competitors, customer demand) and
+  fetches+dedupes real results directly in code, and (2) the CrewAI crew produces a
+  short plain-text summary. Results never pass through the LLM, so they can't be
+  paraphrased or invented — only the summary paragraph is LLM-generated.
+- **Output**: `{ summary, results[] }` where `results` is
+  `{ title, snippet, url, query, score }[]` — `query` is which search angle surfaced
+  that result, `score` is a computed relevance score (word-overlap between the query
+  and the result's text, since these free sources don't provide their own ranking)
 
 **Future extension point (Milestone 2+):** Market Opportunity, Competitor Discovery,
 SWOT/Risk, MVP Recommendation, GTM, and Report Generation agents each become a new
@@ -56,11 +61,13 @@ than crashing the whole pipeline.
 2. Frontend sends `POST /validate` with the form data
 3. Backend validates input (idea field required, non-empty)
    - If invalid → return `400` with `{ error: "..." }`, frontend shows inline field error
-4. Backend calls the Search Agent, which builds a Tavily query and calls the Tavily API
-   - If Tavily times out / rate-limits / errors → backend returns `502` with
+4. Backend calls the Search Agent, which expands the idea into several search angles
+   and queries Tavily per angle (falling back to DuckDuckGo/Wikipedia/Hacker News per
+   angle if Tavily isn't configured or fails)
+   - If every source fails for every angle → backend returns `502` with
      `{ error: "..." }`, frontend shows an `ErrorState` ("couldn't fetch results, try
      again")
-   - If Tavily returns zero results → backend returns `200` with `{ summary: "...",
+   - If search returns zero results → backend returns `200` with `{ summary: "...",
      results: [] }`, frontend shows an `EmptyState` ("no market data found for this
      idea")
 5. Backend shapes the response into the shared contract and returns `200`
@@ -83,7 +90,7 @@ Response 200:
 {
   "summary": string,
   "results": [
-    { "title": string, "snippet": string, "url": string }
+    { "title": string, "snippet": string, "url": string, "query": string, "angle": string, "score": number }
   ]
 }
 
@@ -104,8 +111,8 @@ should build against this without needing to sync on every field.
 | Backend | FastAPI | Lightweight, async-friendly, minimal boilerplate for a single endpoint, easy to extend with more agents later. |
 | Orchestration | LangGraph | Owns pipeline state and node wiring — each agent is a graph node, so M2-M4 agents are added without restructuring the backend. |
 | Agents | CrewAI | Role/goal/tool-based agent definitions, one Agent+Task per pipeline stage — matches the brief's named-agent structure directly. |
-| Search | Tavily API | Specified by the milestone guide; exposed to the Web Search Agent as a CrewAI tool. |
-| Reasoning LLM | Google Gemini (via CrewAI/LiteLLM) | Default provider for agent reasoning (`gemini/gemini-3.6-flash`), configurable via `LLM_MODEL` + provider API key (`GEMINI_API_KEY`). Tried Groq first (`openai/gpt-oss-120b`, then `qwen/qwen3.6-27b`); switched to Gemini for a much higher free-tier rate limit after repeatedly hitting Groq's 8k tokens/min cap during testing. |
+| Search | Tavily API (primary), DuckDuckGo + Wikipedia + Hacker News (fallback chain) | Tavily gives a real, trained relevance score and reliable results — used whenever `TAVILY_API_KEY` is set. If it's missing or fails, the app falls back to the zero-cost chain (own computed relevance score) instead of erroring out. Tried DuckDuckGo as sole primary first, but its unofficial scraping library proved too flaky (empty or irrelevant results, inconsistent run to run) to trust for a live demo. |
+| Reasoning LLM | Groq (via CrewAI/LiteLLM) | Default provider for agent reasoning (`groq/qwen/qwen3.6-27b`), configurable via `LLM_MODEL` + provider API key (`GROQ_API_KEY`). Tried Google Gemini for a higher rate limit, but its current models were incompatible with our LiteLLM version (2.x deprecated for new keys, 3.x needs newer message formatting) — reverted to Groq. |
 | Hosting | Render | Already set up for this repo (see `render.yaml`). |
 
 ## 6. Deployment Topology
@@ -114,8 +121,9 @@ Two Render web services:
 
 - **`startup-validator-frontend`** — serves the built React app (static site or Node
   web service)
-- **`startup-validator-backend`** — runs the FastAPI service; holds the `TAVILY_API_KEY`
-  as a Render environment variable (never committed to the repo)
+- **`startup-validator-backend`** — runs the FastAPI service; holds `GROQ_API_KEY`
+  (required) and `TAVILY_API_KEY` (optional — falls back to free search if unset) as
+  Render environment variables (never committed to the repo)
 
 Frontend reads the backend's URL via `VITE_API_URL` (env var, set per environment —
 local vs. deployed).
@@ -126,8 +134,8 @@ local vs. deployed).
   returns `{ error: string }` with an appropriate status code
 - Frontend never shows a blank or frozen screen on failure — every failed/empty state
   renders a specific `ErrorState` or `EmptyState` component with a human-readable message
-- Timeouts: backend enforces a reasonable timeout on the Tavily call (e.g. 10s) so a slow
-  external API doesn't hang the whole request
+- Timeouts: each search source call uses a short timeout (5s) so one slow/unreachable
+  source doesn't hang the whole request — the pipeline just moves to the next fallback
 
 ## 8. Repo Structure (proposed)
 
@@ -138,7 +146,11 @@ local vs. deployed).
 ├── backend/           # FastAPI app + search agent (Varshini)
 │   ├── main.py         # POST /validate route
 │   └── agent/
-│       └── search_agent.py
+│       ├── graph.py         # LangGraph pipeline
+│       ├── crew_agents.py    # CrewAI Agent/Task/Crew
+│       ├── retrieval.py      # multi-angle query expansion + dedup
+│       ├── tools.py          # Tavily (primary) + DuckDuckGo/Wikipedia/Hacker News fallback
+│       └── llm.py            # reasoning LLM selection
 ├── docs/
 │   ├── architecture.md        # this file
 │   ├── milestone1-plan.md

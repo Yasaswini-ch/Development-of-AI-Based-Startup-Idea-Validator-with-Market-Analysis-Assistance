@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-export default function IdeaForm({ onSubmit, isLoading }) {
+export default function IdeaForm({ onSubmit, isLoading, loadingStep }) {
   const [idea, setIdea] = useState('')
   const [targetCustomer, setTargetCustomer] = useState('')
   const [problem, setProblem] = useState('')
@@ -19,11 +19,11 @@ export default function IdeaForm({ onSubmit, isLoading }) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="rounded-2xl border border-border bg-panel p-6 sm:p-8 shadow-xl shadow-black/20"
+      className="rounded-2xl border border-border bg-panel p-6 sm:p-8"
     >
       <div className="space-y-5">
         <div>
-          <label htmlFor="idea" className="block text-sm font-medium text-text mb-1.5">
+          <label htmlFor="idea" className="mb-1.5 block font-mono text-xs uppercase tracking-wider text-muted">
             Startup idea
           </label>
           <textarea
@@ -40,7 +40,7 @@ export default function IdeaForm({ onSubmit, isLoading }) {
         </div>
 
         <div>
-          <label htmlFor="targetCustomer" className="block text-sm font-medium text-text mb-1.5">
+          <label htmlFor="targetCustomer" className="mb-1.5 block font-mono text-xs uppercase tracking-wider text-muted">
             Target customer
           </label>
           <input
@@ -54,7 +54,7 @@ export default function IdeaForm({ onSubmit, isLoading }) {
         </div>
 
         <div>
-          <label htmlFor="problem" className="block text-sm font-medium text-text mb-1.5">
+          <label htmlFor="problem" className="mb-1.5 block font-mono text-xs uppercase tracking-wider text-muted">
             Problem being solved
           </label>
           <textarea
@@ -70,10 +70,16 @@ export default function IdeaForm({ onSubmit, isLoading }) {
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+          className="w-full rounded-full bg-accent px-4 py-2.5 font-mono text-sm font-semibold uppercase tracking-wide text-surface transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isLoading ? 'Validating…' : 'Validate idea'}
         </button>
+
+        {isLoading && (
+          <p className="text-center font-mono text-xs uppercase tracking-widest text-muted cursor-blink">
+            {loadingStep}
+          </p>
+        )}
       </div>
     </form>
   )

@@ -2,14 +2,15 @@
 
 @theme {
   --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
 
-  --color-surface: #0b0e14;
-  --color-panel: #131826;
-  --color-border: #232a3b;
-  --color-text: #e6e8ee;
-  --color-muted: #8b93a7;
-  --color-accent: #7c5cff;
-  --color-accent-hover: #9075ff;
+  --color-surface: #0a0a0a;
+  --color-panel: #131313;
+  --color-border: #2a2a2a;
+  --color-text: #f2f1ee;
+  --color-muted: #8f8d88;
+  --color-accent: #f2f1ee;
+  --color-accent-hover: #d8d6d1;
   --color-danger: #ff6b6b;
 }
 
@@ -17,4 +18,14 @@ body {
   background: var(--color-surface);
   color: var(--color-text);
   font-family: var(--font-sans);
+}
+
+@keyframes blink-cursor {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+.cursor-blink::after {
+  content: "_";
+  animation: blink-cursor 1s step-end infinite;
 }
