@@ -1,10 +1,9 @@
-import json
 from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
 from .crew_agents import build_search_crew
-from .schemas import SearchOutput
+from .tools import fetch_results
 
 
 class PipelineState(TypedDict, total=False):
@@ -16,34 +15,44 @@ class PipelineState(TypedDict, total=False):
     error: str
 
 
+def _build_query(idea: str, target_customer: str, problem: str) -> str:
+    parts = [idea]
+    if target_customer:
+        parts.append(f"for {target_customer}")
+    if problem:
+        parts.append(f"solving {problem}")
+    parts.append("market size competitors")
+    return " ".join(parts)
+
+
 def web_search_node(state: PipelineState) -> PipelineState:
-    """M1 node: runs the Web Search crew and folds its structured output into state.
+    """M1 node: runs the Web Search crew for a summary, and fetches real
+    results directly (not via the LLM) so the frontend always shows genuine
+    Tavily data instead of something the model paraphrased or invented.
 
     M2+ adds nodes here (market_opportunity_node, competitor_discovery_node, ...) and
     wires them into the graph below, each consuming/producing PipelineState fields per
     docs/architecture.md's agent contracts.
     """
+    idea = state["idea"]
+    target_customer = state.get("targetCustomer", "")
+    problem = state.get("problem", "")
+
     try:
-        crew = build_search_crew(
-            state["idea"], state.get("targetCustomer", ""), state.get("problem", "")
-        )
-        crew_output = crew.kickoff()
-        data = crew_output.pydantic
-
-        if data is None:
-            # Some models don't reliably hit CrewAI's structured-output path;
-            # fall back to parsing the raw text response as JSON.
-            raw = crew_output.raw.strip()
-            if raw.startswith("```"):
-                raw = raw.strip("`")
-                raw = raw[raw.find("\n") + 1 :] if "\n" in raw else raw
-                if raw.lower().startswith("json"):
-                    raw = raw[4:]
-            data = SearchOutput.model_validate(json.loads(raw))
-
-        return {**state, "summary": data.summary, "results": [r.model_dump() for r in data.results]}
+        results = fetch_results(_build_query(idea, target_customer, problem))
     except Exception as exc:
         return {**state, "error": str(exc)}
+
+    try:
+        crew = build_search_crew(idea, target_customer, problem)
+        crew_output = crew.kickoff()
+        summary = crew_output.raw.strip()
+    except Exception:
+        # The summary is a nice-to-have on top of the real results above;
+        # if the LLM step fails, still return the genuine search results.
+        summary = "Here's what we found for your idea based on live web search."
+
+    return {**state, "summary": summary, "results": results}
 
 
 def build_pipeline():
