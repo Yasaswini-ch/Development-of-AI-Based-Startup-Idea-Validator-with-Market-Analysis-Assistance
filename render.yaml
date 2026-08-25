@@ -15,8 +15,8 @@ services:
       - key: FRONTEND_ORIGIN
         value: https://startup-validator-frontend.onrender.com
 
-staticSites:
-  - name: startup-validator-frontend
+  - type: static
+    name: startup-validator-frontend
     branch: staging
     rootDir: frontend
     buildCommand: npm install && npm run build
