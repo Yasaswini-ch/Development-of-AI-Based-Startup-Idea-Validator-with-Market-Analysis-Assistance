@@ -12,13 +12,16 @@ for the current task breakdown and timeline.
 The app is being split into a proper frontend/backend, per
 [`docs/architecture.md`](docs/architecture.md):
 
-| Layer      | Tech                                  |
-|------------|----------------------------------------|
-| Frontend   | React + Tailwind CSS (`frontend/`) |
-| Backend    | FastAPI (`backend/`) — exposes `POST /validate` |
-| Search agent | Python module calling the Tavily API (`backend/agent/search_agent.py`) |
-| Database   | None yet |
-| Deployment | [Render](https://render.com) (`render.yaml`) |
+| Layer        | Tech                                  |
+|--------------|----------------------------------------|
+| Frontend     | React + Tailwind CSS (`frontend/`) |
+| Backend      | FastAPI (`backend/`) — exposes `POST /validate` |
+| Agent framework | [CrewAI](https://www.crewai.com) — role/goal/tool-based agents (`backend/agent/crew_agents.py`) |
+| Orchestration | [LangGraph](https://www.langchain.com/langgraph) — pipeline state graph, one node per agent (`backend/agent/graph.py`) |
+| Search       | [Tavily API](https://tavily.com), fetched directly (not LLM-mediated) for reliable, grounded results (`backend/agent/tools.py`) |
+| Reasoning LLM | [Groq](https://console.groq.com) (`qwen/qwen3.6-27b`, configurable — see `backend/agent/llm.py`) |
+| Database     | None yet |
+| Deployment   | [Render](https://render.com) — two services, config in `render.yaml` |
 | Version control | Git / GitHub |
 
 The original single-file Streamlit prototype (`app.py`) is kept for reference but is
@@ -28,11 +31,14 @@ superseded by the `frontend/` + `backend/` split going forward.
 
 ```
 .
-├── frontend/           # React + Tailwind app (idea submission UI)
-├── backend/            # FastAPI app + Tavily search agent
-│   ├── main.py           # POST /validate route
+├── frontend/            # React + Tailwind app (idea submission UI)
+├── backend/             # FastAPI app + CrewAI/LangGraph agent pipeline
+│   ├── main.py            # POST /validate route
 │   └── agent/
-│       └── search_agent.py
+│       ├── graph.py         # LangGraph pipeline: state + node wiring
+│       ├── crew_agents.py    # CrewAI Agent/Task/Crew definitions
+│       ├── tools.py          # Tavily search (direct fetch + CrewAI tool)
+│       └── llm.py            # reasoning LLM provider/model selection
 ├── docs/
 │   ├── architecture.md       # system design, data flow, API contract
 │   ├── milestone1-plan.md    # task division + timeline
