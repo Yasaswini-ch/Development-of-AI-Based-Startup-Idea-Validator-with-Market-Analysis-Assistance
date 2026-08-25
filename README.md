@@ -49,14 +49,14 @@ superseded by the `frontend/` + `backend/` split going forward.
 - Node.js 18+ and npm
 - Python 3.10+ and pip
 - A [Tavily](https://tavily.com) API key
-- An [OpenAI](https://platform.openai.com) API key (used by the CrewAI agents)
+- A [Groq](https://console.groq.com) API key (used by the CrewAI agents)
 
 ### Backend
 
 ```bash
 cd backend
 pip install -r requirements.txt
-cp .env.example .env   # then fill in TAVILY_API_KEY and OPENAI_API_KEY
+cp .env.example .env   # then fill in TAVILY_API_KEY and GROQ_API_KEY
 uvicorn main:app --reload --port 8000
 ```
 
