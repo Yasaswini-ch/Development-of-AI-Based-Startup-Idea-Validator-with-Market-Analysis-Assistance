@@ -49,14 +49,14 @@ superseded by the `frontend/` + `backend/` split going forward.
 - Node.js 18+ and npm
 - Python 3.10+ and pip
 - A [Tavily](https://tavily.com) API key
-- A [Groq](https://console.groq.com) API key (used by the CrewAI agents)
+- A [Google Gemini](https://aistudio.google.com/apikey) API key (used by the CrewAI agents)
 
 ### Backend
 
 ```bash
 cd backend
 pip install -r requirements.txt
-cp .env.example .env   # then fill in TAVILY_API_KEY and GROQ_API_KEY
+cp .env.example .env   # then fill in TAVILY_API_KEY and GEMINI_API_KEY
 uvicorn main:app --reload --port 8000
 ```
 
@@ -94,7 +94,7 @@ services:
 
 | Service | Type | Root dir | Notes |
 |---|---|---|---|
-| `startup-validator-backend` | Python web service | `backend/` | Needs `TAVILY_API_KEY` and `GROQ_API_KEY` set manually in the Render dashboard (not in `render.yaml`, never committed) |
+| `startup-validator-backend` | Python web service | `backend/` | Needs `TAVILY_API_KEY` and `GEMINI_API_KEY` set manually in the Render dashboard (not in `render.yaml`, never committed) |
 | `startup-validator-frontend` | Static site | `frontend/` | Built with `npm run build`; calls the backend via `VITE_API_URL` |
 
 Both auto-deploy on push to `staging`. After the first deploy, double-check the actual
