@@ -7,7 +7,7 @@ export default function ErrorState({ message, onRetry }) {
       {onRetry && (
         <button
           onClick={onRetry}
-          className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-text transition-colors hover:border-accent"
+          className="rounded-full border border-border px-4 py-2 font-mono text-xs uppercase tracking-wide text-text transition-colors hover:border-accent"
         >
           Try again
         </button>

@@ -1,7 +1,7 @@
 from crewai import Agent, Crew, Process, Task
 
 from .llm import get_llm
-from .tools import tavily_search
+from .tools import web_search
 
 
 def build_search_crew(idea: str, target_customer: str, problem: str) -> Crew:
@@ -12,8 +12,8 @@ def build_search_crew(idea: str, target_customer: str, problem: str) -> Crew:
     proved unreliable with our tested models (Groq would repeatedly fail to
     "call a function" for the conversion step, then silently fall back to
     garbage text). The real, structured search results are fetched directly
-    via agent/tools.py's fetch_results() in graph.py instead, so the LLM's
-    only job here is writing a short grounded summary paragraph.
+    via agent/retrieval.py (which calls agent/tools.py) in graph.py instead,
+    so the LLM's only job here is writing a short grounded summary paragraph.
 
     Future milestones add more agents (Market Opportunity, Competitor Discovery,
     SWOT/Risk, MVP Recommendation, GTM, Report Generation) as additional
@@ -27,7 +27,7 @@ def build_search_crew(idea: str, target_customer: str, problem: str) -> Crew:
             "An expert market researcher who grounds every claim in current, "
             "credible sources instead of relying on general knowledge."
         ),
-        tools=[tavily_search],
+        tools=[web_search],
         llm=get_llm(),
         verbose=False,
     )
@@ -38,7 +38,7 @@ def build_search_crew(idea: str, target_customer: str, problem: str) -> Crew:
             f'this startup idea: "{idea}". '
             f"Target customer: {target_customer or 'not specified'}. "
             f"Problem being solved: {problem or 'not specified'}. "
-            "Use the Tavily Web Search tool at least once to find real, current "
+            "Use the Web Search tool at least once to find real, current "
             "sources before answering."
         ),
         expected_output=(

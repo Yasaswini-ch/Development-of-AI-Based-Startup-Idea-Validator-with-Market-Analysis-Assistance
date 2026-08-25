@@ -3,9 +3,11 @@
 Development of an AI-based startup idea validator with market analysis assistance.
 
 The project lets a founder enter a startup idea, target customer, and problem statement,
-and get back an initial validation summary backed by real web search results (via
-Tavily). Milestone 1 is in progress — see [`docs/milestone1-plan.md`](docs/milestone1-plan.md)
-for the current task breakdown and timeline.
+and get back an initial validation summary backed by real web search results (Tavily,
+with a free DuckDuckGo/Wikipedia/Hacker News fallback so it still works without a
+search API key). Milestone 1 is in progress — see
+[`docs/milestone1-plan.md`](docs/milestone1-plan.md) for the current task breakdown
+and timeline.
 
 ## Architecture
 
@@ -18,7 +20,7 @@ The app is being split into a proper frontend/backend, per
 | Backend      | FastAPI (`backend/`) — exposes `POST /validate` |
 | Agent framework | [CrewAI](https://www.crewai.com) — role/goal/tool-based agents (`backend/agent/crew_agents.py`) |
 | Orchestration | [LangGraph](https://www.langchain.com/langgraph) — pipeline state graph, one node per agent (`backend/agent/graph.py`) |
-| Search       | [Tavily API](https://tavily.com), fetched directly (not LLM-mediated) for reliable, grounded results (`backend/agent/tools.py`) |
+| Search       | Tavily API (primary), with DuckDuckGo + Wikipedia + Hacker News as a zero-cost fallback chain — fetched directly (not LLM-mediated) for reliable, grounded results (`backend/agent/tools.py`) |
 | Reasoning LLM | [Groq](https://console.groq.com) (`qwen/qwen3.6-27b`, configurable — see `backend/agent/llm.py`) |
 | Database     | None yet |
 | Deployment   | [Render](https://render.com) — two services, config in `render.yaml` |
@@ -37,7 +39,8 @@ superseded by the `frontend/` + `backend/` split going forward.
 │   └── agent/
 │       ├── graph.py         # LangGraph pipeline: state + node wiring
 │       ├── crew_agents.py    # CrewAI Agent/Task/Crew definitions
-│       ├── tools.py          # Tavily search (direct fetch + CrewAI tool)
+│       ├── retrieval.py      # multi-angle query expansion + dedup
+│       ├── tools.py          # Tavily (primary) + DuckDuckGo/Wikipedia/Hacker News fallback
 │       └── llm.py            # reasoning LLM provider/model selection
 ├── docs/
 │   ├── architecture.md       # system design, data flow, API contract
@@ -54,15 +57,16 @@ superseded by the `frontend/` + `backend/` split going forward.
 ### Prerequisites
 - Node.js 18+ and npm
 - Python 3.10+ and pip
-- A [Tavily](https://tavily.com) API key
 - A [Groq](https://console.groq.com) API key (used by the CrewAI agents)
+- Optionally, a [Tavily](https://tavily.com) API key for higher-quality search — the
+  app works without one, falling back to free DuckDuckGo/Wikipedia/Hacker News search
 
 ### Backend
 
 ```bash
 cd backend
 pip install -r requirements.txt
-cp .env.example .env   # then fill in TAVILY_API_KEY and GROQ_API_KEY
+cp .env.example .env   # then fill in GROQ_API_KEY (and TAVILY_API_KEY if you have one)
 uvicorn main:app --reload --port 8000
 ```
 
@@ -100,7 +104,7 @@ services:
 
 | Service | Type | Root dir | Notes |
 |---|---|---|---|
-| `startup-validator-backend` | Python web service | `backend/` | Needs `TAVILY_API_KEY` and `GROQ_API_KEY` set manually in the Render dashboard (not in `render.yaml`, never committed) |
+| `startup-validator-backend` | Python web service | `backend/` | Needs `GROQ_API_KEY` set manually in the Render dashboard (not in `render.yaml`, never committed). `TAVILY_API_KEY` is optional — falls back to free search if unset. |
 | `startup-validator-frontend` | Static site | `frontend/` | Built with `npm run build`; calls the backend via `VITE_API_URL` |
 
 Both auto-deploy on push to `staging`. After the first deploy, double-check the actual

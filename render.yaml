@@ -10,9 +10,9 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.7
-      - key: TAVILY_API_KEY
-        sync: false
       - key: GROQ_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
         sync: false
       - key: FRONTEND_ORIGIN
         value: https://startup-validator-frontend-5qcr.onrender.com
