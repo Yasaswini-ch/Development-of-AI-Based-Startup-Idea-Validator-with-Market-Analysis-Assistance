@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from agent.search_agent import SearchAgentError, search_market
+from agent.graph import pipeline
 
 load_dotenv()
 
@@ -32,12 +32,18 @@ def validate_idea(payload: ValidateRequest):
     if not payload.idea.strip():
         return JSONResponse(status_code=400, content={"error": "idea is required"})
 
-    try:
-        result = search_market(payload.idea, payload.targetCustomer, payload.problem)
-    except SearchAgentError as exc:
-        return JSONResponse(status_code=502, content={"error": str(exc)})
+    state = pipeline.invoke(
+        {
+            "idea": payload.idea,
+            "targetCustomer": payload.targetCustomer,
+            "problem": payload.problem,
+        }
+    )
 
-    return result
+    if state.get("error"):
+        return JSONResponse(status_code=502, content={"error": state["error"]})
+
+    return {"summary": state["summary"], "results": state["results"]}
 
 
 @app.get("/health")
