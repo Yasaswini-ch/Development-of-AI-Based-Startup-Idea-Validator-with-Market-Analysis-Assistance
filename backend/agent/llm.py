@@ -1,6 +1,6 @@
 import os
 
-DEFAULT_MODEL = "groq/openai/gpt-oss-120b"
+DEFAULT_MODEL = "groq/qwen/qwen3.6-27b"
 
 
 def get_llm() -> str:
