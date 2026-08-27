@@ -6,7 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from agent.graph import pipeline
+from agent.tools import run_web_search
+#from agent.graph import pipeline
 
 load_dotenv()
 
@@ -31,17 +32,12 @@ class ValidateRequest(BaseModel):
 def validate_idea(payload: ValidateRequest):
     if not payload.idea.strip():
         return JSONResponse(status_code=400, content={"error": "idea is required"})
+    result = run_web_search(payload.idea, payload.targetCustomer, payload.problem)
 
-    state = pipeline.invoke(
-        {
-            "idea": payload.idea,
-            "targetCustomer": payload.targetCustomer,
-            "problem": payload.problem,
-        }
-    )
+    if result.get("error"):
+        return JSONResponse(status_code=502, content={"error": result["error"]})
 
-    if state.get("error"):
-        return JSONResponse(status_code=502, content={"error": state["error"]})
+    return {"summary": result["summary"], "results": result["results"]}
 
     return {"summary": state["summary"], "results": state["results"]}
 
