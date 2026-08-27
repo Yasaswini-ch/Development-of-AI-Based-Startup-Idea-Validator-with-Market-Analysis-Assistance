@@ -73,7 +73,7 @@ export default function App() {
           <>
             <ValidationResults summary={validation.summary} results={validation.results} />
             <p className="mx-auto mt-10 max-w-xl border-t border-border pt-4 text-center font-mono text-xs uppercase tracking-wider text-muted">
-              Sources: {sourceCount} · Agents: CrewAI · LLM: Groq · Search: Live Web
+              Sources: {sourceCount} · Multi-agent Pipeline · Live Web Search
             </p>
           </>
         )}
