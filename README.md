@@ -3,11 +3,13 @@
 Development of an AI-based startup idea validator with market analysis assistance.
 
 The project lets a founder enter a startup idea, target customer, and problem statement,
-and get back an initial validation summary backed by real web search results (Tavily,
-with a free DuckDuckGo/Wikipedia/Hacker News fallback so it still works without a
-search API key). Milestone 1 is in progress — see
-[`docs/milestone1-plan.md`](docs/milestone1-plan.md) for the current task breakdown
-and timeline.
+and get back an initial validation summary backed by real web search results across 5
+research angles (market size, competitors, industry news, customer demand, and how
+others solve the problem). Search runs on Tavily, with a free DuckDuckGo/Wikipedia/
+Hacker News fallback so it still works without a search API key; academic/research-paper
+sources are filtered out since they don't add useful signal for a founder. Milestone 1
+is in progress — see [`docs/milestone1-plan.md`](docs/milestone1-plan.md) for the
+current task breakdown and timeline.
 
 ## Architecture
 
@@ -40,11 +42,15 @@ flowchart TD
 | Backend      | FastAPI (`backend/`) — exposes `POST /validate` |
 | Agent framework | [CrewAI](https://www.crewai.com) — role/goal/tool-based agents (`backend/agent/crew_agents.py`) |
 | Orchestration | [LangGraph](https://www.langchain.com/langgraph) — pipeline state graph, one node per agent (`backend/agent/graph.py`) |
-| Search       | Tavily API (primary), with DuckDuckGo + Wikipedia + Hacker News as a zero-cost fallback chain — fetched directly (not LLM-mediated) for reliable, grounded results (`backend/agent/tools.py`) |
-| Reasoning LLM | [Groq](https://console.groq.com) (`qwen/qwen3.6-27b`, configurable — see `backend/agent/llm.py`) |
+| Search       | Tavily API (primary), with DuckDuckGo + Wikipedia + Hacker News as a zero-cost fallback chain — fetched directly (not LLM-mediated) across 5 search angles, academic sources filtered out (`backend/agent/tools.py`, `retrieval.py`) |
+| Reasoning LLM | [Groq](https://console.groq.com) (`qwen/qwen3.6-27b`, configurable — see `backend/agent/llm.py`); summary output passes a quality gate that rejects leaked reasoning text |
 | Database     | None yet |
 | Deployment   | [Render](https://render.com) — two services, config in `render.yaml` |
 | Version control | Git / GitHub |
+
+The product UI intentionally doesn't name any of the underlying frameworks/providers —
+status and footer text describe capability generically ("Multi-agent Pipeline," "Live
+Web Search") rather than saying "CrewAI," "Groq," or "Tavily."
 
 The original single-file Streamlit prototype (`app.py`) is kept for reference but is
 superseded by the `frontend/` + `backend/` split going forward.
@@ -59,7 +65,7 @@ superseded by the `frontend/` + `backend/` split going forward.
 │   └── agent/
 │       ├── graph.py         # LangGraph pipeline: state + node wiring
 │       ├── crew_agents.py    # CrewAI Agent/Task/Crew definitions
-│       ├── retrieval.py      # multi-angle query expansion + dedup
+│       ├── retrieval.py      # 5-angle query expansion, dedup, academic-source filter
 │       ├── tools.py          # Tavily (primary) + DuckDuckGo/Wikipedia/Hacker News fallback
 │       └── llm.py            # reasoning LLM provider/model selection
 ├── docs/
