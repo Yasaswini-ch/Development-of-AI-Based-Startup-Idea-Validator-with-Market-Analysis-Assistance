@@ -52,10 +52,14 @@ agents are added as new graph nodes without restructuring the backend.
 - **CrewAI role**: "Web Search Agent" — goal: retrieve live, relevant market/competitor
   data; tool: web search (Tavily primary, DuckDuckGo/Wikipedia/Hacker News fallback)
 - **LangGraph node**: `web_search` — runs two things: (1) `agent/retrieval.py` expands
-  the idea into several search angles (market size, competitors, customer demand) and
-  fetches+dedupes real results directly in code, and (2) the CrewAI crew produces a
-  short plain-text summary. Results never pass through the LLM, so they can't be
-  paraphrased or invented — only the summary paragraph is LLM-generated.
+  the idea into 5 search angles (market size & trends, competitors, industry news,
+  customer demand, how others solve this problem), fetches up to 8 results per angle,
+  drops academic/research-paper domains (arXiv, ResearchGate, IEEE, etc. — not useful
+  signal for a founder), dedupes by URL, and ranks the rest — all directly in code, and
+  (2) the CrewAI crew produces a short plain-text summary. Results never pass through
+  the LLM, so they can't be paraphrased or invented — only the summary paragraph is
+  LLM-generated, and even that goes through a quality gate (see Error Handling Policy)
+  before it's trusted.
 - **Output**: `{ summary, results[] }` where `results` is
   `{ title, snippet, url, query, score }[]` — `query` is which search angle surfaced
   that result, `score` is a computed relevance score (word-overlap between the query
@@ -154,8 +158,9 @@ should build against this without needing to sync on every field.
 | Backend | FastAPI | Lightweight, async-friendly, minimal boilerplate for a single endpoint, easy to extend with more agents later. |
 | Orchestration | LangGraph | Owns pipeline state and node wiring — each agent is a graph node, so M2-M4 agents are added without restructuring the backend. |
 | Agents | CrewAI | Role/goal/tool-based agent definitions, one Agent+Task per pipeline stage — matches the brief's named-agent structure directly. |
-| Search | Tavily API (primary), DuckDuckGo + Wikipedia + Hacker News (fallback chain) | Tavily gives a real, trained relevance score and reliable results — used whenever `TAVILY_API_KEY` is set. If it's missing or fails, the app falls back to the zero-cost chain (own computed relevance score) instead of erroring out. Tried DuckDuckGo as sole primary first, but its unofficial scraping library proved too flaky (empty or irrelevant results, inconsistent run to run) to trust for a live demo. |
-| Reasoning LLM | Groq (via CrewAI/LiteLLM) | Default provider for agent reasoning (`groq/qwen/qwen3.6-27b`), configurable via `LLM_MODEL` + provider API key (`GROQ_API_KEY`). Tried Google Gemini for a higher rate limit, but its current models were incompatible with our LiteLLM version (2.x deprecated for new keys, 3.x needs newer message formatting) — reverted to Groq. |
+| Search | Tavily API (primary), DuckDuckGo + Wikipedia + Hacker News (fallback chain) | Tavily gives a real, trained relevance score and reliable results — used whenever `TAVILY_API_KEY` is set. If it's missing or fails, the app falls back to the zero-cost chain (own computed relevance score) instead of erroring out. Tried DuckDuckGo as sole primary first, but its unofficial scraping library proved too flaky (empty or irrelevant results, inconsistent run to run) to trust for a live demo. Academic/research-paper domains are filtered out per mentor guidance — they read as literature review material, not market/competitor signal. |
+| Reasoning LLM | Groq (via CrewAI/LiteLLM) | Default provider for agent reasoning (`groq/qwen/qwen3.6-27b`), configurable via `LLM_MODEL` + provider API key (`GROQ_API_KEY`). Tried Google Gemini for a higher rate limit, but its current models were incompatible with our LiteLLM version (2.x deprecated for new keys, 3.x needs newer message formatting) — reverted to Groq. The model occasionally leaks raw ReAct-style reasoning text into its answer, so the summary output is validated before use (see Error Handling Policy). |
+| Product UI | No framework/provider names shown | Per mentor guidance, the UI doesn't surface "CrewAI," "Groq," "Tavily," etc. anywhere — footer/status text describes capability generically ("Multi-agent Pipeline," "Live Web Search") instead of naming the underlying tech. |
 | Hosting | Render | Already set up for this repo (see `render.yaml`). |
 
 ## 6. Deployment Topology
@@ -179,6 +184,11 @@ local vs. deployed).
   renders a specific `ErrorState` or `EmptyState` component with a human-readable message
 - Timeouts: each search source call uses a short timeout (5s) so one slow/unreachable
   source doesn't hang the whole request — the pipeline just moves to the next fallback
+- LLM output quality gate: the summary text is rejected (and replaced with a clean,
+  results-based fallback sentence) if it's too long or contains telltale reasoning-leak
+  markers ("Thought:", "Final Answer", stray `<think>` tags, meta-commentary about the
+  prompt) — this happened in testing once search coverage increased and the model's
+  chain-of-thought started leaking into its answer
 
 ## 8. Repo Structure (proposed)
 
