@@ -48,17 +48,17 @@ export default function App() {
   return (
     <div className="min-h-screen bg-surface">
       <main className="mx-auto max-w-5xl px-4 pb-24 pt-10 sm:pt-14">
-        <div className="mb-8 flex items-center justify-between">
-          <p className="font-mono text-xs uppercase tracking-widest text-muted">
-            Multi-agent · Live Web Search
-          </p>
-          <span className="flex items-center gap-1.5 rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-accent">
-            <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-accent" />
-            Live
-          </span>
-        </div>
-
         <div className="mx-auto max-w-xl">
+          <div className="mb-8 flex items-center justify-between">
+            <p className="font-mono text-xs uppercase tracking-widest text-muted cursor-blink">
+              Multi-agent · Live Web Search
+            </p>
+            <span className="flex items-center gap-1.5 rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-accent">
+              <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-accent" />
+              Live
+            </span>
+          </div>
+
           <header className="mb-8">
             <h1 className="font-serif text-4xl leading-tight text-text sm:text-5xl">
               Before you build it,
