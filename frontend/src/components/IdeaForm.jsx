@@ -1,4 +1,7 @@
 import { useState } from 'react'
+import { IconLightbulb, IconUsers, IconAlertTriangle, IconCheckCircle } from './icons'
+
+const IDEA_MAX = 300
 
 export default function IdeaForm({ onSubmit, isLoading, loadingStep }) {
   const [idea, setIdea] = useState('')
@@ -19,16 +22,24 @@ export default function IdeaForm({ onSubmit, isLoading, loadingStep }) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="rounded-2xl border border-border bg-panel p-6 sm:p-8"
+      className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8"
     >
       <div className="space-y-5">
         <div>
-          <label htmlFor="idea" className="mb-1.5 block font-mono text-xs uppercase tracking-wider text-muted">
-            Startup idea
-          </label>
+          <div className="mb-1.5 flex items-center justify-between">
+            <label htmlFor="idea" className="flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider text-muted">
+              <IconLightbulb className="h-3.5 w-3.5 text-accent" />
+              Startup idea <span className="text-accent">*</span>
+            </label>
+            <span className="flex items-center gap-2 font-mono text-[11px] text-muted">
+              {idea.length} / {IDEA_MAX}
+              {idea.trim() && <IconCheckCircle className="h-4 w-4 text-accent" />}
+            </span>
+          </div>
           <textarea
             id="idea"
             rows={3}
+            maxLength={IDEA_MAX}
             value={idea}
             onChange={(e) => setIdea(e.target.value)}
             placeholder="An AI tool that validates business ideas using market data"
@@ -40,9 +51,13 @@ export default function IdeaForm({ onSubmit, isLoading, loadingStep }) {
         </div>
 
         <div>
-          <label htmlFor="targetCustomer" className="mb-1.5 block font-mono text-xs uppercase tracking-wider text-muted">
-            Target customer
-          </label>
+          <div className="mb-1.5 flex items-center justify-between">
+            <label htmlFor="targetCustomer" className="flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider text-muted">
+              <IconUsers className="h-3.5 w-3.5 text-accent" />
+              Target customer
+            </label>
+            {targetCustomer.trim() && <IconCheckCircle className="h-4 w-4 text-accent" />}
+          </div>
           <input
             id="targetCustomer"
             type="text"
@@ -54,9 +69,13 @@ export default function IdeaForm({ onSubmit, isLoading, loadingStep }) {
         </div>
 
         <div>
-          <label htmlFor="problem" className="mb-1.5 block font-mono text-xs uppercase tracking-wider text-muted">
-            Problem being solved
-          </label>
+          <div className="mb-1.5 flex items-center justify-between">
+            <label htmlFor="problem" className="flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider text-muted">
+              <IconAlertTriangle className="h-3.5 w-3.5 text-accent" />
+              Problem being solved
+            </label>
+            {problem.trim() && <IconCheckCircle className="h-4 w-4 text-accent" />}
+          </div>
           <textarea
             id="problem"
             rows={2}
@@ -70,7 +89,7 @@ export default function IdeaForm({ onSubmit, isLoading, loadingStep }) {
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full rounded-full bg-accent px-4 py-2.5 font-mono text-sm font-semibold uppercase tracking-wide text-surface transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+          className="w-full rounded-full bg-accent px-4 py-2.5 font-mono text-sm font-semibold uppercase tracking-wide text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isLoading ? 'Validating…' : 'Validate idea'}
         </button>

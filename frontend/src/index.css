@@ -3,15 +3,16 @@
 @theme {
   --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
+  --font-serif: "Fraunces", "Iowan Old Style", Georgia, serif;
 
-  --color-surface: #0a0a0a;
-  --color-panel: #131313;
-  --color-border: #2a2a2a;
-  --color-text: #f2f1ee;
-  --color-muted: #8f8d88;
-  --color-accent: #f2f1ee;
-  --color-accent-hover: #d8d6d1;
-  --color-danger: #ff6b6b;
+  --color-surface: #f6f2ec;
+  --color-panel: #fffdfa;
+  --color-border: #e6dfd3;
+  --color-text: #262220;
+  --color-muted: #8a8178;
+  --color-accent: #e0654b;
+  --color-accent-hover: #c8543c;
+  --color-danger: #c8543c;
 }
 
 body {
@@ -28,4 +29,13 @@ body {
 .cursor-blink::after {
   content: "_";
   animation: blink-cursor 1s step-end infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.pulse-dot {
+  animation: pulse-dot 1.6s ease-in-out infinite;
 }
