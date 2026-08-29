@@ -53,7 +53,8 @@ agents are added as new graph nodes without restructuring the backend.
   data; tool: web search (Tavily primary, DuckDuckGo/Wikipedia/Hacker News fallback)
 - **LangGraph node**: `web_search` — runs two things: (1) `agent/retrieval.py` expands
   the idea into 5 search angles (market size & trends, competitors, industry news,
-  customer demand, how others solve this problem), fetches up to 8 results per angle,
+  customer demand, how others solve this problem — see diagram below), fetches up to
+  8 results per angle,
   drops academic/research-paper domains (arXiv, ResearchGate, IEEE, etc. — not useful
   signal for a founder), dedupes by URL, and ranks the rest — all directly in code, and
   (2) the CrewAI crew produces a short plain-text summary. Results never pass through
@@ -64,6 +65,8 @@ agents are added as new graph nodes without restructuring the backend.
   `{ title, snippet, url, query, score }[]` — `query` is which search angle surfaced
   that result, `score` is a computed relevance score (word-overlap between the query
   and the result's text, since these free sources don't provide their own ranking)
+
+![The five research angles a submitted idea is expanded into](images/five-research-angles.svg)
 
 **Future extension point (Milestone 2+):** Market Opportunity, Competitor Discovery,
 SWOT/Risk, MVP Recommendation, GTM, and Report Generation agents each become a new

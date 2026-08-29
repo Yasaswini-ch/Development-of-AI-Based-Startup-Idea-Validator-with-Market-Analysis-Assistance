@@ -11,6 +11,8 @@ sources are filtered out since they don't add useful signal for a founder. Miles
 is in progress — see [`docs/milestone1-plan.md`](docs/milestone1-plan.md) for the
 current task breakdown and timeline.
 
+![The five research angles a submitted idea is expanded into](docs/images/five-research-angles.svg)
+
 ## Architecture
 
 The app is being split into a proper frontend/backend, per
