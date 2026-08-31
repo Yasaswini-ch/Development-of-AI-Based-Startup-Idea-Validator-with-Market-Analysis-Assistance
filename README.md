@@ -57,6 +57,69 @@ Web Search") rather than saying "CrewAI," "Groq," or "Tavily."
 The original single-file Streamlit prototype (`app.py`) is kept for reference but is
 superseded by the `frontend/` + `backend/` split going forward.
 
+## API
+
+The frontend talks to exactly one backend endpoint, `POST /validate`. Full field-level
+contract (types, required/optional, error shapes) is in
+[`docs/architecture.md`](docs/architecture.md#4-api-contract) — below is a real example
+of what goes over the wire.
+
+**Request**
+
+```bash
+curl -X POST https://startup-validator-backend.onrender.com/validate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "idea": "A subscription box for eco-friendly cleaning products",
+    "targetCustomer": "environmentally conscious households",
+    "problem": "plastic waste from cleaning product packaging"
+  }'
+```
+
+**Response `200 OK`**
+
+```json
+{
+  "summary": "The eco-friendly cleaning subscription market is growing steadily, driven by rising consumer demand for sustainable household products. Several competitors already operate in this space, but most focus on either refills or fully plastic-free packaging rather than both...",
+  "results": [
+    {
+      "title": "Sustainable Cleaning Products Market Size Report, 2026",
+      "snippet": "The global sustainable cleaning products market was valued at $4.2B in 2025 and is projected to grow at a CAGR of 11.3%...",
+      "url": "https://example.com/market-report",
+      "query": "eco-friendly cleaning subscription market size trends",
+      "angle": "market_size",
+      "score": 0.87
+    },
+    {
+      "title": "Top 5 Eco-Friendly Cleaning Subscription Boxes Compared",
+      "snippet": "A roundup of existing subscription services, covering pricing, packaging, and refill models...",
+      "url": "https://example.com/competitor-roundup",
+      "query": "eco-friendly cleaning subscription competitors",
+      "angle": "competitors",
+      "score": 0.79
+    }
+  ]
+}
+```
+
+`results` is grouped client-side by `angle` (one of `market_size`, `competitors`,
+`industry_news`, `customer_demand`, `existing_solutions`) — that's what powers the
+"grouped by research angle" sections in the UI. `score` is a 0–1 relevance value used
+for the animated count-up on each result card.
+
+**Error responses** — same shape either way, only the status code and message differ:
+
+```json
+// 400 — empty/missing idea
+{ "error": "Idea is required." }
+
+// 502 — every search source (Tavily + all fallbacks) failed
+{ "error": "Search is temporarily unavailable. Please try again shortly." }
+```
+
+The frontend renders `EmptyState` when `results` comes back as an empty array (valid
+request, zero matches) and `ErrorState` with a retry button for any non-200 response.
+
 ## Project Structure
 
 ```
