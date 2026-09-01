@@ -179,6 +179,7 @@ def _fallback(results: list) -> dict:
         ),
         "trends": [],
         "segments": [],
+        "opportunityScore": 0,
     }
 
 
@@ -202,6 +203,9 @@ def analyze_market_opportunity(
         else:
             data["trends"] = data["trends"][:_MAX_TRENDS]
             data["segments"] = data["segments"][:_MAX_SEGMENTS]
+            # Phase 2 stretch feature, not computed yet - stub so the shape
+            # is stable for consumers from day one.
+            data.setdefault("opportunityScore", 0)
             return data
     except Exception:
         logger.exception("Market opportunity crew failed")

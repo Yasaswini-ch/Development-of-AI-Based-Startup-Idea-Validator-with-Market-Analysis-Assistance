@@ -47,6 +47,7 @@ def validate_idea(payload: ValidateRequest):
         "summary": state["summary"],
         "results": state["results"],
         "marketOpportunity": state.get("marketOpportunity"),
+        "competitors": state.get("competitors"),
     }
 
 

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import useCountUp from '../hooks/useCountUp'
 import { IconTrendingUp, IconUsers, IconShield, IconNewspaper, IconGlobe } from './icons'
 import MarketOpportunity from './MarketOpportunity'
+import CompetitorAnalysis from './CompetitorAnalysis'
 
 const INITIAL_VISIBLE = 3
 
@@ -92,7 +93,7 @@ function AngleGroup({ angle, items }) {
   )
 }
 
-export default function ValidationResults({ summary, results, marketOpportunity }) {
+export default function ValidationResults({ summary, results, marketOpportunity, competitors }) {
   const groups = []
   const order = []
   for (const r of results) {
@@ -130,6 +131,7 @@ export default function ValidationResults({ summary, results, marketOpportunity 
       </div>
 
       <MarketOpportunity data={marketOpportunity} />
+      <CompetitorAnalysis data={competitors} />
 
       <div className="mt-8 space-y-8">
         {groups.map((g) => (
