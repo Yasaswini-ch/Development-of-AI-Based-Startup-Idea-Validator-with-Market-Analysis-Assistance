@@ -24,13 +24,28 @@ function SegmentCard({ segment }) {
   )
 }
 
+function scoreTier(score) {
+  if (score >= 70) {
+    return { label: 'Strong opportunity', className: 'text-accent' }
+  }
+  if (score >= 40) {
+    return { label: 'Moderate opportunity', className: 'text-accent/80' }
+  }
+  return { label: 'Early signal', className: 'text-muted' }
+}
+
 function OpportunityScore({ score }) {
   const value = useCountUp(score, 800)
+  const tier = scoreTier(score)
   return (
     <div className="shrink-0 border-l border-border pl-6 text-right">
       <p className="font-serif text-4xl text-accent">{value}</p>
       <p className="font-mono text-[10px] uppercase tracking-widest text-muted">
         Opportunity Score
+      </p>
+      <p className={`mt-1 text-xs font-medium ${tier.className}`}>{tier.label}</p>
+      <p className="mt-0.5 max-w-[9rem] text-[11px] leading-snug text-muted">
+        Based on market size, growth trends &amp; competitor density
       </p>
     </div>
   )
@@ -43,7 +58,7 @@ export default function MarketOpportunity({ data }) {
   if (!marketSize && trends.length === 0 && segments.length === 0) return null
 
   return (
-    <div className="mx-auto mt-6 max-w-xl rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+    <div className="h-full rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
       <div className="flex items-center gap-2">
         <IconLightbulb className="h-4 w-4 text-accent" />
         <h2 className="font-mono text-xs uppercase tracking-widest text-muted">
