@@ -143,11 +143,13 @@ def opportunity_score_node(state: PipelineState) -> PipelineState:
 
     market_opportunity = state.get("marketOpportunity", {})
     competitors = state.get("competitors", {})
+    results = state.get("results", [])
 
     try:
         score = calculate_opportunity_score(
             market_opportunity,
             competitors,
+            results,
         )
 
         # Add score inside Market Opportunity output
