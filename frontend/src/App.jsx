@@ -60,13 +60,16 @@ export default function App() {
           </div>
 
           <header className="mb-8">
+            <p className="mb-2 font-mono text-xs uppercase tracking-widest text-accent">
+              Affinity
+            </p>
             <h1 className="font-serif text-4xl leading-tight text-text sm:text-5xl">
               Before you build it,
               <br />
-              see if the <em className="text-accent italic">market</em> wants it.
+              measure the <em className="text-accent italic">affinity</em>.
             </h1>
             <p className="mt-3 font-mono text-xs uppercase tracking-widest text-muted">
-              AI Startup Idea Validator
+              AI Market Research Agent
             </p>
           </header>
 
@@ -84,9 +87,13 @@ export default function App() {
 
         {validation && validation.results.length > 0 && (
           <>
-            <ValidationResults summary={validation.summary} results={validation.results} />
+            <ValidationResults
+              summary={validation.summary}
+              results={validation.results}
+              marketOpportunity={validation.marketOpportunity}
+            />
             <p className="mx-auto mt-10 max-w-5xl border-t border-border pt-4 text-center font-mono text-xs uppercase tracking-wider text-muted">
-              Sources: {sourceCount} · Framework: CrewAI · LLM: Groq · Search: Live Web
+              Sources: {sourceCount} · Multi-agent Pipeline · Live Web Search
               {updatedAt && (
                 <>
                   {' '}
