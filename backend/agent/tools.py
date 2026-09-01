@@ -16,7 +16,6 @@ import re
 import urllib.parse
 import urllib.request
 
-from crewai.tools import tool
 from ddgs import DDGS
 from tavily import TavilyClient
 
@@ -150,19 +149,3 @@ def fetch_results(query: str, max_results: int = 5) -> list[dict]:
         results = _free_fallback(query, max_results)
 
     return [{**r, "query": query} for r in results]
-
-
-@tool("Web Search")
-def web_search(query: str) -> str:
-    """Search the web for live market and competitor data related to a startup idea.
-
-    Args:
-        query: the search query, e.g. "AI meal planner market size competitors"
-    """
-    results = fetch_results(query)
-
-    if not results:
-        return "No results found."
-
-    lines = [f"- {r['title']}: {r['snippet']} ({r['url']})" for r in results]
-    return "\n".join(lines)

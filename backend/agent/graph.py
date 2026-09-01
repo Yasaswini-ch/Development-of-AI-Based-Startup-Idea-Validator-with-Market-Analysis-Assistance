@@ -1,3 +1,4 @@
+import logging
 from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -6,6 +7,8 @@ from . import retrieval
 from .crew_agents import build_search_crew
 from .market_agent import analyze_market_opportunity
 from .output_guard import looks_like_leaked_reasoning, strip_reasoning
+
+logger = logging.getLogger(__name__)
 
 
 def _fallback_summary(idea: str, results: list) -> str:
@@ -46,13 +49,15 @@ def web_search_node(state: PipelineState) -> PipelineState:
 
     summary = None
     try:
-        crew = build_search_crew(idea, target_customer, problem)
+        crew = build_search_crew(idea, target_customer, problem, results)
         crew_output = crew.kickoff()
         candidate = strip_reasoning(crew_output.raw)
-        if not looks_like_leaked_reasoning(candidate):
+        if looks_like_leaked_reasoning(candidate):
+            logger.warning("Web search summary rejected by quality gate: %r", candidate)
+        else:
             summary = candidate
     except Exception:
-        pass
+        logger.exception("Web search summary crew failed")
 
     if summary is None:
         # Either the LLM step failed, or its output still looked like a

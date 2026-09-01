@@ -16,11 +16,14 @@ a leaked reasoning trace.
 """
 
 import json
+import logging
 
 from crewai import Agent, Crew, Process, Task
 
 from .llm import get_llm
-from .output_guard import looks_like_leaked_reasoning, strip_reasoning
+from .output_guard import strip_reasoning
+
+logger = logging.getLogger(__name__)
 
 _MAX_SOURCES_IN_CONTEXT = 10
 _MAX_SNIPPET_LEN = 300
@@ -63,12 +66,15 @@ def _build_market_crew(idea: str, target_customer: str, problem: str, context: s
         ),
         expected_output=(
             "A single JSON object, and nothing else - no markdown code fences, no "
-            "explanation before or after it. Shape:\n"
-            '{"industrySize": "one sentence describing market size/growth if known, '
-            'or \'not enough data\' if not", '
-            '"trends": ["short trend 1", "short trend 2", "..."], '
-            '"targetSegments": ["segment 1", "segment 2", "..."]}\n'
-            "Keep each list to at most 4 items."
+            "explanation before or after it, no placeholder text. Fill in real "
+            "content from the sources above. For example, for a different idea "
+            "this might look like:\n"
+            '{"industrySize": "The market was valued at $2.1 billion in 2024 and is '
+            'growing at 12% annually.", '
+            '"trends": ["Rising demand for subscription-based delivery", '
+            '"Increased focus on eco-friendly packaging"], '
+            '"targetSegments": ["Urban millennials", "Budget-conscious families"]}\n'
+            "Use at most 4 items per list, grounded only in the sources given to you."
         ),
         agent=analyst,
     )
@@ -76,18 +82,42 @@ def _build_market_crew(idea: str, target_customer: str, problem: str, context: s
     return Crew(agents=[analyst], tasks=[task], process=Process.sequential, verbose=False)
 
 
+def _find_balanced_objects(text: str) -> list[str]:
+    """Find every top-level {...} substring via brace counting, not just
+    first-'{'-to-last-'}' (which breaks if the model wraps its real answer
+    in explanatory text containing its own braces, e.g. a markdown code
+    fence example). Returns them in the order they appear.
+    """
+    objects = []
+    depth = 0
+    start = None
+    for i, ch in enumerate(text):
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start is not None:
+                    objects.append(text[start : i + 1])
+    return objects
+
+
 def _extract_json(text: str) -> dict | None:
-    start = text.find("{")
-    end = text.rfind("}")
-    if start == -1 or end == -1 or end < start:
-        return None
-    try:
-        data = json.loads(text[start : end + 1])
-    except (json.JSONDecodeError, ValueError):
-        return None
-    if not isinstance(data, dict):
-        return None
-    return data
+    """Try every balanced {...} substring, last-to-first, and return the
+    first one that's both valid JSON and has the right shape. This
+    recovers the real answer even when the model buries it in a rambling
+    scratchpad, as long as it does eventually produce valid JSON somewhere.
+    """
+    for candidate in reversed(_find_balanced_objects(text)):
+        try:
+            data = json.loads(candidate)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(data, dict) and _is_valid_shape(data):
+            return data
+    return None
 
 
 def _is_valid_shape(data: dict) -> bool:
@@ -123,13 +153,18 @@ def analyze_market_opportunity(
         crew_output = crew.kickoff()
         candidate_text = strip_reasoning(crew_output.raw)
 
-        if not looks_like_leaked_reasoning(candidate_text, max_len=1500):
-            data = _extract_json(candidate_text)
-            if data and _is_valid_shape(data):
-                data["trends"] = data["trends"][:4]
-                data["targetSegments"] = data["targetSegments"][:4]
-                return data
+        # Search for valid JSON directly rather than rejecting the whole
+        # response for containing extra text first - this model often
+        # rambles through a visible scratchpad but still lands on a
+        # correct, well-shaped JSON object by the end of it.
+        data = _extract_json(candidate_text)
+        if data is None:
+            logger.warning("Market opportunity: no valid JSON found in output: %r", candidate_text)
+        else:
+            data["trends"] = data["trends"][:4]
+            data["targetSegments"] = data["targetSegments"][:4]
+            return data
     except Exception:
-        pass
+        logger.exception("Market opportunity crew failed")
 
     return _fallback(results)
