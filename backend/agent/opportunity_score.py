@@ -112,9 +112,33 @@ def _has_no_grounded_data(market_data: dict, competitor_data: dict) -> bool:
     )
 
 
+_SEARCH_FALLBACK_CAP = 50
+
+
+def _search_fallback_score(search_results: list) -> int:
+    """When both LLM agents fail, fall back to the raw web search results
+    instead of a flat 0. `search_results` comes from retrieval.collect(),
+    which hits Tavily/DuckDuckGo/Wikipedia/HN directly and doesn't depend on
+    the LLM at all, so it's still real, grounded signal even during a Groq
+    rate limit - just weaker signal than a full LLM analysis, hence the
+    lower cap.
+    """
+    if not search_results:
+        return 0
+
+    count_score = min(len(search_results), 10) / 10 * (_SEARCH_FALLBACK_CAP / 2)
+
+    scores = [r.get("score", 0) for r in search_results]
+    avg_relevance = sum(scores) / len(scores) if scores else 0
+    relevance_score = avg_relevance * (_SEARCH_FALLBACK_CAP / 2)
+
+    return round(min(_SEARCH_FALLBACK_CAP, count_score + relevance_score))
+
+
 def calculate_opportunity_score(
     market_data: dict | None,
     competitor_data: dict | None,
+    search_results: list | None = None,
 ) -> int:
     """
     Return a composite opportunity score from 0 to 100.
@@ -124,15 +148,16 @@ def calculate_opportunity_score(
     - Growth/trends: 30
     - Competitor density: 30
 
-    Returns 0 if both upstream agents produced no grounded data at all,
-    rather than letting "0 competitors found" masquerade as "no
-    competition" when it more likely means the analysis failed.
+    If both upstream agents produced no grounded data at all (e.g. a Groq
+    rate limit), falls back to a weaker score derived from the raw web
+    search results instead of a flat 0 - real signal, just not LLM-analyzed
+    signal. Only returns 0 when there's truly nothing to work with.
     """
     market_data = market_data or {}
     competitor_data = competitor_data or {}
 
     if _has_no_grounded_data(market_data, competitor_data):
-        return 0
+        return _search_fallback_score(search_results or [])
 
     market_score = _market_size_score(
         market_data.get("marketSize", "")

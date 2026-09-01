@@ -1,4 +1,5 @@
 import { IconLightbulb, IconTrendingUp, IconUsers } from './icons'
+import useCountUp from '../hooks/useCountUp'
 
 function SegmentCard({ segment }) {
   const { segment: name, painPoints, motivations, buyingBehavior } = segment
@@ -23,10 +24,22 @@ function SegmentCard({ segment }) {
   )
 }
 
+function OpportunityScore({ score }) {
+  const value = useCountUp(score, 800)
+  return (
+    <div className="shrink-0 border-l border-border pl-6 text-right">
+      <p className="font-serif text-4xl text-accent">{value}</p>
+      <p className="font-mono text-[10px] uppercase tracking-widest text-muted">
+        Opportunity Score
+      </p>
+    </div>
+  )
+}
+
 export default function MarketOpportunity({ data }) {
   if (!data) return null
 
-  const { marketSize, trends = [], segments = [] } = data
+  const { marketSize, trends = [], segments = [], opportunityScore = 0 } = data
   if (!marketSize && trends.length === 0 && segments.length === 0) return null
 
   return (
@@ -38,7 +51,16 @@ export default function MarketOpportunity({ data }) {
         </h2>
       </div>
 
-      {marketSize && <p className="mt-3 text-sm text-text leading-relaxed">{marketSize}</p>}
+      {marketSize && (
+        <div className="mt-3 flex items-start gap-6">
+          <p className="flex-1 text-sm text-text leading-relaxed">{marketSize}</p>
+          {/* A score of 0 means the underlying analysis produced no grounded
+              data at all (see backend/agent/opportunity_score.py) - showing
+              "0" here would read as a real negative signal, not "unavailable",
+              so it's hidden rather than displayed as a plausible-looking number. */}
+          {opportunityScore > 0 && <OpportunityScore score={opportunityScore} />}
+        </div>
+      )}
 
       {trends.length > 0 && (
         <div className="mt-5">
