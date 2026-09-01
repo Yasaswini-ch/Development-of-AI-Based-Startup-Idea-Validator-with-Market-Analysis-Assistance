@@ -4,6 +4,7 @@ from typing import TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from . import retrieval
+from .competitor_agent import analyze_competitors
 from .crew_agents import build_search_crew
 from .market_agent import analyze_market_opportunity
 from .output_guard import looks_like_leaked_reasoning, strip_reasoning
@@ -29,6 +30,7 @@ class PipelineState(TypedDict, total=False):
     summary: str
     results: list
     marketOpportunity: dict
+    competitors: dict
     error: str
 
 
@@ -88,13 +90,35 @@ def market_opportunity_node(state: PipelineState) -> PipelineState:
     return {**state, "marketOpportunity": market_opportunity}
 
 
+def competitor_discovery_node(state: PipelineState) -> PipelineState:
+    """M2 node: Competitor Discovery & Comparison Agent.
+
+    Consumes the Web Search Agent's results (same context-passing pattern
+    as market_opportunity_node) and identifies real competitors, their
+    offerings, and gaps - grounded in that data, not invented. Runs last in
+    the M2 chain: web_search -> market_opportunity -> competitor_discovery.
+    """
+    if state.get("error"):
+        return state  # upstream already failed, nothing to add
+
+    idea = state["idea"]
+    target_customer = state.get("targetCustomer", "")
+    problem = state.get("problem", "")
+    results = state.get("results", [])
+
+    competitors = analyze_competitors(idea, target_customer, problem, results)
+    return {**state, "competitors": competitors}
+
+
 def build_pipeline():
     graph = StateGraph(PipelineState)
     graph.add_node("web_search", web_search_node)
     graph.add_node("market_opportunity", market_opportunity_node)
+    graph.add_node("competitor_discovery", competitor_discovery_node)
     graph.add_edge(START, "web_search")
     graph.add_edge("web_search", "market_opportunity")
-    graph.add_edge("market_opportunity", END)
+    graph.add_edge("market_opportunity", "competitor_discovery")
+    graph.add_edge("competitor_discovery", END)
     return graph.compile()
 
 
