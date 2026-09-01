@@ -7,6 +7,7 @@ from . import retrieval
 from .competitor_agent import analyze_competitors
 from .crew_agents import build_search_crew
 from .market_agent import analyze_market_opportunity
+from .opportunity_score import calculate_opportunity_score
 from .output_guard import looks_like_leaked_reasoning, strip_reasoning
 
 logger = logging.getLogger(__name__)
@@ -14,11 +15,13 @@ logger = logging.getLogger(__name__)
 
 def _fallback_summary(idea: str, results: list) -> str:
     if not results:
-        return f"No market data found yet for \"{idea}\"."
+        return f'No market data found yet for "{idea}".'
+
     angles = sorted({r.get("angle", "") for r in results} - {""})
     coverage = ", ".join(angles) if angles else "the web"
+
     return (
-        f"Found {len(results)} relevant sources for \"{idea}\", covering {coverage}. "
+        f'Found {len(results)} relevant sources for "{idea}", covering {coverage}. '
         "See the results below for details."
     )
 
@@ -35,11 +38,8 @@ class PipelineState(TypedDict, total=False):
 
 
 def web_search_node(state: PipelineState) -> PipelineState:
-    """M1 node: runs the Web Search crew for a summary, and separately
-    collects real results across several search angles (not via the LLM) so
-    the frontend always shows genuine data instead of something the model
-    paraphrased or invented.
-    """
+    """M1 node: runs the Web Search crew and collects real results."""
+
     idea = state["idea"]
     target_customer = state.get("targetCustomer", "")
     problem = state.get("problem", "")
@@ -50,75 +50,146 @@ def web_search_node(state: PipelineState) -> PipelineState:
         return {**state, "error": str(exc)}
 
     summary = None
+
     try:
-        crew = build_search_crew(idea, target_customer, problem, results)
+        crew = build_search_crew(
+            idea,
+            target_customer,
+            problem,
+            results,
+        )
+
         crew_output = crew.kickoff()
         candidate = strip_reasoning(crew_output.raw)
+
         if looks_like_leaked_reasoning(candidate):
-            logger.warning("Web search summary rejected by quality gate: %r", candidate)
+            logger.warning(
+                "Web search summary rejected by quality gate: %r",
+                candidate,
+            )
         else:
             summary = candidate
+
     except Exception:
         logger.exception("Web search summary crew failed")
 
     if summary is None:
-        # Either the LLM step failed, or its output still looked like a
-        # leaked reasoning trace - fall back to a clean, always-safe summary
-        # built from the real results rather than risk showing garbage.
         summary = _fallback_summary(idea, results)
 
-    return {**state, "summary": summary, "results": results}
+    return {
+        **state,
+        "summary": summary,
+        "results": results,
+    }
 
 
 def market_opportunity_node(state: PipelineState) -> PipelineState:
-    """M2 node: Market Opportunity & Customer Segmentation Analysis Agent.
+    """M2 node: Market Opportunity & Customer Segmentation Analysis."""
 
-    Consumes the Web Search Agent's results (context passing between agents)
-    and asks the LLM to reason about industry size, trends, and target
-    segments - grounded in that real data, not invented. Runs after
-    web_search in the graph below.
-    """
     if state.get("error"):
-        return state  # upstream already failed, nothing to add
+        return state
 
     idea = state["idea"]
     target_customer = state.get("targetCustomer", "")
     problem = state.get("problem", "")
     results = state.get("results", [])
 
-    market_opportunity = analyze_market_opportunity(idea, target_customer, problem, results)
-    return {**state, "marketOpportunity": market_opportunity}
+    market_opportunity = analyze_market_opportunity(
+        idea,
+        target_customer,
+        problem,
+        results,
+    )
+
+    return {
+        **state,
+        "marketOpportunity": market_opportunity,
+    }
 
 
 def competitor_discovery_node(state: PipelineState) -> PipelineState:
-    """M2 node: Competitor Discovery & Comparison Agent.
+    """M2 node: Competitor Discovery & Comparison Agent."""
 
-    Consumes the Web Search Agent's results (same context-passing pattern
-    as market_opportunity_node) and identifies real competitors, their
-    offerings, and gaps - grounded in that data, not invented. Runs last in
-    the M2 chain: web_search -> market_opportunity -> competitor_discovery.
-    """
     if state.get("error"):
-        return state  # upstream already failed, nothing to add
+        return state
 
     idea = state["idea"]
     target_customer = state.get("targetCustomer", "")
     problem = state.get("problem", "")
     results = state.get("results", [])
 
-    competitors = analyze_competitors(idea, target_customer, problem, results)
-    return {**state, "competitors": competitors}
+    competitors = analyze_competitors(
+        idea,
+        target_customer,
+        problem,
+        results,
+    )
+
+    return {
+        **state,
+        "competitors": competitors,
+    }
+
+
+# -------------------------------
+# MILESTONE 2: OPPORTUNITY SCORE
+# -------------------------------
+
+def opportunity_score_node(state: PipelineState) -> PipelineState:
+    """Calculate the Opportunity Score using market and competitor data."""
+
+    if state.get("error"):
+        return state
+
+    market_opportunity = state.get("marketOpportunity", {})
+    competitors = state.get("competitors", {})
+
+    try:
+        score = calculate_opportunity_score(
+            market_opportunity,
+            competitors,
+        )
+
+        # Add score inside Market Opportunity output
+        market_opportunity["opportunityScore"] = score
+
+        return {
+            **state,
+            "marketOpportunity": market_opportunity,
+        }
+
+    except Exception:
+        logger.exception("Opportunity score calculation failed")
+
+        # Safe fallback
+        market_opportunity["opportunityScore"] = 0
+
+        return {
+            **state,
+            "marketOpportunity": market_opportunity,
+        }
 
 
 def build_pipeline():
     graph = StateGraph(PipelineState)
+
+    # Existing nodes
     graph.add_node("web_search", web_search_node)
     graph.add_node("market_opportunity", market_opportunity_node)
     graph.add_node("competitor_discovery", competitor_discovery_node)
+
+    # Sashi's Milestone 2 feature
+    graph.add_node("opportunity_score", opportunity_score_node)
+
+    # Pipeline flow
     graph.add_edge(START, "web_search")
     graph.add_edge("web_search", "market_opportunity")
     graph.add_edge("market_opportunity", "competitor_discovery")
-    graph.add_edge("competitor_discovery", END)
+
+    # Calculate score after both analyses are available
+    graph.add_edge("competitor_discovery", "opportunity_score")
+    graph.add_edge("opportunity_score", END)
+
     return graph.compile()
 
 
