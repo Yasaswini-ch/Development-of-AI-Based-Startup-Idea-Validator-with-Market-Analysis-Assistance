@@ -3,14 +3,15 @@
 **Before you build it, measure the affinity.**
 
 An AI-based startup idea validator with market analysis assistance. The project lets
-a founder enter a startup idea, target customer, and problem statement,
-and get back an initial validation summary backed by real web search results across 5
-research angles (market size, competitors, industry news, customer demand, and how
-others solve the problem). Search runs on Tavily, with a free DuckDuckGo/Wikipedia/
-Hacker News fallback so it still works without a search API key; academic/research-paper
-sources are filtered out since they don't add useful signal for a founder. Milestone 1
-is in progress — see [`docs/milestone1-plan.md`](docs/milestone1-plan.md) for the
-current task breakdown and timeline.
+a founder enter a startup idea, target customer, and problem statement, and get back
+real search results across 5 research angles, a structured market opportunity analysis
+(size, trends, customer segments with pain points/motivations/buying behavior), and a
+competitor comparison (offerings, positioning, gaps) — three agents chained in
+sequence, each reasoning over real data rather than inventing it. Search runs on
+Tavily, with a free DuckDuckGo/Wikipedia/Hacker News fallback so it still works without
+a search API key; academic/research-paper sources are filtered out since they don't add
+useful signal for a founder. Milestone 1 is complete; Milestone 2 (Market Opportunity +
+Competitor Discovery agents) is in progress.
 
 ![The five research angles a submitted idea is expanded into](docs/images/five-research-angles.svg)
 
@@ -29,11 +30,15 @@ flowchart TD
     Retrieval --> Tavily["Tavily API\n(primary)"]
     Retrieval -.fallback.-> Free["DuckDuckGo + Wikipedia\n+ Hacker News\n(zero-cost)"]
 
-    Pipeline --> Crew["CrewAI Web Search Agent\nagent/crew_agents.py"]
-    Crew --> LLM["Groq LLM\nqwen3.6-27b"]
+    Pipeline --> WS["Web Search Agent\nagent/crew_agents.py"]
+    WS --> MO["Market Opportunity Agent\nagent/market_agent.py"]
+    MO --> CD["Competitor Discovery Agent\nagent/competitor_agent.py"]
+    WS --> LLM["Groq LLM\nqwen3.6-27b"]
+    MO --> LLM
+    CD --> LLM
 
-    Retrieval --> Response["summary + results"]
-    Crew --> Response
+    Retrieval --> Response["summary + results +\nmarketOpportunity + competitors"]
+    CD --> Response
     Response --> Backend
     Backend -->|JSON| Frontend
     Frontend -->|renders results| User
@@ -43,8 +48,8 @@ flowchart TD
 |--------------|----------------------------------------|
 | Frontend     | React + Tailwind CSS (`frontend/`) |
 | Backend      | FastAPI (`backend/`) — exposes `POST /validate` |
-| Agent framework | [CrewAI](https://www.crewai.com) — role/goal/tool-based agents (`backend/agent/crew_agents.py`) |
-| Orchestration | [LangGraph](https://www.langchain.com/langgraph) — pipeline state graph, one node per agent (`backend/agent/graph.py`) |
+| Agent framework | [CrewAI](https://www.crewai.com) — 3 agents: Web Search (`crew_agents.py`), Market Opportunity (`market_agent.py`), Competitor Discovery (`competitor_agent.py`) |
+| Orchestration | [LangGraph](https://www.langchain.com/langgraph) — 3-node pipeline, `web_search → market_opportunity → competitor_discovery` (`backend/agent/graph.py`) |
 | Search       | Tavily API (primary), with DuckDuckGo + Wikipedia + Hacker News as a zero-cost fallback chain — fetched directly (not LLM-mediated) across 5 search angles, academic sources filtered out (`backend/agent/tools.py`, `retrieval.py`) |
 | Reasoning LLM | [Groq](https://console.groq.com) (`qwen/qwen3.6-27b`, configurable — see `backend/agent/llm.py`); summary output passes a quality gate that rejects leaked reasoning text |
 | Database     | None yet |
@@ -81,7 +86,7 @@ curl -X POST https://startup-validator-backend.onrender.com/validate \
 
 ```json
 {
-  "summary": "The eco-friendly cleaning subscription market is growing steadily, driven by rising consumer demand for sustainable household products. Several competitors already operate in this space, but most focus on either refills or fully plastic-free packaging rather than both...",
+  "summary": "The eco-friendly cleaning subscription market is growing steadily, driven by rising consumer demand for sustainable household products...",
   "results": [
     {
       "title": "Sustainable Cleaning Products Market Size Report, 2026",
@@ -90,23 +95,43 @@ curl -X POST https://startup-validator-backend.onrender.com/validate \
       "query": "eco-friendly cleaning subscription market size trends",
       "angle": "market_size",
       "score": 0.87
-    },
-    {
-      "title": "Top 5 Eco-Friendly Cleaning Subscription Boxes Compared",
-      "snippet": "A roundup of existing subscription services, covering pricing, packaging, and refill models...",
-      "url": "https://example.com/competitor-roundup",
-      "query": "eco-friendly cleaning subscription competitors",
-      "angle": "competitors",
-      "score": 0.79
     }
-  ]
+  ],
+  "marketOpportunity": {
+    "marketSize": "The global market was valued at $2.1 billion in 2024 and is growing at 12% annually.",
+    "trends": ["Rising demand for subscription-based delivery", "Increased focus on eco-friendly packaging"],
+    "segments": [
+      {
+        "segment": "Urban millennials",
+        "painPoints": "Limited time to research and compare options",
+        "motivations": "Convenience and sustainability credentials",
+        "buyingBehavior": "Research online, prefer subscription models over one-off purchases"
+      }
+    ],
+    "opportunityScore": 0
+  },
+  "competitors": {
+    "competitors": [
+      {
+        "name": "Acme Meal Co",
+        "offering": "Subscription meal kits with pre-portioned ingredients delivered weekly.",
+        "url": "https://example.com/acme-meal-co",
+        "gap": "No options for large families or bulk ordering.",
+        "estimatedPrice": "mid",
+        "featureBreadth": "moderate"
+      }
+    ]
+  }
 }
 ```
 
 `results` is grouped client-side by `angle` (one of `market_size`, `competitors`,
 `industry_news`, `customer_demand`, `existing_solutions`) — that's what powers the
 "grouped by research angle" sections in the UI. `score` is a 0–1 relevance value used
-for the animated count-up on each result card.
+for the animated count-up on each result card. `marketOpportunity` and `competitors`
+can come back with empty arrays (not missing keys) if that agent's LLM call fails or
+its output can't be validated — the frontend just doesn't render that section rather
+than showing an error, since the rest of the response is still valid.
 
 **Error responses** — same shape either way, only the status code and message differ:
 
@@ -127,13 +152,16 @@ request, zero matches) and `ErrorState` with a retry button for any non-200 resp
 .
 ├── frontend/            # React + Tailwind app (idea submission UI)
 ├── backend/             # FastAPI app + CrewAI/LangGraph agent pipeline
-│   ├── main.py            # POST /validate route
+│   ├── main.py              # POST /validate route
 │   └── agent/
-│       ├── graph.py         # LangGraph pipeline: state + node wiring
-│       ├── crew_agents.py    # CrewAI Agent/Task/Crew definitions
-│       ├── retrieval.py      # 5-angle query expansion, dedup, academic-source filter
-│       ├── tools.py          # Tavily (primary) + DuckDuckGo/Wikipedia/Hacker News fallback
-│       └── llm.py            # reasoning LLM provider/model selection
+│       ├── graph.py              # LangGraph pipeline: state + node wiring
+│       ├── crew_agents.py         # Web Search Agent (Milestone 1)
+│       ├── market_agent.py        # Market Opportunity Agent (Milestone 2)
+│       ├── competitor_agent.py    # Competitor Discovery Agent (Milestone 2)
+│       ├── output_guard.py        # shared reasoning-leak detection
+│       ├── retrieval.py           # 5-angle query expansion, dedup, academic-source filter
+│       ├── tools.py               # Tavily (primary) + DuckDuckGo/Wikipedia/Hacker News fallback
+│       └── llm.py                 # reasoning LLM provider/model selection
 ├── docs/
 │   ├── architecture.md       # system design, data flow, API contract
 │   ├── milestone1-plan.md    # task division + timeline
