@@ -57,7 +57,7 @@ export default function CompetitorAnalysis({ data }) {
   if (competitors.length === 0) return null
 
   return (
-    <div className="mx-auto mt-6 max-w-xl rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+    <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
       <div className="flex items-center gap-2">
         <IconShield className="h-4 w-4 text-accent" />
         <h2 className="font-mono text-xs uppercase tracking-widest text-muted">

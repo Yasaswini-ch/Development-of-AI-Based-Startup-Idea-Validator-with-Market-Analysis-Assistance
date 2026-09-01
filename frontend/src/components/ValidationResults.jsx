@@ -112,26 +112,31 @@ export default function ValidationResults({ summary, results, marketOpportunity,
 
   return (
     <div className="mt-6">
-      <div className="mx-auto max-w-xl rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
-        <div className="flex items-center gap-2">
-          <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-          <h2 className="font-mono text-xs uppercase tracking-widest text-muted">
-            Validation summary
-          </h2>
+      <div className="mx-auto grid max-w-4xl items-start gap-6 lg:grid-cols-2">
+        <div className="h-full rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+          <div className="flex items-center gap-2">
+            <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+            <h2 className="font-mono text-xs uppercase tracking-widest text-muted">
+              Validation summary
+            </h2>
+          </div>
+          <div className="mt-3 flex items-start gap-6">
+            <p className="flex-1 text-sm text-text leading-relaxed">{summary}</p>
+            {avgScore !== null && (
+              <div className="shrink-0 border-l border-border pl-6 text-right">
+                <p className="font-serif text-4xl text-accent">{confidence}%</p>
+                <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Confidence</p>
+              </div>
+            )}
+          </div>
         </div>
-        <div className="mt-3 flex items-start gap-6">
-          <p className="flex-1 text-sm text-text leading-relaxed">{summary}</p>
-          {avgScore !== null && (
-            <div className="shrink-0 border-l border-border pl-6 text-right">
-              <p className="font-serif text-4xl text-accent">{confidence}%</p>
-              <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Confidence</p>
-            </div>
-          )}
-        </div>
+
+        <MarketOpportunity data={marketOpportunity} />
       </div>
 
-      <MarketOpportunity data={marketOpportunity} />
-      <CompetitorAnalysis data={competitors} />
+      <div className="mx-auto mt-6 max-w-4xl">
+        <CompetitorAnalysis data={competitors} />
+      </div>
 
       <div className="mt-8 space-y-8">
         {groups.map((g) => (
