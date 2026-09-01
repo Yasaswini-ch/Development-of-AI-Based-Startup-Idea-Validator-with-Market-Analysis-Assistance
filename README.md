@@ -1,8 +1,9 @@
-# AI Based Startup Idea Validator
+# Affinity
 
-Development of an AI-based startup idea validator with market analysis assistance.
+**Before you build it, measure the affinity.**
 
-The project lets a founder enter a startup idea, target customer, and problem statement,
+An AI-based startup idea validator with market analysis assistance. The project lets
+a founder enter a startup idea, target customer, and problem statement,
 and get back an initial validation summary backed by real web search results across 5
 research angles (market size, competitors, industry news, customer demand, and how
 others solve the problem). Search runs on Tavily, with a free DuckDuckGo/Wikipedia/

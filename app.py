@@ -2,13 +2,13 @@ import streamlit as st
 
 
 st.set_page_config(
-    page_title="AI Startup Idea Validator",
+    page_title="Affinity",
     page_icon="AI",
     layout="wide",
 )
 
-st.title("AI Based Startup Idea Validator")
-st.caption("Market Analysis Assistance")
+st.title("Affinity")
+st.caption("Before you build it, measure the affinity.")
 
 st.write(
     "This is the first deployed version of the project. "

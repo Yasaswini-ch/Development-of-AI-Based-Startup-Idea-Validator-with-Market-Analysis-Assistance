@@ -10,7 +10,7 @@ from agent.graph import pipeline
 
 load_dotenv()
 
-app = FastAPI(title="AI Startup Idea Validator API")
+app = FastAPI(title="Affinity API")
 
 frontend_origin = os.environ.get("FRONTEND_ORIGIN", "http://localhost:5173")
 app.add_middleware(
