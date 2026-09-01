@@ -96,6 +96,22 @@ def _competition_score(competitors: list) -> int:
     return 6
 
 
+def _has_no_grounded_data(market_data: dict, competitor_data: dict) -> bool:
+    """True if both upstream agents came back empty - almost certainly a
+    failure (rate limit, LLM output rejected), not a genuine "no trends, no
+    competitors" market. Without this check, 0 competitors scores as a
+    perfect 30/30 ("no competition!"), so a fully-failed analysis would
+    otherwise still show a plausible-looking non-zero score - exactly the
+    kind of made-up-looking number the rest of this pipeline works hard to
+    avoid.
+    """
+    return (
+        not market_data.get("trends")
+        and not market_data.get("segments")
+        and not competitor_data.get("competitors")
+    )
+
+
 def calculate_opportunity_score(
     market_data: dict | None,
     competitor_data: dict | None,
@@ -107,9 +123,16 @@ def calculate_opportunity_score(
     - Market size: 40
     - Growth/trends: 30
     - Competitor density: 30
+
+    Returns 0 if both upstream agents produced no grounded data at all,
+    rather than letting "0 competitors found" masquerade as "no
+    competition" when it more likely means the analysis failed.
     """
     market_data = market_data or {}
     competitor_data = competitor_data or {}
+
+    if _has_no_grounded_data(market_data, competitor_data):
+        return 0
 
     market_score = _market_size_score(
         market_data.get("marketSize", "")
