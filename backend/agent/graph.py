@@ -4,43 +4,8 @@ from langgraph.graph import END, START, StateGraph
 
 from . import retrieval
 from .crew_agents import build_search_crew
-
-_REASONING_LEAK_MARKERS = (
-    "thought:",
-    "action:",
-    "final answer",
-    "<think",
-    "user's prompt",
-    "i did it wrong",
-    "let me",
-    "let's write",
-    "double check",
-    "i will simply",
-    "i need to make sure",
-)
-_MAX_SUMMARY_LEN = 700
-
-
-def _strip_reasoning(text: str) -> str:
-    """Some reasoning models (e.g. Groq's qwen3.6) emit a <think>...</think>
-    block before their real answer. Keep only what comes after the last
-    </think> tag, if present.
-    """
-    marker = "</think>"
-    if marker in text:
-        text = text.rsplit(marker, 1)[-1]
-    return text.strip()
-
-
-def _is_clean_summary(text: str) -> bool:
-    """Reject anything that still looks like a leaked reasoning trace rather
-    than a real answer - a normal 2-3 sentence summary is short and doesn't
-    contain ReAct-style scaffolding or meta-commentary about the prompt.
-    """
-    if not text or len(text) > _MAX_SUMMARY_LEN:
-        return False
-    lowered = text.lower()
-    return not any(marker in lowered for marker in _REASONING_LEAK_MARKERS)
+from .market_agent import analyze_market_opportunity
+from .output_guard import looks_like_leaked_reasoning, strip_reasoning
 
 
 def _fallback_summary(idea: str, results: list) -> str:
@@ -60,6 +25,7 @@ class PipelineState(TypedDict, total=False):
     problem: str
     summary: str
     results: list
+    marketOpportunity: dict
     error: str
 
 
@@ -68,10 +34,6 @@ def web_search_node(state: PipelineState) -> PipelineState:
     collects real results across several search angles (not via the LLM) so
     the frontend always shows genuine data instead of something the model
     paraphrased or invented.
-
-    M2+ adds nodes here (market_opportunity_node, competitor_discovery_node, ...) and
-    wires them into the graph below, each consuming/producing PipelineState fields per
-    docs/architecture.md's agent contracts.
     """
     idea = state["idea"]
     target_customer = state.get("targetCustomer", "")
@@ -86,8 +48,8 @@ def web_search_node(state: PipelineState) -> PipelineState:
     try:
         crew = build_search_crew(idea, target_customer, problem)
         crew_output = crew.kickoff()
-        candidate = _strip_reasoning(crew_output.raw)
-        if _is_clean_summary(candidate):
+        candidate = strip_reasoning(crew_output.raw)
+        if not looks_like_leaked_reasoning(candidate):
             summary = candidate
     except Exception:
         pass
@@ -101,11 +63,33 @@ def web_search_node(state: PipelineState) -> PipelineState:
     return {**state, "summary": summary, "results": results}
 
 
+def market_opportunity_node(state: PipelineState) -> PipelineState:
+    """M2 node: Market Opportunity & Customer Segmentation Analysis Agent.
+
+    Consumes the Web Search Agent's results (context passing between agents)
+    and asks the LLM to reason about industry size, trends, and target
+    segments - grounded in that real data, not invented. Runs after
+    web_search in the graph below.
+    """
+    if state.get("error"):
+        return state  # upstream already failed, nothing to add
+
+    idea = state["idea"]
+    target_customer = state.get("targetCustomer", "")
+    problem = state.get("problem", "")
+    results = state.get("results", [])
+
+    market_opportunity = analyze_market_opportunity(idea, target_customer, problem, results)
+    return {**state, "marketOpportunity": market_opportunity}
+
+
 def build_pipeline():
     graph = StateGraph(PipelineState)
     graph.add_node("web_search", web_search_node)
+    graph.add_node("market_opportunity", market_opportunity_node)
     graph.add_edge(START, "web_search")
-    graph.add_edge("web_search", END)
+    graph.add_edge("web_search", "market_opportunity")
+    graph.add_edge("market_opportunity", END)
     return graph.compile()
 
 
