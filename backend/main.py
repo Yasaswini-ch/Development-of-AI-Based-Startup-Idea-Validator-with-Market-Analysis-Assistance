@@ -44,11 +44,12 @@ def validate_idea(payload: ValidateRequest):
         return JSONResponse(status_code=502, content={"error": state["error"]})
 
     return {
-        "summary": state["summary"],
-        "results": state["results"],
-        "marketOpportunity": state.get("marketOpportunity"),
-        "competitors": state.get("competitors"),
-    }
+    "summary": state["summary"],
+    "results": state["results"],
+    "marketOpportunity": state.get("marketOpportunity"),
+    "competitors": state.get("competitors"),
+    "errors": state.get("errors", {}),
+}
 
 
 @app.get("/health")
