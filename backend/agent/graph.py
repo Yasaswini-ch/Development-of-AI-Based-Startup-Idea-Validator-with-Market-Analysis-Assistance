@@ -35,6 +35,7 @@ class PipelineState(TypedDict, total=False):
     marketOpportunity: dict
     competitors: dict
     error: str
+    errors: dict
 
 
 def web_search_node(state: PipelineState) -> PipelineState:
@@ -86,7 +87,10 @@ def web_search_node(state: PipelineState) -> PipelineState:
 def market_opportunity_node(state: PipelineState) -> PipelineState:
     """M2 node: Market Opportunity & Customer Segmentation Analysis."""
 
+    logger.info("[market_opportunity] START")
+
     if state.get("error"):
+        logger.warning("[market_opportunity] Skipped because web search failed")
         return state
 
     idea = state["idea"]
@@ -94,23 +98,42 @@ def market_opportunity_node(state: PipelineState) -> PipelineState:
     problem = state.get("problem", "")
     results = state.get("results", [])
 
-    market_opportunity = analyze_market_opportunity(
-        idea,
-        target_customer,
-        problem,
-        results,
-    )
+    try:
+        market_opportunity = analyze_market_opportunity(
+            idea,
+            target_customer,
+            problem,
+            results,
+        )
 
-    return {
-        **state,
-        "marketOpportunity": market_opportunity,
-    }
+        logger.info("[market_opportunity] COMPLETE")
 
+        return {
+            **state,
+            "marketOpportunity": market_opportunity,
+        }
+
+    except Exception as exc:
+        logger.exception("[market_opportunity] FAILED")
+
+        errors = {
+            **state.get("errors", {}),
+            "marketOpportunity": str(exc),
+        }
+
+        return {
+            **state,
+            "marketOpportunity": None,
+            "errors": errors,
+        }
 
 def competitor_discovery_node(state: PipelineState) -> PipelineState:
     """M2 node: Competitor Discovery & Comparison Agent."""
 
+    logger.info("[competitor_discovery] START")
+
     if state.get("error"):
+        logger.warning("[competitor_discovery] Skipped because web search failed")
         return state
 
     idea = state["idea"]
@@ -118,17 +141,34 @@ def competitor_discovery_node(state: PipelineState) -> PipelineState:
     problem = state.get("problem", "")
     results = state.get("results", [])
 
-    competitors = analyze_competitors(
-        idea,
-        target_customer,
-        problem,
-        results,
-    )
+    try:
+        competitors = analyze_competitors(
+            idea,
+            target_customer,
+            problem,
+            results,
+        )
 
-    return {
-        **state,
-        "competitors": competitors,
-    }
+        logger.info("[competitor_discovery] COMPLETE")
+
+        return {
+            **state,
+            "competitors": competitors,
+        }
+
+    except Exception as exc:
+        logger.exception("[competitor_discovery] FAILED")
+
+        errors = {
+            **state.get("errors", {}),
+            "competitors": str(exc),
+        }
+
+        return {
+            **state,
+            "competitors": None,
+            "errors": errors,
+        }
 
 
 # -------------------------------
