@@ -184,30 +184,37 @@ def _is_valid_competitor(item) -> bool:
 def _is_valid_shape(data: dict) -> bool:
     if "competitors" not in data or not isinstance(data["competitors"], list):
         return False
-    if not data["competitors"] or not all(_is_valid_competitor(c) for c in data["competitors"]):
+    # An empty list is a valid, intentional result - an idea can genuinely have
+    # zero identifiable competitors in the given sources (see milestone2-plan.md's
+    # edge-case requirement: return `competitors: []`, don't fabricate any). Only
+    # reject the shape if items are present and malformed.
+    if not all(_is_valid_competitor(c) for c in data["competitors"]):
         return False
     return True
 
 
-def _fallback() -> dict:
-    return {"competitors": []}
-
-
 def analyze_competitors(idea: str, target_customer: str, problem: str, results: list) -> dict:
+    """Raises on any failure - a crew error (e.g. Groq rate limit) or output that
+    doesn't parse/validate - rather than silently returning {"competitors": []}.
+
+    That silent fallback used to be indistinguishable from a genuine "this idea
+    has no visible competitors" result, which is itself a valid, common outcome
+    (see _is_valid_shape above) - so the two cases need different signals. The
+    caller (agent/graph.py's competitor_discovery_node) already catches this and
+    sets competitors=null + errors.competitors, which is what actually reaches
+    the frontend's "analysis wasn't available" state instead of a misleading
+    empty-competitors success.
+    """
     context = _build_context(results)
 
-    try:
-        crew = _build_competitor_crew(idea, target_customer, problem, context)
-        crew_output = kickoff_with_retry(crew)
-        candidate_text = strip_reasoning(crew_output.raw)
+    crew = _build_competitor_crew(idea, target_customer, problem, context)
+    crew_output = kickoff_with_retry(crew)
+    candidate_text = strip_reasoning(crew_output.raw)
 
-        data = _extract_json(candidate_text)
-        if data is None:
-            logger.warning("Competitor analysis: no valid JSON found in output: %r", candidate_text)
-        else:
-            data["competitors"] = data["competitors"][:_MAX_COMPETITORS]
-            return data
-    except Exception:
-        logger.exception("Competitor analysis crew failed")
+    data = _extract_json(candidate_text)
+    if data is None:
+        logger.warning("Competitor analysis: no valid JSON found in output: %r", candidate_text)
+        raise ValueError("Competitor analysis did not return a valid, parseable result.")
 
-    return _fallback()
+    data["competitors"] = data["competitors"][:_MAX_COMPETITORS]
+    return data
