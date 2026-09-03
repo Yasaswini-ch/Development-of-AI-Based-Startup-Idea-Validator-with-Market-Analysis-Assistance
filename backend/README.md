@@ -4,10 +4,17 @@ FastAPI service exposing `POST /validate`. See [`docs/architecture.md`](../docs/
 for the full API contract and data flow.
 
 Agents are built with **CrewAI** and orchestrated by a **LangGraph** state graph
-(`agent/graph.py`) with 3 nodes so far: `web_search` (Milestone 1) →
-`market_opportunity` → `competitor_discovery` (both Milestone 2). Each later node
-consumes the Web Search Agent's real results as context (no re-searching). Future
-milestones add more agents the same way, as additional graph nodes.
+(`agent/graph.py`) with 4 nodes so far: `web_search` (Milestone 1) →
+`market_opportunity` → `competitor_discovery` → `opportunity_score` (all Milestone 2).
+Each later node consumes the Web Search Agent's real results as context (no
+re-searching). Future milestones add more agents the same way, as additional graph
+nodes.
+
+`market_opportunity` and `competitor_discovery` each catch their own failures: if one's
+LLM call fails (after one rate-limit retry — see below), that section of the response
+comes back `null` with a message in `errors.<node>` instead of crashing the whole
+request. Only a failure in `web_search` itself (nothing to reason over) fails the whole
+request with a `502`.
 
 Search uses Tavily when `TAVILY_API_KEY` is set (real relevance score, reliable
 results); otherwise it falls back to free DuckDuckGo/Wikipedia/Hacker News search with
@@ -24,6 +31,14 @@ Market Opportunity and Competitor Discovery agents use a different, stronger che
 since their output is JSON: a valid, correctly-shaped JSON object recovered from the
 raw text (even if surrounded by a rambling scratchpad) is trusted regardless of what's
 around it; otherwise it falls back to a safe default.
+
+Groq is the only reasoning LLM provider wired in — there's no automatic fallback to a
+second provider. A same-request switch to Gemini (using the key already in `.env`) was
+tested directly and dropped: it hangs for minutes past its own `timeout` parameter
+instead of failing fast, which is worse than the static fallback content the agents
+already return on failure. Instead, `agent/llm.py`'s `kickoff_with_retry()` parses
+Groq's own rate-limit message for its suggested cooldown and retries once after that
+wait (capped at 30s) before giving up.
 
 ## Local setup
 
@@ -44,10 +59,15 @@ uvicorn main:app --reload --port 8000
   behavior
 - `agent/competitor_agent.py` — Competitor Discovery & Comparison Agent (Milestone 2)
   — competitors with offering/url/gap/estimated price/feature breadth
+- `agent/opportunity_score.py` — Opportunity Score post-processing node (Milestone 2
+  stretch) — combines the two agents' output into a 0–100 score, with a raw
+  search-signal fallback if both upstream agents failed
 - `agent/output_guard.py` — shared reasoning-leak detection used by the Web Search
   Agent's quality gate
 - `agent/retrieval.py` — expands one idea into 5 search angles, filters out academic
   sources, dedupes, and ranks results across all of them
 - `agent/tools.py` — Tavily search (primary) with a DuckDuckGo/Wikipedia/Hacker News
   fallback chain
-- `agent/llm.py` — reasoning LLM provider/model selection (Groq by default)
+- `agent/llm.py` — reasoning LLM provider/model selection (Groq by default) and
+  `kickoff_with_retry()`, which retries a crew once on a Groq rate-limit error using
+  Groq's own suggested cooldown

@@ -1,6 +1,6 @@
 # System Architecture — Milestone 1 & 2
 
-Owner: Yasaswini · Status: Milestone 1 complete, Milestone 2 in progress (updated Sep 2026)
+Owner: Yasaswini · Status: Milestone 1 complete, Milestone 2 in progress (updated Sep 3, 2026)
 
 ## 1. System Overview
 
@@ -16,6 +16,9 @@ The system has four pieces:
 4. **Market Opportunity & Competitor Discovery Agents** (Milestone 2) — two more agents
    that run after the Web Search Agent, reasoning over its real results (context
    passing) to produce structured market analysis and competitor comparison.
+5. **Opportunity Score node** (Milestone 2 stretch) — a post-processing step that
+   combines the Market Opportunity and Competitor Discovery outputs (falling back to
+   raw search-result signal if both upstream agents failed) into a single 0–100 score.
 
 Flow at a glance:
 
@@ -32,16 +35,23 @@ flowchart TD
     Pipeline --> WS["Web Search Agent\nagent/crew_agents.py"]
     WS --> MO["Market Opportunity Agent\nagent/market_agent.py"]
     MO --> CD["Competitor Discovery Agent\nagent/competitor_agent.py"]
-    WS --> LLM["Groq LLM\nqwen3.6-27b"]
-    MO --> LLM
-    CD --> LLM
+    CD --> OS["Opportunity Score\nagent/opportunity_score.py"]
+    WS -.retry on rate limit.-> LLM["Groq LLM\nqwen3.6-27b"]
+    MO -.retry on rate limit.-> LLM
+    CD -.retry on rate limit.-> LLM
 
-    Retrieval --> Response["summary + results +\nmarketOpportunity + competitors"]
-    CD --> Response
+    Retrieval --> Response["summary + results +\nmarketOpportunity + competitors +\nerrors"]
+    OS --> Response
     Response --> Backend
     Backend -->|JSON| Frontend
-    Frontend -->|renders results| User
+    Frontend -->|renders results,\nor inline 'unavailable'\nstate per section| User
 ```
+
+Each of the three LLM-calling nodes (`web_search`, `market_opportunity`,
+`competitor_discovery`) catches its own failures independently: a Groq rate-limit is
+retried once using the wait time Groq itself reports (see §7), and if the node still
+fails, that section comes back `null` with an `errors.<node>` message instead of
+crashing the whole request — the other sections still render normally.
 
 The frontend never talks to the search sources directly — it only ever calls our own
 backend. This gives us one place to shape/validate responses before they reach the UI.
@@ -110,6 +120,27 @@ See `agent/output_guard.py` for the shared reasoning-leak detection used across 
   LLM-estimated categorical values (`"unknown"` when the sources don't support a
   guess) rather than verified data — labeled as such in the UI.
 
+### Opportunity Score (Milestone 2 stretch)
+
+- **Input**: the Market Opportunity and Competitor Discovery outputs, plus the raw
+  search results as a grounded fallback signal
+- **Not a CrewAI agent** — a plain post-processing function
+  (`agent/opportunity_score.py`), run as the last LangGraph node (`opportunity_score`),
+  since it's a deterministic weighted formula over data the two agents already
+  produced, not something that needs its own LLM call
+- **Output**: a single `opportunityScore` (0–100) written into `marketOpportunity`. If
+  both upstream agents failed, it falls back to a signal computed from raw search-result
+  count/relevance (capped at 50, since it's a weaker signal than real agent analysis) —
+  see `agent/docs/opportunity-score-edge-cases.md` for the documented edge cases
+
+### Confidence Indicator — not yet built
+
+The Milestone 2 plan's third stretch feature (a "3 of 5 sources agree" indicator
+aggregating per-source relevance from `retrieval.py`) has no corresponding code yet —
+no `confidence.py` module, and no `confidence` field in the API contract below. Flagging
+this explicitly since the contract in `docs/milestone2-plan.md` describes it as an
+already-planned field.
+
 **Future extension point (Milestone 3+):** SWOT/Risk, MVP Recommendation, GTM, and
 Report Generation agents each become a new CrewAI crew wrapped in a new LangGraph node,
 wired into the same graph with `add_edge`. LangGraph's state dict carries each stage's
@@ -132,12 +163,22 @@ and partial failures are handled per-node rather than crashing the whole pipelin
      results: [] }`, frontend shows an `EmptyState` ("no market data found for this
      idea")
 5. The Market Opportunity Agent runs next, reasoning over the same real results —
-   never re-searches, never sees an error state without also skipping (see node code:
-   `if state.get("error"): return state`)
-6. The Competitor Discovery Agent runs last, same pattern
-7. Backend shapes the combined response into the shared contract and returns `200`
-8. Frontend renders the summary, market opportunity, competitor analysis, and grouped
-   result cards below the form
+   never re-searches, never runs at all if the web search step itself failed entirely
+   (see node code: `if state.get("error"): return state`). If its own LLM call fails
+   (after one rate-limit retry — see §7), `marketOpportunity` comes back `null` and
+   `errors.marketOpportunity` is set; the pipeline still continues.
+6. The Competitor Discovery Agent runs next, same failure-isolation pattern
+   (`competitors: null` + `errors.competitors` on failure, independent of whether the
+   Market Opportunity node succeeded)
+7. The Opportunity Score node runs last, combining whatever the two agents above
+   actually produced (or falling back to raw search signal if both failed)
+8. Backend shapes the combined response into the shared contract and returns `200`
+   (a `200` even with one or both of `marketOpportunity`/`competitors` `null` — only a
+   failure in step 4, the web search step itself, returns a non-200)
+9. Frontend renders the summary, market opportunity, competitor analysis (including the
+   price/feature-breadth positioning grid), and grouped result cards — any section whose
+   value is `null` renders its own inline "this analysis wasn't available" message
+   instead of an error or a blank gap
 
 ```mermaid
 sequenceDiagram
@@ -193,8 +234,8 @@ Response 200:
     "segments": [
       { "segment": string, "painPoints": string, "motivations": string, "buyingBehavior": string }
     ],
-    "opportunityScore": number   // stub, always 0 until the Milestone 2 stretch feature lands
-  },
+    "opportunityScore": number   // 0-100, computed by agent/opportunity_score.py
+  } | null,   // null if the market_opportunity node failed (see errors.marketOpportunity)
   "competitors": {
     "competitors": [
       {
@@ -206,6 +247,10 @@ Response 200:
         "featureBreadth": "narrow" | "moderate" | "broad" | "unknown"
       }
     ]
+  } | null,   // null if the competitor_discovery node failed (see errors.competitors)
+  "errors": {
+    "marketOpportunity": string | null,
+    "competitors": string | null
   }
 }
 
@@ -215,10 +260,14 @@ Response 400 / 502:
 }
 ```
 
-`marketOpportunity.segments` and `competitors.competitors` can be empty arrays (not
-missing keys) when the corresponding LLM call fails or its output can't be validated —
-the frontend renders nothing for that section in that case rather than an error, since
-the summary + real search results are still valid and shown regardless.
+`marketOpportunity` and `competitors` are `null` (not an object with empty arrays) when
+that node's LLM call fails outright (after the rate-limit retry in §7 is exhausted) or
+its output can't be validated — `errors.<node>` carries the failure message in that
+case. The frontend shows an inline "this analysis wasn't available" state for that
+section rather than an error or a blank gap, since the summary + real search results
+are still valid and shown regardless. A `competitors: { competitors: [] }` (empty
+array, not `null`) is a different, valid outcome — the node ran successfully and
+genuinely found no competitors in the sources; the frontend distinguishes the two.
 
 This contract is locked for Milestone 1/2 — Sashi (competitor agent), Yalene
 (orchestration), and Anu Kumari (frontend) should build against this without needing to
@@ -233,7 +282,7 @@ sync on every field.
 | Orchestration | LangGraph | Owns pipeline state and node wiring — each agent is a graph node, so M2-M4 agents are added without restructuring the backend. |
 | Agents | CrewAI | Role/goal-based agent definitions, one Agent+Task per pipeline stage — matches the brief's named-agent structure directly. Only the Web Search Agent uses a tool; the M2 reasoning agents (Market Opportunity, Competitor Discovery) take real data as context instead, since tool-calling proved to be the source of the reasoning-leak bug. |
 | Search | Tavily API (primary), DuckDuckGo + Wikipedia + Hacker News (fallback chain) | Tavily gives a real, trained relevance score and reliable results — used whenever `TAVILY_API_KEY` is set. If it's missing or fails, the app falls back to the zero-cost chain (own computed relevance score) instead of erroring out. Tried DuckDuckGo as sole primary first, but its unofficial scraping library proved too flaky (empty or irrelevant results, inconsistent run to run) to trust for a live demo. Academic/research-paper domains are filtered out per mentor guidance — they read as literature review material, not market/competitor signal. |
-| Reasoning LLM | Groq (via CrewAI/LiteLLM) | Default provider for agent reasoning (`groq/qwen/qwen3.6-27b`), configurable via `LLM_MODEL` + provider API key (`GROQ_API_KEY`). Tried Google Gemini for a higher rate limit, but its current models were incompatible with our LiteLLM version (2.x deprecated for new keys, 3.x needs newer message formatting) — reverted to Groq. The model occasionally leaks raw ReAct-style reasoning text into its answer, so the summary output is validated before use (see Error Handling Policy). |
+| Reasoning LLM | Groq (via CrewAI/LiteLLM), single provider — no automatic fallback provider | Default and only provider for agent reasoning (`groq/qwen/qwen3.6-27b`), configurable via `LLM_MODEL` + provider API key (`GROQ_API_KEY`). A same-request fallback to Google Gemini (using the key already in `.env`) was tried and reverted twice: first for message-format incompatibilities with our pinned LiteLLM version, then again after direct testing showed it doesn't fail fast — it hung for minutes past its own `timeout` parameter before ever raising, which is worse than the existing static fallback content. Instead, `agent/llm.py`'s `kickoff_with_retry()` parses Groq's own rate-limit message ("please try again in 25.545s") and retries once after that cooldown (capped at 30s) — see Error Handling Policy. The model also occasionally leaks raw ReAct-style reasoning text into its answer, so the summary output is validated before use. |
 | Product UI | No framework/provider names shown | Per mentor guidance, the UI doesn't surface "CrewAI," "Groq," "Tavily," etc. anywhere — footer/status text describes capability generically ("Multi-agent Pipeline," "Live Web Search") instead of naming the underlying tech. |
 | Hosting | Render | Already set up for this repo (see `render.yaml`). |
 
@@ -268,6 +317,19 @@ local vs. deployed).
   balanced-brace extraction is a stronger and more precise check: if it parses to
   valid JSON with every required field of the right type, it's used regardless of any
   scratchpad rambling around it; otherwise it falls back to a safe default
+- LLM rate-limit retry: every `crew.kickoff()` call (web search, market opportunity,
+  competitor discovery) goes through `agent/llm.py`'s `kickoff_with_retry()`, which
+  parses Groq's own rate-limit message for its suggested cooldown and retries once
+  after that wait (capped at 30s) before giving up. A non-rate-limit exception, or a
+  second failure after the retry, is re-raised immediately and handled by that node's
+  own try/except (see below) — it does not retry indefinitely and does not fall back to
+  a different LLM provider (see Tech Stack Decisions for why)
+- Node-level partial-failure isolation: `market_opportunity_node` and
+  `competitor_discovery_node` each catch their own exceptions independently. A failure
+  in one sets `marketOpportunity`/`competitors` to `null` and populates
+  `errors.<node>`, but does not prevent the other node (or the rest of the response)
+  from succeeding — only a failure in the `web_search` node itself (no results to
+  reason over at all) short-circuits the whole pipeline to a `502`
 
 ## 8. Repo Structure
 
@@ -282,10 +344,11 @@ local vs. deployed).
 │       ├── crew_agents.py       # Web Search Agent (Milestone 1)
 │       ├── market_agent.py      # Market Opportunity Agent (Milestone 2)
 │       ├── competitor_agent.py  # Competitor Discovery Agent (Milestone 2, Sashi)
+│       ├── opportunity_score.py # Opportunity Score post-processing node (Milestone 2 stretch)
 │       ├── output_guard.py      # shared reasoning-leak detection
 │       ├── retrieval.py         # multi-angle query expansion + dedup
 │       ├── tools.py             # Tavily (primary) + DuckDuckGo/Wikipedia/Hacker News fallback
-│       └── llm.py               # reasoning LLM selection
+│       └── llm.py               # reasoning LLM selection + rate-limit retry (kickoff_with_retry)
 ├── docs/
 │   ├── architecture.md        # this file
 │   ├── milestone1-plan.md

@@ -33,25 +33,31 @@ flowchart TD
     Pipeline --> WS["Web Search Agent\nagent/crew_agents.py"]
     WS --> MO["Market Opportunity Agent\nagent/market_agent.py"]
     MO --> CD["Competitor Discovery Agent\nagent/competitor_agent.py"]
-    WS --> LLM["Groq LLM\nqwen3.6-27b"]
-    MO --> LLM
-    CD --> LLM
+    CD --> OS["Opportunity Score\nagent/opportunity_score.py"]
+    WS -.retry on rate limit.-> LLM["Groq LLM\nqwen3.6-27b"]
+    MO -.retry on rate limit.-> LLM
+    CD -.retry on rate limit.-> LLM
 
-    Retrieval --> Response["summary + results +\nmarketOpportunity + competitors"]
-    CD --> Response
+    Retrieval --> Response["summary + results +\nmarketOpportunity + competitors +\nerrors"]
+    OS --> Response
     Response --> Backend
     Backend -->|JSON| Frontend
-    Frontend -->|renders results| User
+    Frontend -->|renders results,\nor inline 'unavailable' state| User
 ```
+
+A failure in the Market Opportunity or Competitor Discovery node doesn't crash the
+request — after one rate-limit retry against Groq, that section comes back `null` with
+an `errors.<node>` message, and the frontend shows an inline "unavailable" state for
+just that section while the rest of the response still renders.
 
 | Layer        | Tech                                  |
 |--------------|----------------------------------------|
 | Frontend     | React + Tailwind CSS (`frontend/`) |
 | Backend      | FastAPI (`backend/`) — exposes `POST /validate` |
 | Agent framework | [CrewAI](https://www.crewai.com) — 3 agents: Web Search (`crew_agents.py`), Market Opportunity (`market_agent.py`), Competitor Discovery (`competitor_agent.py`) |
-| Orchestration | [LangGraph](https://www.langchain.com/langgraph) — 3-node pipeline, `web_search → market_opportunity → competitor_discovery` (`backend/agent/graph.py`) |
+| Orchestration | [LangGraph](https://www.langchain.com/langgraph) — 4-node pipeline, `web_search → market_opportunity → competitor_discovery → opportunity_score` (`backend/agent/graph.py`) |
 | Search       | Tavily API (primary), with DuckDuckGo + Wikipedia + Hacker News as a zero-cost fallback chain — fetched directly (not LLM-mediated) across 5 search angles, academic sources filtered out (`backend/agent/tools.py`, `retrieval.py`) |
-| Reasoning LLM | [Groq](https://console.groq.com) (`qwen/qwen3.6-27b`, configurable — see `backend/agent/llm.py`); summary output passes a quality gate that rejects leaked reasoning text |
+| Reasoning LLM | [Groq](https://console.groq.com) (`qwen/qwen3.6-27b`, configurable — see `backend/agent/llm.py`), single provider, no automatic fallback provider — a same-request switch to Gemini was tested and dropped (it hangs for minutes past its own timeout instead of failing fast). Rate limits are instead retried once against Groq itself using its own suggested cooldown; summary output also passes a quality gate that rejects leaked reasoning text |
 | Database     | None yet |
 | Deployment   | [Render](https://render.com) — two services, config in `render.yaml` |
 | Version control | Git / GitHub |
@@ -108,7 +114,7 @@ curl -X POST https://startup-validator-backend.onrender.com/validate \
         "buyingBehavior": "Research online, prefer subscription models over one-off purchases"
       }
     ],
-    "opportunityScore": 0
+    "opportunityScore": 63
   },
   "competitors": {
     "competitors": [
@@ -121,6 +127,10 @@ curl -X POST https://startup-validator-backend.onrender.com/validate \
         "featureBreadth": "moderate"
       }
     ]
+  },
+  "errors": {
+    "marketOpportunity": null,
+    "competitors": null
   }
 }
 ```
@@ -129,9 +139,12 @@ curl -X POST https://startup-validator-backend.onrender.com/validate \
 `industry_news`, `customer_demand`, `existing_solutions`) — that's what powers the
 "grouped by research angle" sections in the UI. `score` is a 0–1 relevance value used
 for the animated count-up on each result card. `marketOpportunity` and `competitors`
-can come back with empty arrays (not missing keys) if that agent's LLM call fails or
-its output can't be validated — the frontend just doesn't render that section rather
-than showing an error, since the rest of the response is still valid.
+come back `null` (not an object with empty arrays) if that agent's LLM call fails
+outright or its output can't be validated, with the failure message in
+`errors.<node>` — the frontend shows an inline "analysis wasn't available" state for
+just that section rather than an error, since the rest of the response is still valid.
+An empty `competitors: []` array (not `null`) is different: the node ran fine and
+genuinely found none.
 
 **Error responses** — same shape either way, only the status code and message differ:
 
@@ -158,10 +171,11 @@ request, zero matches) and `ErrorState` with a retry button for any non-200 resp
 │       ├── crew_agents.py         # Web Search Agent (Milestone 1)
 │       ├── market_agent.py        # Market Opportunity Agent (Milestone 2)
 │       ├── competitor_agent.py    # Competitor Discovery Agent (Milestone 2)
+│       ├── opportunity_score.py   # Opportunity Score post-processing node (Milestone 2 stretch)
 │       ├── output_guard.py        # shared reasoning-leak detection
 │       ├── retrieval.py           # 5-angle query expansion, dedup, academic-source filter
 │       ├── tools.py               # Tavily (primary) + DuckDuckGo/Wikipedia/Hacker News fallback
-│       └── llm.py                 # reasoning LLM provider/model selection
+│       └── llm.py                 # reasoning LLM provider/model selection + rate-limit retry
 ├── docs/
 │   ├── architecture.md       # system design, data flow, API contract
 │   ├── milestone1-plan.md    # task division + timeline
