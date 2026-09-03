@@ -1,4 +1,4 @@
-import { IconLightbulb, IconTrendingUp, IconUsers } from './icons'
+import { IconLightbulb, IconTrendingUp, IconUsers, IconAlertTriangle } from './icons'
 import useCountUp from '../hooks/useCountUp'
 
 function SegmentCard({ segment }) {
@@ -51,11 +51,30 @@ function OpportunityScore({ score }) {
   )
 }
 
-export default function MarketOpportunity({ data }) {
-  if (!data) return null
+function UnavailableCard({ error }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-panel/50 p-6 text-center shadow-sm sm:p-8">
+      <IconAlertTriangle className="h-5 w-5 text-muted" />
+      <p className="mt-2 text-sm font-medium text-text">Market opportunity analysis wasn&apos;t available</p>
+      <p className="mt-1 max-w-[16rem] text-xs leading-snug text-muted">
+        {error || 'This analysis failed to complete for this request. The rest of your results are still shown below.'}
+      </p>
+    </div>
+  )
+}
+
+export default function MarketOpportunity({ data, error }) {
+  // `data === null` means the backend node failed for this request (per the API
+  // contract) - distinct from a normal "nothing to show yet" state, so it gets its
+  // own inline message rather than silently rendering nothing.
+  if (data === null || data === undefined) {
+    return <UnavailableCard error={error} />
+  }
 
   const { marketSize, trends = [], segments = [], opportunityScore = 0 } = data
-  if (!marketSize && trends.length === 0 && segments.length === 0) return null
+  if (!marketSize && trends.length === 0 && segments.length === 0) {
+    return <UnavailableCard error="No market data could be extracted from the available sources." />
+  }
 
   return (
     <div className="h-full rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
