@@ -30,21 +30,21 @@ function CompetitorCard({ competitor }) {
       href={url}
       target="_blank"
       rel="noreferrer"
-      className="block rounded-xl border border-border bg-surface p-4 transition-colors hover:border-accent"
+      className="block rounded-xl border border-border bg-surface p-5 transition-colors hover:border-accent"
     >
       <div className="flex items-start justify-between gap-2">
-        <h4 className="text-sm font-medium text-text">{name}</h4>
+        <h4 className="text-sm font-semibold text-text">{name}</h4>
       </div>
-      <p className="mt-1 text-sm text-muted leading-snug">{offering}</p>
+      <p className="mt-1.5 text-sm text-muted leading-relaxed">{offering}</p>
 
-      <div className="mt-2 flex flex-wrap gap-1.5">
+      <div className="mt-3 flex flex-wrap gap-1.5">
         <Badge label="Price" value={estimatedPrice} />
         <Badge label="Breadth" value={featureBreadth} />
       </div>
 
-      <div className="mt-3 flex items-start gap-1.5 border-t border-border pt-2">
+      <div className="mt-3 flex items-start gap-1.5 border-t border-border pt-3">
         <IconAlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
-        <p className="text-sm text-text leading-snug">{gap}</p>
+        <p className="text-sm text-text leading-relaxed">{gap}</p>
       </div>
 
       {url && (
@@ -161,7 +161,7 @@ export default function CompetitorAnalysis({ data, error }) {
         </h2>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <div className="mt-5 grid gap-4 sm:grid-cols-2">
         {competitors.map((c, i) => (
           <CompetitorCard key={i} competitor={c} />
         ))}

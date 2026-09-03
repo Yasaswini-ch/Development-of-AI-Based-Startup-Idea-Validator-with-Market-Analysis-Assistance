@@ -58,7 +58,13 @@ def looks_like_leaked_reasoning(text: str, max_len: int = 1100) -> bool:
     """
     if not text or len(text) > max_len:
         return True
-    if "\n" in text or "**" in text:
+    # A genuine answer never annotates itself - "-> Exactly 2 sentences.
+    # Covers market, competitors, ..." is the model grading its own output,
+    # appended on the *same* line specifically to dodge the line-break check
+    # below. No legitimate market/competitor analysis uses these characters
+    # as a self-referential separator, so their presence alone is a strong
+    # signal regardless of what follows them.
+    if "\n" in text or "**" in text or "→" in text or "->" in text:
         return True
     lowered = text.lower()
     return any(marker in lowered for marker in _REASONING_LEAK_MARKERS)
