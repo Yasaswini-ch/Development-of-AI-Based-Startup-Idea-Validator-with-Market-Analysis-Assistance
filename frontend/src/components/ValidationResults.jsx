@@ -93,7 +93,7 @@ function AngleGroup({ angle, items }) {
   )
 }
 
-export default function ValidationResults({ summary, results, marketOpportunity, competitors }) {
+export default function ValidationResults({ summary, results, marketOpportunity, competitors, errors }) {
   const groups = []
   const order = []
   for (const r of results) {
@@ -131,11 +131,11 @@ export default function ValidationResults({ summary, results, marketOpportunity,
           </div>
         </div>
 
-        <MarketOpportunity data={marketOpportunity} />
+        <MarketOpportunity data={marketOpportunity} error={errors?.marketOpportunity} />
       </div>
 
       <div className="mx-auto mt-6 max-w-4xl">
-        <CompetitorAnalysis data={competitors} />
+        <CompetitorAnalysis data={competitors} error={errors?.competitors} />
       </div>
 
       <div className="mt-8 space-y-8">
