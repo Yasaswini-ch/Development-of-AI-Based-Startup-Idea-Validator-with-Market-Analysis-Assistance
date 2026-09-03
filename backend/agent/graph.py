@@ -14,6 +14,18 @@ from .output_guard import looks_like_leaked_reasoning, strip_reasoning
 logger = logging.getLogger(__name__)
 
 
+def _friendly_error_message(exc: Exception) -> str:
+    """The raw exception (a multi-line litellm/Groq stack trace, JSON blob and
+    all) is exactly what you want in server logs and useless/alarming as
+    user-facing copy. logger.exception already captured the full detail above
+    this call - this is only what reaches errors.<node> and the frontend.
+    """
+    text = str(exc)
+    if "RateLimitError" in text or "rate_limit" in text:
+        return "This analysis hit a temporary usage limit. Please try again in a moment."
+    return "This analysis couldn't be completed for this request. Please try again."
+
+
 def _fallback_summary(idea: str, results: list) -> str:
     if not results:
         return f'No market data found yet for "{idea}".'
@@ -119,7 +131,7 @@ def market_opportunity_node(state: PipelineState) -> PipelineState:
 
         errors = {
             **state.get("errors", {}),
-            "marketOpportunity": str(exc),
+            "marketOpportunity": _friendly_error_message(exc),
         }
 
         return {
@@ -162,7 +174,7 @@ def competitor_discovery_node(state: PipelineState) -> PipelineState:
 
         errors = {
             **state.get("errors", {}),
-            "competitors": str(exc),
+            "competitors": _friendly_error_message(exc),
         }
 
         return {

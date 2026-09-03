@@ -4,20 +4,20 @@ import useCountUp from '../hooks/useCountUp'
 function SegmentCard({ segment }) {
   const { segment: name, painPoints, motivations, buyingBehavior } = segment
   return (
-    <div className="rounded-xl border border-border bg-surface p-4">
-      <h4 className="text-sm font-medium text-text">{name}</h4>
-      <dl className="mt-2 space-y-1.5">
+    <div className="rounded-xl border border-border bg-surface p-5">
+      <h4 className="text-sm font-semibold text-text">{name}</h4>
+      <dl className="mt-3 space-y-3">
         <div>
           <dt className="font-mono text-[10px] uppercase tracking-widest text-muted">Pain points</dt>
-          <dd className="text-sm text-text leading-snug">{painPoints}</dd>
+          <dd className="mt-1 text-sm text-text leading-relaxed">{painPoints}</dd>
         </div>
         <div>
           <dt className="font-mono text-[10px] uppercase tracking-widest text-muted">Motivations</dt>
-          <dd className="text-sm text-text leading-snug">{motivations}</dd>
+          <dd className="mt-1 text-sm text-text leading-relaxed">{motivations}</dd>
         </div>
         <div>
           <dt className="font-mono text-[10px] uppercase tracking-widest text-muted">Buying behavior</dt>
-          <dd className="text-sm text-text leading-snug">{buyingBehavior}</dd>
+          <dd className="mt-1 text-sm text-text leading-relaxed">{buyingBehavior}</dd>
         </div>
       </dl>
     </div>
@@ -97,14 +97,14 @@ export default function MarketOpportunity({ data, error }) {
       )}
 
       {trends.length > 0 && (
-        <div className="mt-5">
-          <h3 className="mb-2 flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-widest text-muted">
+        <div className="mt-6">
+          <h3 className="mb-3 flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-widest text-muted">
             <IconTrendingUp className="h-3.5 w-3.5 text-accent" />
             Trends
           </h3>
-          <ul className="space-y-1.5">
+          <ul className="space-y-2">
             {trends.map((t, i) => (
-              <li key={i} className="text-sm text-text leading-snug">
+              <li key={i} className="text-sm text-text leading-relaxed">
                 {t}
               </li>
             ))}
@@ -113,12 +113,16 @@ export default function MarketOpportunity({ data, error }) {
       )}
 
       {segments.length > 0 && (
-        <div className="mt-5">
-          <h3 className="mb-2 flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-widest text-muted">
+        <div className="mt-6">
+          <h3 className="mb-3 flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-widest text-muted">
             <IconUsers className="h-3.5 w-3.5 text-accent" />
             Customer Segments
           </h3>
-          <div className="grid gap-3 sm:grid-cols-2">
+          {/* Single column, always - these cards hold full sentences per
+              field (pain points/motivations/buying behavior), and splitting
+              them into sub-columns inside a panel that's already half the
+              page width left each card too narrow to read comfortably. */}
+          <div className="space-y-3">
             {segments.map((s, i) => (
               <SegmentCard key={i} segment={s} />
             ))}

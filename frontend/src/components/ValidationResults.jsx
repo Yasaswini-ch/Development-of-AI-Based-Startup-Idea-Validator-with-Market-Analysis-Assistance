@@ -112,7 +112,7 @@ export default function ValidationResults({ summary, results, marketOpportunity,
 
   return (
     <div className="mt-6">
-      <div className="mx-auto grid max-w-4xl items-start gap-6 lg:grid-cols-2">
+      <div className="mx-auto grid max-w-5xl items-start gap-6 xl:grid-cols-2">
         <div className="h-full rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
           <div className="flex items-center gap-2">
             <span className="h-1.5 w-1.5 rounded-full bg-accent" />
@@ -134,11 +134,11 @@ export default function ValidationResults({ summary, results, marketOpportunity,
         <MarketOpportunity data={marketOpportunity} error={errors?.marketOpportunity} />
       </div>
 
-      <div className="mx-auto mt-6 max-w-4xl">
+      <div className="mx-auto mt-8 max-w-5xl">
         <CompetitorAnalysis data={competitors} error={errors?.competitors} />
       </div>
 
-      <div className="mt-8 space-y-8">
+      <div className="mt-10 space-y-8">
         {groups.map((g) => (
           <AngleGroup key={g.angle} angle={g.angle} items={g.items} />
         ))}
