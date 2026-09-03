@@ -23,7 +23,7 @@ import logging
 
 from crewai import Agent, Crew, Process, Task
 
-from .llm import get_llm
+from .llm import get_llm, kickoff_with_retry
 from .output_guard import strip_reasoning
 
 logger = logging.getLogger(__name__)
@@ -190,7 +190,7 @@ def analyze_market_opportunity(
 
     try:
         crew = _build_market_crew(idea, target_customer, problem, context)
-        crew_output = crew.kickoff()
+        crew_output = kickoff_with_retry(crew)
         candidate_text = strip_reasoning(crew_output.raw)
 
         # Search for valid JSON directly rather than rejecting the whole
