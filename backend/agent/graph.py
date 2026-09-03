@@ -182,9 +182,16 @@ def opportunity_score_node(state: PipelineState) -> PipelineState:
     if state.get("error"):
         return state
 
-    market_opportunity = state.get("marketOpportunity", {})
-    competitors = state.get("competitors", {})
+    market_opportunity = state.get("marketOpportunity")
+    competitors = state.get("competitors")
     results = state.get("results", [])
+
+    if market_opportunity is None:
+        # The market_opportunity node itself failed - errors.marketOpportunity
+        # already reflects that, and there's no dict left to attach a score to.
+        # Don't fabricate one; the frontend already shows this section as
+        # unavailable.
+        return state
 
     try:
         score = calculate_opportunity_score(
@@ -192,25 +199,15 @@ def opportunity_score_node(state: PipelineState) -> PipelineState:
             competitors,
             results,
         )
-
-        # Add score inside Market Opportunity output
         market_opportunity["opportunityScore"] = score
-
-        return {
-            **state,
-            "marketOpportunity": market_opportunity,
-        }
-
     except Exception:
         logger.exception("Opportunity score calculation failed")
-
-        # Safe fallback
         market_opportunity["opportunityScore"] = 0
 
-        return {
-            **state,
-            "marketOpportunity": market_opportunity,
-        }
+    return {
+        **state,
+        "marketOpportunity": market_opportunity,
+    }
 
 
 def build_pipeline():
