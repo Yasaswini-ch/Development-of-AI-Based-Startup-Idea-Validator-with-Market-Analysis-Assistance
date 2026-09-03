@@ -6,6 +6,7 @@ from langgraph.graph import END, START, StateGraph
 from . import retrieval
 from .competitor_agent import analyze_competitors
 from .crew_agents import build_search_crew
+from .llm import kickoff_with_retry
 from .market_agent import analyze_market_opportunity
 from .opportunity_score import calculate_opportunity_score
 from .output_guard import looks_like_leaked_reasoning, strip_reasoning
@@ -60,7 +61,7 @@ def web_search_node(state: PipelineState) -> PipelineState:
             results,
         )
 
-        crew_output = crew.kickoff()
+        crew_output = kickoff_with_retry(crew)
         candidate = strip_reasoning(crew_output.raw)
 
         if looks_like_leaked_reasoning(candidate):

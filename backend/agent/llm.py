@@ -1,8 +1,14 @@
+import logging
 import os
+import re
+import time
 
 from crewai import LLM
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_MODEL = "groq/qwen/qwen3.6-27b"
+_MAX_RETRY_WAIT_SECONDS = 30
 
 
 def get_llm(max_tokens: int | None = None):
@@ -29,3 +35,41 @@ def get_llm(max_tokens: int | None = None):
     if max_tokens is None:
         return model
     return LLM(model=model, max_tokens=max_tokens)
+
+
+def _retry_after_seconds(exc: Exception) -> float | None:
+    """Groq's rate-limit error message names its own cooldown, e.g. "Please
+    try again in 25.545s" - parse that instead of guessing a backoff.
+    Returns None for anything that isn't this specific, recoverable error.
+    """
+    match = re.search(r"try again in ([\d.]+)s", str(exc))
+    return float(match.group(1)) if match else None
+
+
+def kickoff_with_retry(crew, max_attempts: int = 2):
+    """Run a CrewAI crew, retrying once on a Groq rate-limit error using the
+    wait time Groq itself reports (capped so a request can't hang forever).
+
+    A same-request fallback to a second LLM provider (Gemini, using the key
+    already in .env) was tried and reverted: it doesn't fail fast on a bad
+    call, it hangs for minutes past its own timeout parameter before ever
+    raising - confirmed by direct testing, not just the litellm/CrewAI
+    message-format issues noted in get_llm's docstring. That's worse than
+    the honest static fallback content the caller already returns, so it's
+    not a usable fallback with our pinned litellm version. Retrying the same
+    model after its own suggested cooldown is the fix that's actually been
+    verified to work end-to-end.
+    """
+    last_exc = None
+    for attempt in range(max_attempts):
+        try:
+            return crew.kickoff()
+        except Exception as exc:
+            last_exc = exc
+            wait = _retry_after_seconds(exc)
+            if wait is None or attempt == max_attempts - 1:
+                raise
+            wait = min(wait, _MAX_RETRY_WAIT_SECONDS) + 0.5
+            logger.warning("Rate limited, retrying in %.1fs: %s", wait, exc)
+            time.sleep(wait)
+    raise last_exc
