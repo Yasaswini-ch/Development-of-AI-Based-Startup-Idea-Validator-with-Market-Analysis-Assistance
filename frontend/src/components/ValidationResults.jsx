@@ -29,11 +29,7 @@ function hostnameOf(url) {
 function ScoreBadge({ score }) {
   const percent = useCountUp(Math.round(score * 100), 500)
   const tier =
-    percent >= 70
-      ? 'bg-accent/15 text-accent border-accent/30'
-      : percent >= 50
-        ? 'bg-accent/10 text-accent/80 border-accent/20'
-        : 'bg-muted/10 text-muted border-border'
+    percent > 50 ? 'bg-accent/15 text-accent border-accent/30' : 'bg-muted/10 text-muted border-border'
   return (
     <span
       className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[11px] font-semibold tracking-wide ${tier}`}
@@ -43,13 +39,15 @@ function ScoreBadge({ score }) {
   )
 }
 
-function ResultCard({ r }) {
+function ResultCard({ r, isTop }) {
   return (
     <a
       href={r.url}
       target="_blank"
       rel="noreferrer"
-      className="block rounded-xl border border-border bg-panel p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-accent hover:shadow-lg hover:shadow-black/5"
+      className={`block rounded-xl border bg-panel p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-accent hover:shadow-lg hover:shadow-black/5 ${
+        isTop ? 'border-accent shadow-[0_0_0_1px_var(--color-accent)]' : 'border-border'
+      }`}
     >
       <h3 className="mb-1.5 text-sm font-medium leading-snug text-text line-clamp-2">{r.title}</h3>
       <p className="text-sm text-muted leading-relaxed line-clamp-3">{r.snippet}</p>
@@ -67,6 +65,10 @@ function AngleGroup({ angle, items }) {
   const [expanded, setExpanded] = useState(false)
   const visible = expanded ? items : items.slice(0, INITIAL_VISIBLE)
   const Icon = iconForAngle(angle)
+  // The single best-matching source per angle gets a static highlight (not
+  // just a hover state), so it reads at a glance instead of every card in
+  // the group competing equally for attention.
+  const topScore = Math.max(...items.map((r) => (typeof r.score === 'number' ? r.score : -Infinity)))
 
   return (
     <div>
@@ -86,14 +88,22 @@ function AngleGroup({ angle, items }) {
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {visible.map((r, i) => (
-          <ResultCard key={r.url || i} r={r} />
+          <ResultCard key={r.url || i} r={r} isTop={r.score === topScore} />
         ))}
       </div>
     </div>
   )
 }
 
+const TABS = [
+  { key: 'sources', label: 'Sources' },
+  { key: 'market', label: 'Market Opportunity' },
+  { key: 'competitors', label: 'Competitors' },
+]
+
 export default function ValidationResults({ summary, results, marketOpportunity, competitors, errors }) {
+  const [activeTab, setActiveTab] = useState('sources')
+
   const groups = []
   const order = []
   for (const r of results) {
@@ -110,43 +120,78 @@ export default function ValidationResults({ summary, results, marketOpportunity,
     : null
   const confidence = useCountUp(avgScore !== null ? Math.round(avgScore * 100) : 0, 800)
 
+  const competitorCount = competitors?.competitors?.length ?? 0
+
   return (
     <div className="mt-6">
-      <div className="mx-auto grid max-w-5xl items-start gap-6 xl:grid-cols-2">
-        {/* No h-full here - under `items-start`, a fixed h-full stretches this
-            card to match its sibling's row height (the Market Opportunity
-            card, whose height varies a lot with segment count), leaving a
-            dead gap below the short summary text instead of just being as
-            tall as its own content. */}
-        <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+      <div className="flex flex-wrap items-center gap-6 rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="h-1.5 w-1.5 rounded-full bg-accent" />
             <h2 className="font-mono text-xs uppercase tracking-widest text-muted">
               Validation summary
             </h2>
           </div>
-          <div className="mt-3 flex items-start gap-6">
-            <p className="flex-1 text-sm text-text leading-relaxed">{summary}</p>
-            {avgScore !== null && (
-              <div className="shrink-0 border-l border-border pl-6 text-right">
-                <p className="font-serif text-4xl text-accent">{confidence}%</p>
-                <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Confidence</p>
-              </div>
-            )}
-          </div>
+          <p className="mt-3 text-sm text-text leading-relaxed">{summary}</p>
         </div>
-
-        <MarketOpportunity data={marketOpportunity} error={errors?.marketOpportunity} />
+        {avgScore !== null && (
+          <div className="shrink-0 border-l border-border pl-6 text-right">
+            <p className="font-serif text-4xl text-accent">{confidence}%</p>
+            <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Confidence</p>
+          </div>
+        )}
       </div>
 
-      <div className="mx-auto mt-8 max-w-5xl">
-        <CompetitorAnalysis data={competitors} error={errors?.competitors} />
+      {/* Pill tab switcher, not the classic underline-tabs strip - the
+          active tab gets its own raised pill instead of a line underneath. */}
+      <div className="mt-6 inline-flex gap-0.5 rounded-full bg-border p-1">
+        {TABS.map((t) => {
+          const active = activeTab === t.key
+          const count = t.key === 'sources' ? results.length : t.key === 'competitors' ? competitorCount : null
+          return (
+            <button
+              key={t.key}
+              onClick={() => setActiveTab(t.key)}
+              aria-selected={active}
+              className={`flex items-center gap-2 rounded-full px-5 py-2 font-serif text-[15px] transition-colors ${
+                active ? 'bg-panel italic text-text shadow-sm' : 'text-muted hover:text-text'
+              }`}
+            >
+              {t.label}
+              {count !== null && (
+                <span
+                  className={`rounded-full px-1.5 py-0.5 font-mono text-[10px] ${
+                    active ? 'bg-accent text-white' : 'bg-panel text-muted'
+                  }`}
+                >
+                  {count}
+                </span>
+              )}
+            </button>
+          )
+        })}
       </div>
 
-      <div className="mt-10 space-y-8">
-        {groups.map((g) => (
-          <AngleGroup key={g.angle} angle={g.angle} items={g.items} />
-        ))}
+      <div className="mt-6">
+        {activeTab === 'sources' && (
+          <div className="space-y-8">
+            {groups.map((g) => (
+              <AngleGroup key={g.angle} angle={g.angle} items={g.items} />
+            ))}
+          </div>
+        )}
+
+        {activeTab === 'market' && (
+          <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+            <MarketOpportunity data={marketOpportunity} error={errors?.marketOpportunity} />
+          </div>
+        )}
+
+        {activeTab === 'competitors' && (
+          <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+            <CompetitorAnalysis data={competitors} error={errors?.competitors} />
+          </div>
+        )}
       </div>
     </div>
   )

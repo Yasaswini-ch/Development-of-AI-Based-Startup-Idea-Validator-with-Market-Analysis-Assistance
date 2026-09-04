@@ -1,4 +1,4 @@
-import { IconLightbulb, IconTrendingUp, IconUsers, IconAlertTriangle } from './icons'
+import { IconTrendingUp, IconUsers, IconAlertTriangle } from './icons'
 import useCountUp from '../hooks/useCountUp'
 
 function SegmentCard({ segment }) {
@@ -38,22 +38,21 @@ function OpportunityScore({ score }) {
   const value = useCountUp(score, 800)
   const tier = scoreTier(score)
   return (
-    <div className="shrink-0 border-l border-border pl-6 text-right">
+    <div className="flex items-baseline gap-3">
       <p className="font-serif text-4xl text-accent">{value}</p>
-      <p className="font-mono text-[10px] uppercase tracking-widest text-muted">
-        Opportunity Score
-      </p>
-      <p className={`mt-1 text-xs font-medium ${tier.className}`}>{tier.label}</p>
-      <p className="mt-0.5 max-w-[9rem] text-[11px] leading-snug text-muted">
-        Based on market size, growth trends &amp; competitor density
-      </p>
+      <div>
+        <p className="font-mono text-[10px] uppercase tracking-widest text-muted">
+          Opportunity Score
+        </p>
+        <p className={`text-xs font-medium ${tier.className}`}>{tier.label}</p>
+      </div>
     </div>
   )
 }
 
 function UnavailableCard({ error }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-panel/50 p-6 text-center shadow-sm sm:p-8">
+    <div className="flex flex-col items-center justify-center p-2 text-center">
       <IconAlertTriangle className="h-5 w-5 text-muted" />
       <p className="mt-2 text-sm font-medium text-text">Market opportunity analysis wasn&apos;t available</p>
       <p className="mt-1 max-w-[16rem] text-xs leading-snug text-muted">
@@ -63,6 +62,10 @@ function UnavailableCard({ error }) {
   )
 }
 
+// No outer card chrome (border/shadow/padding) here - ValidationResults
+// wraps this in the tab panel's own card, and the "Market Opportunity" tab
+// label already says what section this is, so a repeated heading here
+// would just be redundant.
 export default function MarketOpportunity({ data, error }) {
   // `data === null` means the backend node failed for this request (per the API
   // contract) - distinct from a normal "nothing to show yet" state, so it gets its
@@ -77,22 +80,19 @@ export default function MarketOpportunity({ data, error }) {
   }
 
   return (
-    <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
-      <div className="flex items-center gap-2">
-        <IconLightbulb className="h-4 w-4 text-accent" />
-        <h2 className="font-mono text-xs uppercase tracking-widest text-muted">
-          Market Opportunity
-        </h2>
-      </div>
-
+    <div>
       {marketSize && (
-        <div className="mt-3 flex items-start gap-6">
-          <p className="flex-1 text-sm text-text leading-relaxed">{marketSize}</p>
+        <div>
+          <p className="text-sm text-text leading-relaxed">{marketSize}</p>
           {/* A score of 0 means the underlying analysis produced no grounded
               data at all (see backend/agent/opportunity_score.py) - showing
               "0" here would read as a real negative signal, not "unavailable",
               so it's hidden rather than displayed as a plausible-looking number. */}
-          {opportunityScore > 0 && <OpportunityScore score={opportunityScore} />}
+          {opportunityScore > 0 && (
+            <div className="mt-3 border-t border-border pt-3">
+              <OpportunityScore score={opportunityScore} />
+            </div>
+          )}
         </div>
       )}
 
@@ -118,11 +118,10 @@ export default function MarketOpportunity({ data, error }) {
             <IconUsers className="h-3.5 w-3.5 text-accent" />
             Customer Segments
           </h3>
-          {/* Single column, always - these cards hold full sentences per
-              field (pain points/motivations/buying behavior), and splitting
-              them into sub-columns inside a panel that's already half the
-              page width left each card too narrow to read comfortably. */}
-          <div className="space-y-3">
+          {/* Two columns now that this tab has the full page width to
+              itself - plenty of room per card, unlike the narrow dashboard
+              column this used to sit in. */}
+          <div className="grid gap-3 sm:grid-cols-2">
             {segments.map((s, i) => (
               <SegmentCard key={i} segment={s} />
             ))}
