@@ -53,7 +53,7 @@ function OpportunityScore({ score }) {
 
 function UnavailableCard({ error }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-panel/50 p-6 text-center shadow-sm sm:p-8">
+    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-panel/50 p-6 text-center shadow-sm sm:p-8">
       <IconAlertTriangle className="h-5 w-5 text-muted" />
       <p className="mt-2 text-sm font-medium text-text">Market opportunity analysis wasn&apos;t available</p>
       <p className="mt-1 max-w-[16rem] text-xs leading-snug text-muted">
@@ -77,7 +77,7 @@ export default function MarketOpportunity({ data, error }) {
   }
 
   return (
-    <div className="h-full rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+    <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
       <div className="flex items-center gap-2">
         <IconLightbulb className="h-4 w-4 text-accent" />
         <h2 className="font-mono text-xs uppercase tracking-widest text-muted">

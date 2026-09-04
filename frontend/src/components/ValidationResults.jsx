@@ -113,7 +113,12 @@ export default function ValidationResults({ summary, results, marketOpportunity,
   return (
     <div className="mt-6">
       <div className="mx-auto grid max-w-5xl items-start gap-6 xl:grid-cols-2">
-        <div className="h-full rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+        {/* No h-full here - under `items-start`, a fixed h-full stretches this
+            card to match its sibling's row height (the Market Opportunity
+            card, whose height varies a lot with segment count), leaving a
+            dead gap below the short summary text instead of just being as
+            tall as its own content. */}
+        <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
           <div className="flex items-center gap-2">
             <span className="h-1.5 w-1.5 rounded-full bg-accent" />
             <h2 className="font-mono text-xs uppercase tracking-widest text-muted">

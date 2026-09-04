@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import IdeaForm from './components/IdeaForm'
 import ValidationResults from './components/ValidationResults'
 import EmptyState from './components/EmptyState'
@@ -7,15 +7,48 @@ import useCountUp from './hooks/useCountUp'
 import useLoadingSteps from './hooks/useLoadingSteps'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const STORAGE_KEY = 'affinity:lastValidation'
+
+// Clicking a competitor/result link opens a new tab (target="_blank"), but on
+// some browsers - especially mobile - a backgrounded tab can get discarded
+// and reloaded from scratch when the user switches back to it. With state
+// held only in useState, that reload wiped the results entirely and dropped
+// the user back to an empty form, which read as "my results just vanished."
+// sessionStorage survives exactly that reload (and clears on an actual tab
+// close, so it doesn't linger like localStorage would).
+function loadPersisted() {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return { ...parsed, updatedAt: parsed.updatedAt ? new Date(parsed.updatedAt) : null }
+  } catch {
+    return null
+  }
+}
 
 export default function App() {
+  const [persisted] = useState(loadPersisted)
   const [isLoading, setIsLoading] = useState(false)
-  const [validation, setValidation] = useState(null)
+  const [validation, setValidation] = useState(persisted?.validation ?? null)
   const [errorMessage, setErrorMessage] = useState('')
-  const [lastSubmission, setLastSubmission] = useState(null)
-  const [updatedAt, setUpdatedAt] = useState(null)
+  const [lastSubmission, setLastSubmission] = useState(persisted?.lastSubmission ?? null)
+  const [updatedAt, setUpdatedAt] = useState(persisted?.updatedAt ?? null)
   const loadingStep = useLoadingSteps(isLoading)
   const sourceCount = useCountUp(validation?.results.length ?? 0)
+
+  useEffect(() => {
+    try {
+      if (validation) {
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ validation, lastSubmission, updatedAt }))
+      } else {
+        sessionStorage.removeItem(STORAGE_KEY)
+      }
+    } catch {
+      // sessionStorage unavailable (private browsing, storage full, etc.) -
+      // the app still works, it just won't survive a tab reload.
+    }
+  }, [validation, lastSubmission, updatedAt])
 
   async function validateIdea(payload) {
     setIsLoading(true)
