@@ -14,7 +14,7 @@ def _build_context(results: list) -> str:
     return "\n".join(lines) if lines else "No search results were available."
 
 
-def build_search_crew(idea: str, target_customer: str, problem: str, results: list) -> Crew:
+def build_search_crew(idea: str, target_customer: str, problem: str, results: list, model: str) -> Crew:
     """One-agent crew for Milestone 1: the Web Search Agent.
 
     The agent has no tools - it's given the real, already-fetched search
@@ -46,7 +46,7 @@ def build_search_crew(idea: str, target_customer: str, problem: str, results: li
             "An expert market researcher who grounds every claim in current, "
             "credible sources instead of relying on general knowledge."
         ),
-        llm=get_llm(),
+        llm=get_llm(model=model),
         verbose=False,
     )
 

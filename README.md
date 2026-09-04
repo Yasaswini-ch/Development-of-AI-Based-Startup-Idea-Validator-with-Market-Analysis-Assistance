@@ -34,9 +34,10 @@ flowchart TD
     WS --> MO["Market Opportunity Agent\nagent/market_agent.py"]
     MO --> CD["Competitor Discovery Agent\nagent/competitor_agent.py"]
     CD --> OS["Opportunity Score\nagent/opportunity_score.py"]
-    WS -.retry on rate limit.-> LLM["Groq LLM\nqwen3.6-27b"]
-    MO -.retry on rate limit.-> LLM
-    CD -.retry on rate limit.-> LLM
+    WS --> LLM["Groq LLM\nqwen3.6-27b (primary)"]
+    MO --> LLM
+    CD --> LLM
+    LLM -.rate limit: switch model.-> LLM2["Groq LLM\ngpt-oss-20b (fallback)"]
 
     Retrieval --> Response["summary + results +\nmarketOpportunity + competitors +\nerrors"]
     OS --> Response
@@ -46,9 +47,11 @@ flowchart TD
 ```
 
 A failure in the Market Opportunity or Competitor Discovery node doesn't crash the
-request — after one rate-limit retry against Groq, that section comes back `null` with
-an `errors.<node>` message, and the frontend shows an inline "unavailable" state for
-just that section while the rest of the response still renders.
+request — on a Groq rate limit, the call immediately switches to a second Groq model
+with its own separate quota (see Reasoning LLM below); only if that also fails does the
+section come back `null` with an `errors.<node>` message, and the frontend shows an
+inline "unavailable" state for just that section while the rest of the response still
+renders.
 
 | Layer        | Tech                                  |
 |--------------|----------------------------------------|
@@ -57,7 +60,7 @@ just that section while the rest of the response still renders.
 | Agent framework | [CrewAI](https://www.crewai.com) — 3 agents: Web Search (`crew_agents.py`), Market Opportunity (`market_agent.py`), Competitor Discovery (`competitor_agent.py`) |
 | Orchestration | [LangGraph](https://www.langchain.com/langgraph) — 4-node pipeline, `web_search → market_opportunity → competitor_discovery → opportunity_score` (`backend/agent/graph.py`) |
 | Search       | Tavily API (primary), with DuckDuckGo + Wikipedia + Hacker News as a zero-cost fallback chain — fetched directly (not LLM-mediated) across 5 search angles, academic sources filtered out (`backend/agent/tools.py`, `retrieval.py`) |
-| Reasoning LLM | [Groq](https://console.groq.com) (`qwen/qwen3.6-27b`, configurable — see `backend/agent/llm.py`), single provider, no automatic fallback provider — a same-request switch to Gemini was tested and dropped (it hangs for minutes past its own timeout instead of failing fast). Rate limits are instead retried once against Groq itself using its own suggested cooldown; summary output also passes a quality gate that rejects leaked reasoning text |
+| Reasoning LLM | [Groq](https://console.groq.com) — primary `qwen/qwen3.6-27b`, automatic fallback to a second Groq model (`openai/gpt-oss-20b`) on rate limit, since Groq rate-limits per-model, not per-account — a genuinely separate quota, not just a longer wait on the same one (see `backend/agent/llm.py`). A cross-*provider* fallback to Gemini was tested and dropped (it hangs for minutes past its own timeout instead of failing fast); summary output also passes a quality gate that rejects leaked reasoning text |
 | Database     | None yet |
 | Deployment   | [Render](https://render.com) — two services, config in `render.yaml` |
 | Version control | Git / GitHub |

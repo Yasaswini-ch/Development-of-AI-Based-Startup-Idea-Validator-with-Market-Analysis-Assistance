@@ -32,13 +32,14 @@ since their output is JSON: a valid, correctly-shaped JSON object recovered from
 raw text (even if surrounded by a rambling scratchpad) is trusted regardless of what's
 around it; otherwise it falls back to a safe default.
 
-Groq is the only reasoning LLM provider wired in — there's no automatic fallback to a
-second provider. A same-request switch to Gemini (using the key already in `.env`) was
-tested directly and dropped: it hangs for minutes past its own `timeout` parameter
-instead of failing fast, which is worse than the static fallback content the agents
-already return on failure. Instead, `agent/llm.py`'s `kickoff_with_retry()` parses
-Groq's own rate-limit message for its suggested cooldown and retries once after that
-wait (capped at 30s) before giving up.
+Groq is the only reasoning LLM *provider* wired in — a same-request switch to Gemini
+(using the key already in `.env`) was tested directly and dropped: it hangs for minutes
+past its own `timeout` parameter instead of failing fast. Instead, `agent/llm.py`'s
+`kickoff_with_fallback()` uses a second *model* on the same Groq account
+(`openai/gpt-oss-20b`, alongside the primary `qwen/qwen3.6-27b`): Groq rate-limits per
+model, not per account, so on a rate limit it switches immediately (no wait) instead of
+retrying the same exhausted model. Only if the fallback model is also rate limited does
+it wait out that model's suggested cooldown (capped at 30s) for one final try.
 
 ## Local setup
 
@@ -68,6 +69,6 @@ uvicorn main:app --reload --port 8000
   sources, dedupes, and ranks results across all of them
 - `agent/tools.py` — Tavily search (primary) with a DuckDuckGo/Wikipedia/Hacker News
   fallback chain
-- `agent/llm.py` — reasoning LLM provider/model selection (Groq by default) and
-  `kickoff_with_retry()`, which retries a crew once on a Groq rate-limit error using
-  Groq's own suggested cooldown
+- `agent/llm.py` — reasoning LLM model selection (Groq) and `kickoff_with_fallback()`,
+  which switches to a second Groq model immediately on a rate limit rather than
+  retrying the same exhausted one

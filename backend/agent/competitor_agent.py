@@ -41,7 +41,7 @@ import logging
 
 from crewai import Agent, Crew, Process, Task
 
-from .llm import get_llm, kickoff_with_retry
+from .llm import get_llm, kickoff_with_fallback
 from .output_guard import strip_reasoning
 
 logger = logging.getLogger(__name__)
@@ -62,7 +62,7 @@ def _build_context(results: list) -> str:
     return "\n".join(lines) if lines else "No search results were available."
 
 
-def _build_competitor_crew(idea: str, target_customer: str, problem: str, context: str) -> Crew:
+def _build_competitor_crew(idea: str, target_customer: str, problem: str, context: str, model: str) -> Crew:
     analyst = Agent(
         role="Competitor Discovery & Comparison Analyst",
         goal=(
@@ -75,7 +75,7 @@ def _build_competitor_crew(idea: str, target_customer: str, problem: str, contex
             "inventing companies or capabilities. Writes for a founder "
             "deciding how to differentiate, not a directory listing."
         ),
-        llm=get_llm(),
+        llm=get_llm(model=model),
         verbose=False,
     )
 
@@ -207,8 +207,9 @@ def analyze_competitors(idea: str, target_customer: str, problem: str, results: 
     """
     context = _build_context(results)
 
-    crew = _build_competitor_crew(idea, target_customer, problem, context)
-    crew_output = kickoff_with_retry(crew)
+    crew_output = kickoff_with_fallback(
+        lambda model: _build_competitor_crew(idea, target_customer, problem, context, model)
+    )
     candidate_text = strip_reasoning(crew_output.raw)
 
     data = _extract_json(candidate_text)
