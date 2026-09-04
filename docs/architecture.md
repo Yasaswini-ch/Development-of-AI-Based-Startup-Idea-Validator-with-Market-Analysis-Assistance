@@ -36,9 +36,10 @@ flowchart TD
     WS --> MO["Market Opportunity Agent\nagent/market_agent.py"]
     MO --> CD["Competitor Discovery Agent\nagent/competitor_agent.py"]
     CD --> OS["Opportunity Score\nagent/opportunity_score.py"]
-    WS -.retry on rate limit.-> LLM["Groq LLM\nqwen3.6-27b"]
-    MO -.retry on rate limit.-> LLM
-    CD -.retry on rate limit.-> LLM
+    WS --> LLM["Groq LLM\nqwen3.6-27b (primary)"]
+    MO --> LLM
+    CD --> LLM
+    LLM -.rate limit: switch model.-> LLM2["Groq LLM\ngpt-oss-20b (fallback)"]
 
     Retrieval --> Response["summary + results +\nmarketOpportunity + competitors +\nerrors"]
     OS --> Response
@@ -282,7 +283,7 @@ sync on every field.
 | Orchestration | LangGraph | Owns pipeline state and node wiring — each agent is a graph node, so M2-M4 agents are added without restructuring the backend. |
 | Agents | CrewAI | Role/goal-based agent definitions, one Agent+Task per pipeline stage — matches the brief's named-agent structure directly. Only the Web Search Agent uses a tool; the M2 reasoning agents (Market Opportunity, Competitor Discovery) take real data as context instead, since tool-calling proved to be the source of the reasoning-leak bug. |
 | Search | Tavily API (primary), DuckDuckGo + Wikipedia + Hacker News (fallback chain) | Tavily gives a real, trained relevance score and reliable results — used whenever `TAVILY_API_KEY` is set. If it's missing or fails, the app falls back to the zero-cost chain (own computed relevance score) instead of erroring out. Tried DuckDuckGo as sole primary first, but its unofficial scraping library proved too flaky (empty or irrelevant results, inconsistent run to run) to trust for a live demo. Academic/research-paper domains are filtered out per mentor guidance — they read as literature review material, not market/competitor signal. |
-| Reasoning LLM | Groq (via CrewAI/LiteLLM), single provider — no automatic fallback provider | Default and only provider for agent reasoning (`groq/qwen/qwen3.6-27b`), configurable via `LLM_MODEL` + provider API key (`GROQ_API_KEY`). A same-request fallback to Google Gemini (using the key already in `.env`) was tried and reverted twice: first for message-format incompatibilities with our pinned LiteLLM version, then again after direct testing showed it doesn't fail fast — it hung for minutes past its own `timeout` parameter before ever raising, which is worse than the existing static fallback content. Instead, `agent/llm.py`'s `kickoff_with_retry()` parses Groq's own rate-limit message ("please try again in 25.545s") and retries once after that cooldown (capped at 30s) — see Error Handling Policy. The model also occasionally leaks raw ReAct-style reasoning text into its answer, so the summary output is validated before use. |
+| Reasoning LLM | Groq (via CrewAI/LiteLLM), two models on the same account — primary + automatic same-provider fallback | Primary `groq/qwen/qwen3.6-27b`, fallback `groq/openai/gpt-oss-20b`, both configurable via `LLM_MODEL`/`LLM_FALLBACK_MODEL` + one `GROQ_API_KEY`. Groq rate-limits per model, not per account (confirmed via `GET /openai/v1/models` and a direct latency test on both) — so on a rate limit, `agent/llm.py`'s `kickoff_with_fallback()` switches to the fallback model immediately (no wait, it's a separate quota bucket) instead of retrying the same exhausted one; only if *both* are rate limited does it fall back to waiting out the last one's suggested cooldown (capped at 30s) — see Error Handling Policy. A cross-*provider* fallback to Google Gemini (using the key already in `.env`) was tried and reverted: message-format incompatibilities with our pinned LiteLLM version, then confirmed by direct testing to hang for minutes past its own `timeout` parameter before ever raising — worse than the existing static fallback content, so dropped in favor of the same-provider approach above. The model also occasionally leaks raw ReAct-style reasoning text into its answer, so the summary output is validated before use. |
 | Product UI | No framework/provider names shown | Per mentor guidance, the UI doesn't surface "CrewAI," "Groq," "Tavily," etc. anywhere — footer/status text describes capability generically ("Multi-agent Pipeline," "Live Web Search") instead of naming the underlying tech. |
 | Hosting | Render | Already set up for this repo (see `render.yaml`). |
 
@@ -317,13 +318,16 @@ local vs. deployed).
   balanced-brace extraction is a stronger and more precise check: if it parses to
   valid JSON with every required field of the right type, it's used regardless of any
   scratchpad rambling around it; otherwise it falls back to a safe default
-- LLM rate-limit retry: every `crew.kickoff()` call (web search, market opportunity,
-  competitor discovery) goes through `agent/llm.py`'s `kickoff_with_retry()`, which
-  parses Groq's own rate-limit message for its suggested cooldown and retries once
-  after that wait (capped at 30s) before giving up. A non-rate-limit exception, or a
-  second failure after the retry, is re-raised immediately and handled by that node's
-  own try/except (see below) — it does not retry indefinitely and does not fall back to
-  a different LLM provider (see Tech Stack Decisions for why)
+- LLM rate-limit fallback: every crew (web search, market opportunity, competitor
+  discovery) goes through `agent/llm.py`'s `kickoff_with_fallback()`, which builds and
+  runs the crew against the primary Groq model and, on a rate limit, immediately
+  rebuilds it against a second Groq model instead of waiting — a separate quota bucket
+  on the same account (see Tech Stack Decisions). Only if that fallback model is *also*
+  rate limited does it wait out its suggested cooldown (capped at 30s) for one final
+  try. A non-rate-limit exception, or a failure after both models and the final retry,
+  is re-raised immediately and handled by that node's own try/except (see below) — it
+  does not retry indefinitely and does not fall back to a different LLM *provider* (see
+  Tech Stack Decisions for why)
 - Node-level partial-failure isolation: `market_opportunity_node` and
   `competitor_discovery_node` each catch their own exceptions independently. A failure
   in one sets `marketOpportunity`/`competitors` to `null` and populates
@@ -348,7 +352,7 @@ local vs. deployed).
 │       ├── output_guard.py      # shared reasoning-leak detection
 │       ├── retrieval.py         # multi-angle query expansion + dedup
 │       ├── tools.py             # Tavily (primary) + DuckDuckGo/Wikipedia/Hacker News fallback
-│       └── llm.py               # reasoning LLM selection + rate-limit retry (kickoff_with_retry)
+│       └── llm.py               # reasoning LLM selection + same-provider rate-limit fallback (kickoff_with_fallback)
 ├── docs/
 │   ├── architecture.md        # this file
 │   ├── milestone1-plan.md
