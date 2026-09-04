@@ -1,5 +1,5 @@
 import { Fragment } from 'react'
-import { IconShield, IconAlertTriangle } from './icons'
+import { IconAlertTriangle } from './icons'
 
 const PRICE_ROWS = ['high', 'mid', 'low']
 const PRICE_LABELS = { high: 'High price', mid: 'Mid price', low: 'Low price' }
@@ -58,7 +58,7 @@ function CompetitorCard({ competitor }) {
 
 function UnavailableCard({ error }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-panel/50 p-6 text-center shadow-sm sm:p-8">
+    <div className="flex flex-col items-center justify-center p-2 text-center">
       <IconAlertTriangle className="h-5 w-5 text-muted" />
       <p className="mt-2 text-sm font-medium text-text">Competitor analysis wasn&apos;t available</p>
       <p className="mt-1 max-w-sm text-xs leading-snug text-muted">
@@ -153,15 +153,8 @@ export default function CompetitorAnalysis({ data, error }) {
   }
 
   return (
-    <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
-      <div className="flex items-center gap-2">
-        <IconShield className="h-4 w-4 text-accent" />
-        <h2 className="font-mono text-xs uppercase tracking-widest text-muted">
-          Competitor Analysis
-        </h2>
-      </div>
-
-      <div className="mt-5 grid gap-4 sm:grid-cols-2">
+    <div>
+      <div className="grid gap-4 sm:grid-cols-2">
         {competitors.map((c, i) => (
           <CompetitorCard key={i} competitor={c} />
         ))}
