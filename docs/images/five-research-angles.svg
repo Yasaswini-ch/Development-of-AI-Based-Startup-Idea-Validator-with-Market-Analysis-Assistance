@@ -1,0 +1,60 @@
+<svg viewBox="0 0 900 460" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+  <style>
+    .bg { fill: #ffffff; }
+    .card { fill: #ffffff; stroke: #1a1a1a; stroke-width: 1.5; }
+    .card-title { fill: #1a1a1a; font-size: 14px; font-weight: 700; }
+    .card-sub { fill: #555555; font-size: 11px; }
+    .center { fill: #1a1a1a; }
+    .center-text { fill: #ffffff; font-size: 13px; font-weight: 700; }
+    .center-sub { fill: #cccccc; font-size: 11px; font-weight: 400; }
+    .arrow { stroke: #888888; stroke-width: 1.5; fill: none; marker-end: url(#arrowhead); }
+    .label { fill: #888888; font-size: 10px; font-weight: 600; letter-spacing: 0.5px; }
+  </style>
+
+  <defs>
+    <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#888888"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="900" height="460" class="bg"/>
+
+  <!-- Center node: submitted idea -->
+  <rect x="370" y="200" width="160" height="60" rx="6" class="center"/>
+  <text x="450" y="225" text-anchor="middle" class="center-text">Founder's Idea</text>
+  <text x="450" y="243" text-anchor="middle" class="center-sub">expanded into 5 angles</text>
+
+  <!-- Top row: 3 cards -->
+  <!-- 1. Market Size & Trends -->
+  <line x1="400" y1="200" x2="140" y2="90" class="arrow"/>
+  <rect x="20" y="30" width="220" height="60" rx="6" class="card"/>
+  <text x="130" y="55" text-anchor="middle" class="card-title">Market Size &amp; Trends</text>
+  <text x="130" y="73" text-anchor="middle" class="card-sub">growth data, market reports</text>
+
+  <!-- 2. Competitors -->
+  <line x1="450" y1="200" x2="450" y2="90" class="arrow"/>
+  <rect x="340" y="30" width="220" height="60" rx="6" class="card"/>
+  <text x="450" y="55" text-anchor="middle" class="card-title">Competitors</text>
+  <text x="450" y="73" text-anchor="middle" class="card-sub">existing players, alternatives</text>
+
+  <!-- 3. Customer Demand -->
+  <line x1="500" y1="200" x2="760" y2="90" class="arrow"/>
+  <rect x="660" y="30" width="220" height="60" rx="6" class="card"/>
+  <text x="770" y="55" text-anchor="middle" class="card-title">Customer Demand</text>
+  <text x="770" y="73" text-anchor="middle" class="card-sub">pain points, real user interest</text>
+
+  <!-- Bottom row: 2 cards -->
+  <!-- 4. Industry News -->
+  <line x1="410" y1="260" x2="240" y2="370" class="arrow"/>
+  <rect x="130" y="370" width="220" height="60" rx="6" class="card"/>
+  <text x="240" y="395" text-anchor="middle" class="card-title">Industry News</text>
+  <text x="240" y="413" text-anchor="middle" class="card-sub">recent developments, signals</text>
+
+  <!-- 5. How Others Solve This -->
+  <line x1="490" y1="260" x2="660" y2="370" class="arrow"/>
+  <rect x="550" y="370" width="220" height="60" rx="6" class="card"/>
+  <text x="660" y="395" text-anchor="middle" class="card-title">How Others Solve This</text>
+  <text x="660" y="413" text-anchor="middle" class="card-sub">existing approaches, workarounds</text>
+
+  <text x="450" y="450" text-anchor="middle" class="label">EACH ANGLE RUNS ITS OWN SEARCH · TAVILY (+ FREE FALLBACK CHAIN) · RESULTS MERGED &amp; DEDUPED</text>
+</svg>
