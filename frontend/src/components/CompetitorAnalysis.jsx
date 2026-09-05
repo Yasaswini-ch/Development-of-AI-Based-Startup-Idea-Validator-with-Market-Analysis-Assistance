@@ -1,11 +1,11 @@
 import { Fragment } from 'react'
 import { IconAlertTriangle } from './icons'
 
-const PRICE_ROWS = ['high', 'mid', 'low']
-const PRICE_LABELS = { high: 'High price', mid: 'Mid price', low: 'Low price' }
-const BREADTH_COLS = ['narrow', 'moderate', 'broad']
-const BREADTH_LABELS = { narrow: 'Narrow', moderate: 'Moderate', broad: 'Broad' }
-
+// NAYA (add):
+const PRICE_ROWS = ['high', 'low']
+const PRICE_LABELS = { high: 'High price', low: 'Low price' }
+const BREADTH_COLS = ['narrow', 'broad']
+const BREADTH_LABELS = { narrow: 'Narrow', broad: 'Broad' }
 function hostnameOf(url) {
   try {
     return new URL(url).hostname.replace('www.', '')
@@ -86,7 +86,7 @@ function PositioningGrid({ competitors }) {
         verified market data.
       </p>
 
-      <div className="grid grid-cols-[auto_repeat(3,1fr)] gap-1.5">
+      <div className="grid grid-cols-[auto_repeat(2,1fr)] gap-1.5">
         <div />
         {BREADTH_COLS.map((col) => (
           <div
@@ -131,7 +131,7 @@ function PositioningGrid({ competitors }) {
 
       {unclassified.length > 0 && (
         <p className="mt-2 text-[11px] leading-snug text-muted">
-          Not placed (price/breadth unknown): {unclassified.map((c) => c.name).join(', ')}
+          Not placed (mid-range or unknown): {unclassified.map((c) => c.name).join(', ')}
         </p>
       )}
     </div>
