@@ -14,6 +14,13 @@ from agent.graph import pipeline
 
 load_dotenv()
 
+# Without this, the root logger has no handler at INFO level - every
+# logger.info()/logger.warning() call in agent/graph.py (the per-node
+# START/COMPLETE/FAILED boundary logs) silently goes nowhere, since
+# Python's handler-of-last-resort only surfaces WARNING and above.
+# Uvicorn configures its own access/error loggers independently of this.
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Affinity API")
