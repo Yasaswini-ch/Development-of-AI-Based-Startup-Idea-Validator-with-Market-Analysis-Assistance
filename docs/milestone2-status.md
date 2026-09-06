@@ -7,7 +7,9 @@ and the 3×3 positioning-grid fix all landed)
 This replaces confusion about "is it my turn yet" — read your name, check your row, start
 immediately if it says so. Full task detail is still in
 [`milestone2-plan.md`](milestone2-plan.md); this doc is just the current state + the
-unblock order.
+unblock order. For the actual checks run against the live app (what was tested, how,
+and what came back) rather than just a status claim, see
+[`milestone2-verification.md`](milestone2-verification.md).
 
 ---
 
