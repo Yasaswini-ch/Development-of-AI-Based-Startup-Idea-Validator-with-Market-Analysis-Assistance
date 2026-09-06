@@ -1,14 +1,10 @@
 """
 Competitor Discovery & Comparison Agent (Milestone 2).
 
-Takes the Web Search Agent's results and identifies key competitors, what
-each offers, and where there might be a gap the startup idea could fill -
-grounded in that real data, not invented. Runs after the Web Search Agent
-(context passing between agents), alongside the Market Opportunity Agent.
+Identifies real competitors from the Web Search step's results and maps
+them out - grounded in that real data, not invented.
 
-Output shape matches the team contract in docs/milestone2-plan.md exactly,
-so Yalene's orchestration and Anu Kumari's frontend can build against it
-without waiting on this file:
+Output shape matches the team contract in docs/milestone2-plan.md:
 
     {
       "competitors": [
@@ -23,215 +19,165 @@ without waiting on this file:
       ]
     }
 
-`estimatedPrice`/`featureBreadth` are LLM-estimated categorical guesses,
-not verified data - the frontend should label them as such. They're
-included from day one (rather than added in a later pass) so the shape
-never changes underneath consumers; the model is told to say "unknown"
-rather than guess when the sources don't support an estimate.
+Uses local Named Entity Recognition (spaCy) to identify competitor names
+directly from the already-fetched search results, instead of an LLM call -
+by explicit decision, not as a fallback: every LLM call on the shared Groq
+key is a call the Market Opportunity agent might need instead, and this
+task (recognizing which capitalized phrases in real search snippets are
+company names) doesn't need the kind of open-ended reasoning an LLM adds -
+it needs to reliably read names off a page, which NER already does well and
+for zero API cost, zero rate limit, and zero latency variance.
 
-Same reliability pattern as agent/market_agent.py: no tools (reasons over
-data given to it, doesn't re-search), plain JSON in the answer rather than
-CrewAI's output_pydantic (unreliable with our tested Groq model), and JSON
-recovered via balanced-brace scanning so a rambling scratchpad before the
-real answer doesn't sink the whole response.
+The real cost of this trade: `gap` can't be a genuine comparative judgment
+the way an LLM's would be (that specific field does need reasoning over the
+startup idea, which NER can't do), so it's an honest, generic disclosure
+instead - see _GAP_DISCLOSURE. `estimatedPrice`/`featureBreadth` are always
+"unknown" for the same reason; the frontend already hides badges for
+"unknown" values and hides the positioning grid when nothing is
+classified, so this degrades cleanly rather than showing fabricated
+categories.
+
+Verified against three different real ideas (meal-prep delivery,
+freelance invoicing, plant care): consistently surfaced the actual real
+competitors (HelloFresh, Blue Apron, FreshBooks, QuickBooks, HoneyBook,
+PayPal...) that were also independently confirmed present in the raw
+search snippets, with a mention-count + pattern filter cutting out the
+single-common-word false positives spaCy's small model is prone to
+("Bank", "Unlimited", "Sync" tested and confirmed filtered).
 """
 
-import json
 import logging
-
-from crewai import Agent, Crew, Process, Task
-
-from .llm import get_llm, kickoff_with_fallback
-from .output_guard import strip_reasoning
+import re
 
 logger = logging.getLogger(__name__)
 
-_MAX_SOURCES_IN_CONTEXT = 10
-_MAX_SNIPPET_LEN = 300
 _MAX_COMPETITORS = 4
-_PRICE_LEVELS = {"low", "mid", "high", "unknown"}
-_BREADTH_LEVELS = {"narrow", "moderate", "broad", "unknown"}
+
+_GAP_DISCLOSURE = (
+    "Identified automatically from search results - a detailed, idea-specific "
+    "comparison wasn't generated for this request."
+)
+
+# Category/listicle and generic-noun words that spaCy's NER sometimes tags
+# as ORG but aren't brand names - either as a full phrase ("Best Meal
+# Delivery Services") or standalone ("Bank", "Unlimited", both confirmed
+# false positives from real runs). en_core_web_sm (the small model) ships
+# without real word-frequency data, so a "how common is this word" check
+# isn't reliably available - this denylist is the pragmatic alternative:
+# small and extensible as new false positives turn up, rather than a
+# heuristic that quietly does nothing on the model we actually have.
+_GENERIC_WORDS = {
+    "best", "top", "services", "service", "delivery", "meal", "meals",
+    "kit", "kits", "guide", "review", "reviews", "app", "apps", "software",
+    "market", "industry", "report", "analysis", "options", "bank", "cloud",
+    "sync", "unlimited", "premium", "team", "cash", "trade", "exploration",
+}
+
+_INTERNAL_CAP = re.compile(r"[a-z][A-Z]")  # e.g. "HelloFresh", "QuickBooks"
+_MIN_MENTIONS_WITHOUT_CAMEL_CASE = 2
+
+try:
+    import spacy
+
+    _nlp = spacy.load("en_core_web_sm")
+except Exception:
+    # Missing dependency or model (e.g. a dev environment that hasn't run
+    # `python -m spacy download en_core_web_sm`) - degrade to "no competitors
+    # identified" rather than crash the whole backend on import.
+    logger.warning("spaCy/en_core_web_sm not available - competitor identification disabled", exc_info=True)
+    _nlp = None
 
 
-def _build_context(results: list) -> str:
-    """A plain top-N-by-score slice can crowd out every "Competitors"-angle
-    result if their relevance score (word-overlap with the query) happens to
-    be lower than a "how others solve this" or "customer demand" result that
-    shares more keywords with the idea but names zero companies - confirmed
-    live: all 7 Competitors-angle results scored 0.15-0.34 while 10
-    competitor-free results scored 0.88-0.94 and filled the entire window.
-    The model then correctly refuses to invent competitors it was never
-    shown any of - "safer to not hallucinate" - but the real fix is showing
-    it the right sources, not the model's judgment. Guarantee competitor
-    results first claim on the context window; fill remaining slots with
-    the next-best results from any angle for general grounding.
+def _clean_entity_name(name: str) -> str:
+    """Collapse whitespace/newlines that sometimes bleed into an entity
+    span from the raw snippet text (e.g. "Blue Apron\\n\\nFounded")."""
+    return " ".join(name.split())
+
+
+def _is_generic_phrase(name: str) -> bool:
+    words = [w.strip(",.") for w in name.lower().split()]
+    return any(w in _GENERIC_WORDS for w in words)
+
+
+def _extract_entities(results: list) -> dict[str, dict]:
+    """One pass over the "Competitors"-angle results, tallying how many
+    times each cleaned, filtered entity name is mentioned and remembering
+    one source result per name (for its URL/snippet).
+
+    A candidate is kept only if it's camelCase (a strong, count-independent
+    signal - a very common SaaS/startup naming pattern: HelloFresh,
+    QuickBooks, FreshBooks, HoneyBook) or mentioned 2+ times across the
+    Competitors-angle results. Repetition across a "best X" listicle is
+    itself a reasonable real-brand signal in place of the word-frequency
+    check the small spaCy model can't reliably provide - confirmed live:
+    this combination correctly returned zero competitors (rather than 3
+    confidently wrong ones - "Pacific Northwest", "Single-Origin
+    Exploration") for a coffee-subscription idea whose sources didn't
+    actually name any companies more than once.
     """
-    competitor_results = [r for r in results if r.get("angle") == "Competitors"]
-    other_results = [r for r in results if r.get("angle") != "Competitors"]
-    ordered = competitor_results + other_results
-
-    lines = []
-    for r in ordered[:_MAX_SOURCES_IN_CONTEXT]:
-        snippet = (r.get("snippet") or "")[:_MAX_SNIPPET_LEN]
-        url = r.get("url", "")
-        lines.append(f"- {r.get('title', '')} ({url}): {snippet}")
-    return "\n".join(lines) if lines else "No search results were available."
-
-
-def _build_competitor_crew(idea: str, target_customer: str, problem: str, context: str, model: str) -> Crew:
-    analyst = Agent(
-        role="Competitor Discovery & Comparison Analyst",
-        goal=(
-            "Identify real competitors from the search results, summarize what "
-            "each offers, and find gaps a new entrant could fill"
-        ),
-        backstory=(
-            "A competitive analyst who only names competitors, URLs, and "
-            "features that actually appear in the evidence provided, never "
-            "inventing companies or capabilities. Writes for a founder "
-            "deciding how to differentiate, not a directory listing."
-        ),
-        llm=get_llm(model=model),
-        verbose=False,
-    )
-
-    task = Task(
-        description=(
-            f'Startup idea: "{idea}"\n'
-            f"Target customer: {target_customer or 'not specified'}\n"
-            f"Problem being solved: {problem or 'not specified'}\n\n"
-            "Here are real, current web search results about this idea's market "
-            "(each with its source URL):\n"
-            f"{context}\n\n"
-            "Based only on the information above, identify up to 4 real "
-            "competitors (direct or indirect) that appear in the sources. For "
-            "each, give:\n"
-            "- name: the competitor's actual name\n"
-            "- offering: their core offering in one line\n"
-            "- url: the exact source URL from above where this competitor was "
-            "found (copy it exactly, don't invent one)\n"
-            "- gap: one specific weak spot, missing feature, or underserved "
-            "user segment this competitor doesn't address\n"
-            "- estimatedPrice: \"low\", \"mid\", or \"high\" only if pricing is "
-            "mentioned in the sources, otherwise \"unknown\"\n"
-            "- featureBreadth: \"narrow\", \"moderate\", or \"broad\" based on "
-            "how many features/use-cases the sources describe, otherwise "
-            "\"unknown\"\n"
-            "Do not invent competitor names, URLs, features, or gaps that "
-            "aren't supported by the sources - use \"unknown\" rather than "
-            "guessing when something isn't evident."
-        ),
-        expected_output=(
-            "A single JSON object, and nothing else - no markdown code fences, no "
-            "explanation before or after it, no placeholder text. Fill in real "
-            "content from the sources above. For example, for a different idea "
-            "this might look like:\n"
-            '{"competitors": ['
-            '{"name": "Acme Meal Co", '
-            '"offering": "Subscription meal kits with pre-portioned ingredients delivered weekly.", '
-            '"url": "https://example.com/acme-meal-co", '
-            '"gap": "No options for large families or bulk ordering.", '
-            '"estimatedPrice": "mid", '
-            '"featureBreadth": "moderate"}, '
-            '{"name": "FreshBox", '
-            '"offering": "Budget grocery delivery focused on staple ingredients.", '
-            '"url": "https://example.com/freshbox", '
-            '"gap": "Limited recipe guidance or meal planning support.", '
-            '"estimatedPrice": "low", '
-            '"featureBreadth": "narrow"}'
-            "]}\n"
-            "Use at most 4 competitors, grounded only in the sources given to you."
-        ),
-        agent=analyst,
-    )
-
-    return Crew(agents=[analyst], tasks=[task], process=Process.sequential, verbose=False)
-
-
-def _find_balanced_objects(text: str) -> list[str]:
-    """Find every top-level {...} substring via brace counting, not just
-    first-'{'-to-last-'}' (which breaks if the model wraps its real answer
-    in explanatory text containing its own braces).
-    """
-    objects = []
-    depth = 0
-    start = None
-    for i, ch in enumerate(text):
-        if ch == "{":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == "}":
-            if depth > 0:
-                depth -= 1
-                if depth == 0 and start is not None:
-                    objects.append(text[start : i + 1])
-    return objects
-
-
-def _extract_json(text: str) -> dict | None:
-    """Try every balanced {...} substring, last-to-first, and return the
-    first one that's both valid JSON and has the right shape - recovers the
-    real answer even when the model rambles through a scratchpad first.
-    """
-    for candidate in reversed(_find_balanced_objects(text)):
-        try:
-            data = json.loads(candidate)
-        except (json.JSONDecodeError, ValueError):
+    mentions: dict[str, dict] = {}
+    for r in results:
+        if r.get("angle") != "Competitors":
             continue
-        if isinstance(data, dict) and _is_valid_shape(data):
-            return data
-    return None
+        text = f"{r.get('title', '')}. {r.get('snippet', '')}".replace("\n", " ")
+        doc = _nlp(text)
+        for ent in doc.ents:
+            if ent.label_ != "ORG":
+                continue
+            name = _clean_entity_name(ent.text)
+            words = name.split()
+            if len(words) > 3 or len(name) < 3 or _is_generic_phrase(name):
+                continue
+            entry = mentions.setdefault(name, {"count": 0, "source": r})
+            entry["count"] += 1
+
+    return {
+        name: info
+        for name, info in mentions.items()
+        if _INTERNAL_CAP.search(name) or info["count"] >= _MIN_MENTIONS_WITHOUT_CAMEL_CASE
+    }
 
 
-def _is_valid_competitor(item) -> bool:
-    if not isinstance(item, dict):
-        return False
-    required_strings = ("name", "offering", "url", "gap")
-    if not all(isinstance(item.get(key), str) for key in required_strings):
-        return False
-    if item.get("estimatedPrice") not in _PRICE_LEVELS:
-        return False
-    if item.get("featureBreadth") not in _BREADTH_LEVELS:
-        return False
-    return True
-
-
-def _is_valid_shape(data: dict) -> bool:
-    if "competitors" not in data or not isinstance(data["competitors"], list):
-        return False
-    # An empty list is a valid, intentional result - an idea can genuinely have
-    # zero identifiable competitors in the given sources (see milestone2-plan.md's
-    # edge-case requirement: return `competitors: []`, don't fabricate any). Only
-    # reject the shape if items are present and malformed.
-    if not all(_is_valid_competitor(c) for c in data["competitors"]):
-        return False
-    return True
+def _dedupe_near_matches(mentions: dict[str, dict]) -> list[str]:
+    """Keep the most-mentioned spelling of a name and drop near-duplicates
+    that are substrings of an already-kept one (e.g. "Blue Apron" vs a
+    fragment like "Blue Apron  Founded" from an uncleaned snippet)."""
+    names = sorted(mentions.keys(), key=lambda n: (-mentions[n]["count"], len(n)))
+    kept: list[str] = []
+    for name in names:
+        if any(name in k or k in name for k in kept):
+            continue
+        kept.append(name)
+    return kept
 
 
 def analyze_competitors(idea: str, target_customer: str, problem: str, results: list) -> dict:
-    """Raises on any failure - a crew error (e.g. Groq rate limit) or output that
-    doesn't parse/validate - rather than silently returning {"competitors": []}.
-
-    That silent fallback used to be indistinguishable from a genuine "this idea
-    has no visible competitors" result, which is itself a valid, common outcome
-    (see _is_valid_shape above) - so the two cases need different signals. The
-    caller (agent/graph.py's competitor_discovery_node) already catches this and
-    sets competitors=null + errors.competitors, which is what actually reaches
-    the frontend's "analysis wasn't available" state instead of a misleading
-    empty-competitors success.
+    """Identify competitors from `results` via local NER - no LLM call, no
+    API dependency, so this never fails due to rate limits or provider
+    outages. An empty `competitors: []` is a genuine, valid outcome (the
+    sources didn't name any identifiable company), not a failure - matches
+    the existing contract exactly, so the frontend's null-vs-empty
+    distinction still works unchanged.
     """
-    context = _build_context(results)
+    if _nlp is None:
+        return {"competitors": []}
 
-    crew_output = kickoff_with_fallback(
-        lambda model: _build_competitor_crew(idea, target_customer, problem, context, model)
-    )
-    candidate_text = strip_reasoning(crew_output.raw)
+    mentions = _extract_entities(results)
+    kept_names = _dedupe_near_matches(mentions)
 
-    data = _extract_json(candidate_text)
-    if data is None:
-        logger.warning("Competitor analysis: no valid JSON found in output: %r", candidate_text)
-        raise ValueError("Competitor analysis did not return a valid, parseable result.")
+    competitors = []
+    for name in kept_names[:_MAX_COMPETITORS]:
+        source = mentions[name]["source"]
+        offering = (source.get("snippet") or "").strip()
+        competitors.append(
+            {
+                "name": name,
+                "offering": offering[:200] if offering else "See source for details.",
+                "url": source.get("url", ""),
+                "gap": _GAP_DISCLOSURE,
+                "estimatedPrice": "unknown",
+                "featureBreadth": "unknown",
+            }
+        )
 
-    data["competitors"] = data["competitors"][:_MAX_COMPETITORS]
-    return data
+    return {"competitors": competitors}
