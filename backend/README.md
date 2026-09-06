@@ -6,12 +6,18 @@ for the full API contract and data flow.
 Agents are built with **CrewAI** and orchestrated by a **LangGraph** state graph
 (`agent/graph.py`) with 4 nodes so far: `web_search` (Milestone 1) →
 `market_opportunity` → `competitor_discovery` → `opportunity_score` (all Milestone 2).
-Each later node consumes the Web Search Agent's real results as context (no
+Each later node consumes the Web Search step's real results as context (no
 re-searching). Future milestones add more agents the same way, as additional graph
 nodes.
 
+Only `market_opportunity` and `competitor_discovery` are CrewAI agents backed by an LLM
+call. `web_search` builds its summary from a plain template over the retrieved results
+instead (see below) - it used to be a third CrewAI agent, but that call was cut
+entirely since a fallback template was already producing the real output often enough
+to make the LLM call redundant.
+
 `market_opportunity` and `competitor_discovery` each catch their own failures: if one's
-LLM call fails (after one rate-limit retry — see below), that section of the response
+LLM call fails (after exhausting the model fallback chain — see below), that section of the response
 comes back `null` with a message in `errors.<node>` instead of crashing the whole
 request. Only a failure in `web_search` itself (nothing to reason over) fails the whole
 request with a `502`.
@@ -23,23 +29,22 @@ trends, competitors, industry news, customer demand, how others solve this probl
 academic/research-paper domains are filtered out, and results are deduped + ranked.
 Only the reasoning LLM (Groq, by default) requires a key.
 
-The Web Search Agent's LLM-generated summary passes a quality gate before being
-trusted — if it contains a line break, markdown formatting, or signs of a leaked
-reasoning trace (e.g. stray `<think>` tags, "Thought:"/"Final Answer" scaffolding),
-it's replaced with a clean fallback sentence built from the real results instead. The
-Market Opportunity and Competitor Discovery agents use a different, stronger check
-since their output is JSON: a valid, correctly-shaped JSON object recovered from the
-raw text (even if surrounded by a rambling scratchpad) is trusted regardless of what's
-around it; otherwise it falls back to a safe default.
+The Market Opportunity and Competitor Discovery agents validate their JSON shape
+before trusting it: a valid, correctly-shaped JSON object recovered from the raw text
+(even if surrounded by a rambling scratchpad, past `strip_reasoning()`) is trusted
+regardless of what's around it; otherwise the node fails and reports through
+`errors.<node>`. The Web Search summary has no equivalent gate to worry about anymore
+since it isn't LLM-generated.
 
 Groq is the only reasoning LLM *provider* wired in — a same-request switch to Gemini
 (using the key already in `.env`) was tested directly and dropped: it hangs for minutes
 past its own `timeout` parameter instead of failing fast. Instead, `agent/llm.py`'s
-`kickoff_with_fallback()` uses a second *model* on the same Groq account
-(`openai/gpt-oss-20b`, alongside the primary `qwen/qwen3.6-27b`): Groq rate-limits per
-model, not per account, so on a rate limit it switches immediately (no wait) instead of
-retrying the same exhausted model. Only if the fallback model is also rate limited does
-it wait out that model's suggested cooldown (capped at 30s) for one final try.
+`kickoff_with_fallback()` chains through two more *models* on the same Groq account
+(`openai/gpt-oss-20b`, then `openai/gpt-oss-120b`, alongside the primary
+`qwen/qwen3.6-27b`): Groq rate-limits per model, not per account, so on a rate limit it
+switches to the next model immediately (no wait) instead of retrying the same exhausted
+one. Only once every model in the chain has been rate limited does it wait out the last
+one's suggested cooldown (capped at 30s) for one final try.
 
 ## Local setup
 
@@ -52,9 +57,10 @@ uvicorn main:app --reload --port 8000
 
 ## Files
 
-- `main.py` — FastAPI app, CORS config, `/validate` route (invokes the LangGraph pipeline)
-- `agent/graph.py` — LangGraph `StateGraph`: pipeline state + node wiring
-- `agent/crew_agents.py` — Web Search Agent (Milestone 1)
+- `main.py` — FastAPI app, CORS config, `/validate` route (invokes the LangGraph
+  pipeline, with an in-memory cache for identical requests)
+- `agent/graph.py` — LangGraph `StateGraph`: pipeline state + node wiring; also builds
+  the Web Search summary from a plain template (`_build_summary`) - no LLM call
 - `agent/market_agent.py` — Market Opportunity & Customer Segmentation Agent
   (Milestone 2) — market size/trends + per-segment pain points/motivations/buying
   behavior
@@ -63,12 +69,12 @@ uvicorn main:app --reload --port 8000
 - `agent/opportunity_score.py` — Opportunity Score post-processing node (Milestone 2
   stretch) — combines the two agents' output into a 0–100 score, with a raw
   search-signal fallback if both upstream agents failed
-- `agent/output_guard.py` — shared reasoning-leak detection used by the Web Search
-  Agent's quality gate
+- `agent/output_guard.py` — `strip_reasoning()`, used by the Market Opportunity and
+  Competitor Discovery agents before their own JSON-shape validation
 - `agent/retrieval.py` — expands one idea into 5 search angles, filters out academic
   sources, dedupes, and ranks results across all of them
 - `agent/tools.py` — Tavily search (primary) with a DuckDuckGo/Wikipedia/Hacker News
   fallback chain
 - `agent/llm.py` — reasoning LLM model selection (Groq) and `kickoff_with_fallback()`,
-  which switches to a second Groq model immediately on a rate limit rather than
+  which chains through the fallback models immediately on a rate limit rather than
   retrying the same exhausted one
