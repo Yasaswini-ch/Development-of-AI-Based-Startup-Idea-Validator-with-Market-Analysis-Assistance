@@ -8,3 +8,4 @@ tavily-python==0.5.0
 ddgs==9.0.0
 python-dotenv==1.0.1
 pydantic>=2.9.2
+spacy==3.8.16
