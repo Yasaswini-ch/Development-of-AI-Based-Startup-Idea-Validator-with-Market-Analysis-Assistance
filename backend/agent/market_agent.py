@@ -38,9 +38,20 @@ def _build_context(results: list) -> str:
     """Condense the real search results into a compact block of grounding
     text for the prompt - capped so we don't blow up the context window
     with everything retrieval.py fetched.
+
+    Same fix as competitor_agent.py's _build_context, confirmed by the same
+    live failure: a plain top-N-by-score slice can crowd out every "Market
+    size & trends" result if their relevance score (word-overlap with the
+    query) happens to be lower than results from other angles. Guarantee
+    market-size results first claim on the context window; fill remaining
+    slots with the next-best results from any angle for general grounding.
     """
+    market_results = [r for r in results if r.get("angle") == "Market size & trends"]
+    other_results = [r for r in results if r.get("angle") != "Market size & trends"]
+    ordered = market_results + other_results
+
     lines = []
-    for r in results[:_MAX_SOURCES_IN_CONTEXT]:
+    for r in ordered[:_MAX_SOURCES_IN_CONTEXT]:
         snippet = (r.get("snippet") or "")[:_MAX_SNIPPET_LEN]
         lines.append(f"- {r.get('title', '')}: {snippet}")
     return "\n".join(lines) if lines else "No search results were available."

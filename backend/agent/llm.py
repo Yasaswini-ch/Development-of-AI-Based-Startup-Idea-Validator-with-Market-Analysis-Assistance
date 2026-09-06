@@ -47,10 +47,30 @@ def get_llm(max_tokens: int | None = None, model: str | None = None):
     return LLM(model=model, max_tokens=max_tokens)
 
 
+def _is_rate_limit_error(exc: Exception) -> bool:
+    """True for any Groq rate-limit response, whether or not it names a
+    concrete cooldown. Groq has (at least) two differently-shaped rate-limit
+    errors: "Used 980/1000, try again in 6.2s" (a real cooldown to wait out)
+    and "Requested 2048, limit is 1000" (a single request's own configured
+    output cap exceeds the model's entire per-minute budget - no amount of
+    waiting fixes that on this model, only a different model can). Both
+    carry Groq's own "rate_limit_exceeded" code, so checking for that -
+    instead of requiring the "try again in Ns" phrase - is what actually
+    catches both, confirmed live: the second shape was silently treated as
+    unrecoverable before this fix, raising immediately instead of trying the
+    next model, even though the next model doesn't share that request's
+    conflict with the first one's tighter per-minute cap.
+    """
+    text = str(exc)
+    return "rate_limit_exceeded" in text or "RateLimitError" in text
+
+
 def _retry_after_seconds(exc: Exception) -> float | None:
-    """Groq's rate-limit error message names its own cooldown, e.g. "Please
-    try again in 25.545s" - parse that instead of guessing a backoff.
-    Returns None for anything that isn't this specific, recoverable error.
+    """Groq's rate-limit error message sometimes names its own cooldown,
+    e.g. "Please try again in 25.545s" - parse that instead of guessing a
+    backoff. Returns None when no concrete cooldown is present (see
+    _is_rate_limit_error - that's still a rate limit, just not one where
+    waiting would help).
     """
     match = re.search(r"try again in ([\d.]+)s", str(exc))
     return float(match.group(1)) if match else None
@@ -90,17 +110,25 @@ def kickoff_with_fallback(build_crew):
             return build_crew(model).kickoff()
         except Exception as exc:
             last_exc = exc
-            wait = _retry_after_seconds(exc)
-            if wait is None:
+            if not _is_rate_limit_error(exc):
                 raise
 
             is_last = i == len(models) - 1
             if not is_last:
                 logger.warning(
-                    "Rate limited on %s, switching to fallback model %s instead of waiting %.1fs",
-                    model, models[i + 1], wait,
+                    "Rate limited on %s, switching to fallback model %s",
+                    model, models[i + 1],
                 )
                 continue
+
+            # Every model in the chain is rate limited. Only wait if this
+            # last failure actually names a cooldown - if it's the
+            # "requested output exceeds the model's own per-minute cap"
+            # shape instead, no wait fixes that on this same model, so
+            # there's nothing left to do but report the failure.
+            wait = _retry_after_seconds(exc)
+            if wait is None:
+                raise
 
             wait = min(wait, _MAX_RETRY_WAIT_SECONDS) + 0.5
             logger.warning("All models rate limited, waiting %.1fs before one final retry", wait)

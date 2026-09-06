@@ -54,8 +54,24 @@ _BREADTH_LEVELS = {"narrow", "moderate", "broad", "unknown"}
 
 
 def _build_context(results: list) -> str:
+    """A plain top-N-by-score slice can crowd out every "Competitors"-angle
+    result if their relevance score (word-overlap with the query) happens to
+    be lower than a "how others solve this" or "customer demand" result that
+    shares more keywords with the idea but names zero companies - confirmed
+    live: all 7 Competitors-angle results scored 0.15-0.34 while 10
+    competitor-free results scored 0.88-0.94 and filled the entire window.
+    The model then correctly refuses to invent competitors it was never
+    shown any of - "safer to not hallucinate" - but the real fix is showing
+    it the right sources, not the model's judgment. Guarantee competitor
+    results first claim on the context window; fill remaining slots with
+    the next-best results from any angle for general grounding.
+    """
+    competitor_results = [r for r in results if r.get("angle") == "Competitors"]
+    other_results = [r for r in results if r.get("angle") != "Competitors"]
+    ordered = competitor_results + other_results
+
     lines = []
-    for r in results[:_MAX_SOURCES_IN_CONTEXT]:
+    for r in ordered[:_MAX_SOURCES_IN_CONTEXT]:
         snippet = (r.get("snippet") or "")[:_MAX_SNIPPET_LEN]
         url = r.get("url", "")
         lines.append(f"- {r.get('title', '')} ({url}): {snippet}")
