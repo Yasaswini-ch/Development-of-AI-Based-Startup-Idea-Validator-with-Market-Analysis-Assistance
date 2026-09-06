@@ -19,6 +19,26 @@ DEFAULT_MODEL = "groq/qwen/qwen3.6-27b"
 FALLBACK_MODELS = ("groq/openai/gpt-oss-20b", "groq/openai/gpt-oss-120b")
 _MAX_RETRY_WAIT_SECONDS = 30
 
+# The actual cause of most "Request too large... exceeds the enforced limit"
+# failures all session: by default, qwen3.6-27b reserves an output-token
+# budget for its own hidden <think> reasoning that alone exceeds Groq's 1000
+# output-tokens-per-minute cap - confirmed directly: the same trivial "say
+# OK" prompt failed outright with reasoning left at its default, and
+# succeeded using 2 completion tokens with reasoning_effort="none". Real
+# agent calls (market/competitor analysis) confirmed the same fix end to
+# end: fewer real failures, and the tokens actually used drop sharply since
+# there's no wasted scratchpad to generate or strip.
+#
+# Each model takes a different set of valid values (also confirmed
+# directly, not assumed) - qwen3.6-27b accepts "none" or "default";
+# openai/gpt-oss-20b and -120b reject "none" outright and require one of
+# "low"/"medium"/"high", so "low" is the closest equivalent for those.
+_REASONING_EFFORT = {
+    "groq/qwen/qwen3.6-27b": "none",
+    "groq/openai/gpt-oss-20b": "low",
+    "groq/openai/gpt-oss-120b": "low",
+}
+
 
 def get_llm(max_tokens: int | None = None, model: str | None = None):
     """LLM used by every CrewAI agent, via LiteLLM.
@@ -34,17 +54,22 @@ def get_llm(max_tokens: int | None = None, model: str | None = None):
     static fallback content the caller already returns on total failure, so
     it's not a usable fallback with our pinned litellm version.
 
-    Returns a plain model string by default (proven reliable for the Web
-    Search Agent's summary). Only pass max_tokens for an agent that's
-    specifically running out of room - we found that raising the default
-    for every agent made this model MORE likely to ramble through a visible
-    chain-of-thought instead of answering directly, not less, so don't
-    apply it globally.
+    Returns an `LLM` object with the model's known-good reasoning_effort
+    applied whenever the model is one of the three above; falls back to a
+    plain model string for anything else (e.g. a manual LLM_MODEL override
+    to an untested model), so an unrecognized model doesn't get a
+    reasoning_effort value it was never confirmed to accept.
     """
     model = model or os.environ.get("LLM_MODEL", DEFAULT_MODEL)
-    if max_tokens is None:
+    kwargs = {}
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
+    reasoning_effort = _REASONING_EFFORT.get(model)
+    if reasoning_effort is not None:
+        kwargs["reasoning_effort"] = reasoning_effort
+    if not kwargs:
         return model
-    return LLM(model=model, max_tokens=max_tokens)
+    return LLM(model=model, **kwargs)
 
 
 def _is_rate_limit_error(exc: Exception) -> bool:
