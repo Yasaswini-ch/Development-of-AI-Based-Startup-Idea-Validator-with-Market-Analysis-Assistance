@@ -63,6 +63,8 @@ def web_search_node(state: PipelineState) -> PipelineState:
     """M1 node: collects real results and builds a summary directly from
     them - no LLM call (see _build_summary)."""
 
+    logger.info("[web_search] START")
+
     idea = state["idea"]
     target_customer = state.get("targetCustomer", "")
     problem = state.get("problem", "")
@@ -70,7 +72,10 @@ def web_search_node(state: PipelineState) -> PipelineState:
     try:
         results = retrieval.collect(idea, target_customer, problem)
     except Exception as exc:
+        logger.exception("[web_search] FAILED")
         return {**state, "error": str(exc)}
+
+    logger.info("[web_search] COMPLETE - %d results", len(results))
 
     return {
         **state,
@@ -173,7 +178,10 @@ def competitor_discovery_node(state: PipelineState) -> PipelineState:
 def opportunity_score_node(state: PipelineState) -> PipelineState:
     """Calculate the Opportunity Score using market and competitor data."""
 
+    logger.info("[opportunity_score] START")
+
     if state.get("error"):
+        logger.warning("[opportunity_score] Skipped because web search failed")
         return state
 
     market_opportunity = state.get("marketOpportunity")
@@ -185,6 +193,7 @@ def opportunity_score_node(state: PipelineState) -> PipelineState:
         # already reflects that, and there's no dict left to attach a score to.
         # Don't fabricate one; the frontend already shows this section as
         # unavailable.
+        logger.warning("[opportunity_score] Skipped because marketOpportunity is None")
         return state
 
     try:
@@ -194,8 +203,9 @@ def opportunity_score_node(state: PipelineState) -> PipelineState:
             results,
         )
         market_opportunity["opportunityScore"] = score
+        logger.info("[opportunity_score] COMPLETE - score=%s", score)
     except Exception:
-        logger.exception("Opportunity score calculation failed")
+        logger.exception("[opportunity_score] FAILED")
         market_opportunity["opportunityScore"] = 0
 
     return {
