@@ -5,11 +5,8 @@ from langgraph.graph import END, START, StateGraph
 
 from . import retrieval
 from .competitor_agent import analyze_competitors
-from .crew_agents import build_search_crew
-from .llm import kickoff_with_fallback
 from .market_agent import analyze_market_opportunity
 from .opportunity_score import calculate_opportunity_score
-from .output_guard import looks_like_leaked_reasoning, strip_reasoning
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +23,18 @@ def _friendly_error_message(exc: Exception) -> str:
     return "This analysis couldn't be completed for this request. Please try again."
 
 
-def _fallback_summary(idea: str, results: list) -> str:
+def _build_summary(idea: str, results: list) -> str:
+    """Template-built from the search results directly - no LLM call.
+
+    This used to ask an LLM to paraphrase the same results into 2-3
+    sentences, but that call was rejected by the reasoning-leak quality gate
+    often enough that this exact template was already the de facto summary
+    most of the time. Since it was already doing the real work, making it
+    the only path cuts one of the three LLM calls per request (a real ~33%
+    reduction in Groq usage) with zero effect on Market Opportunity/
+    Competitor Discovery's independent failure handling - it's a separate
+    node from both.
+    """
     if not results:
         return f'No market data found yet for "{idea}".'
 
@@ -52,7 +60,8 @@ class PipelineState(TypedDict, total=False):
 
 
 def web_search_node(state: PipelineState) -> PipelineState:
-    """M1 node: runs the Web Search crew and collects real results."""
+    """M1 node: collects real results and builds a summary directly from
+    them - no LLM call (see _build_summary)."""
 
     idea = state["idea"]
     target_customer = state.get("targetCustomer", "")
@@ -63,31 +72,9 @@ def web_search_node(state: PipelineState) -> PipelineState:
     except Exception as exc:
         return {**state, "error": str(exc)}
 
-    summary = None
-
-    try:
-        crew_output = kickoff_with_fallback(
-            lambda model: build_search_crew(idea, target_customer, problem, results, model)
-        )
-        candidate = strip_reasoning(crew_output.raw)
-
-        if looks_like_leaked_reasoning(candidate):
-            logger.warning(
-                "Web search summary rejected by quality gate: %r",
-                candidate,
-            )
-        else:
-            summary = candidate
-
-    except Exception:
-        logger.exception("Web search summary crew failed")
-
-    if summary is None:
-        summary = _fallback_summary(idea, results)
-
     return {
         **state,
-        "summary": summary,
+        "summary": _build_summary(idea, results),
         "results": results,
     }
 

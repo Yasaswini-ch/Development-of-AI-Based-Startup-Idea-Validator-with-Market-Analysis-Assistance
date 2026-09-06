@@ -6,8 +6,8 @@ An AI-based startup idea validator with market analysis assistance. The project 
 a founder enter a startup idea, target customer, and problem statement, and get back
 real search results across 5 research angles, a structured market opportunity analysis
 (size, trends, customer segments with pain points/motivations/buying behavior), and a
-competitor comparison (offerings, positioning, gaps) — three agents chained in
-sequence, each reasoning over real data rather than inventing it. Search runs on
+competitor comparison (offerings, positioning, gaps) — two LLM agents chained after a
+plain retrieval step, each reasoning over real data rather than inventing it. Search runs on
 Tavily, with a free DuckDuckGo/Wikipedia/Hacker News fallback so it still works without
 a search API key; academic/research-paper sources are filtered out since they don't add
 useful signal for a founder. Milestone 1 is complete; Milestone 2 (Market Opportunity +
@@ -30,12 +30,11 @@ flowchart TD
     Retrieval --> Tavily["Tavily API\n(primary)"]
     Retrieval -.fallback.-> Free["DuckDuckGo + Wikipedia\n+ Hacker News\n(zero-cost)"]
 
-    Pipeline --> WS["Web Search Agent\nagent/crew_agents.py"]
+    Pipeline --> WS["Web Search Summary\n(template, no LLM call)"]
     WS --> MO["Market Opportunity Agent\nagent/market_agent.py"]
     MO --> CD["Competitor Discovery Agent\nagent/competitor_agent.py"]
     CD --> OS["Opportunity Score\nagent/opportunity_score.py"]
-    WS --> LLM["Groq LLM\nqwen3.6-27b (primary)"]
-    MO --> LLM
+    MO --> LLM["Groq LLM\nqwen3.6-27b (primary)"]
     CD --> LLM
     LLM -.rate limit: switch model.-> LLM2["Groq LLM\ngpt-oss-20b (fallback)"]
 
@@ -57,10 +56,10 @@ renders.
 |--------------|----------------------------------------|
 | Frontend     | React + Tailwind CSS (`frontend/`) |
 | Backend      | FastAPI (`backend/`) — exposes `POST /validate` |
-| Agent framework | [CrewAI](https://www.crewai.com) — 3 agents: Web Search (`crew_agents.py`), Market Opportunity (`market_agent.py`), Competitor Discovery (`competitor_agent.py`) |
+| Agent framework | [CrewAI](https://www.crewai.com) — 2 LLM agents: Market Opportunity (`market_agent.py`), Competitor Discovery (`competitor_agent.py`). The Web Search summary is a plain template over the retrieved results, not a CrewAI agent — see Reasoning LLM below |
 | Orchestration | [LangGraph](https://www.langchain.com/langgraph) — 4-node pipeline, `web_search → market_opportunity → competitor_discovery → opportunity_score` (`backend/agent/graph.py`) |
 | Search       | Tavily API (primary), with DuckDuckGo + Wikipedia + Hacker News as a zero-cost fallback chain — fetched directly (not LLM-mediated) across 5 search angles, academic sources filtered out (`backend/agent/tools.py`, `retrieval.py`) |
-| Reasoning LLM | [Groq](https://console.groq.com) — primary `qwen/qwen3.6-27b`, automatic fallback to a second Groq model (`openai/gpt-oss-20b`) on rate limit, since Groq rate-limits per-model, not per-account — a genuinely separate quota, not just a longer wait on the same one (see `backend/agent/llm.py`). A cross-*provider* fallback to Gemini was tested and dropped (it hangs for minutes past its own timeout instead of failing fast); summary output also passes a quality gate that rejects leaked reasoning text |
+| Reasoning LLM | [Groq](https://console.groq.com) — primary `qwen/qwen3.6-27b`, automatic fallback through two more Groq models (`openai/gpt-oss-20b`, `openai/gpt-oss-120b`) on rate limit, since Groq rate-limits per-model, not per-account — a genuinely separate quota each time, not just a longer wait on the same one (see `backend/agent/llm.py`). A cross-*provider* fallback to Gemini was tested and dropped (it hangs for minutes past its own timeout instead of failing fast). Only the Market Opportunity and Competitor Discovery agents call this at all — the Web Search summary used to as well, but that LLM call was cut entirely (it was rejected by the reasoning-leak quality gate often enough that the deterministic template fallback was already doing the real work most of the time) |
 | Database     | None yet |
 | Deployment   | [Render](https://render.com) — two services, config in `render.yaml` |
 | Version control | Git / GitHub |
@@ -170,12 +169,11 @@ request, zero matches) and `ErrorState` with a retry button for any non-200 resp
 ├── backend/             # FastAPI app + CrewAI/LangGraph agent pipeline
 │   ├── main.py              # POST /validate route
 │   └── agent/
-│       ├── graph.py              # LangGraph pipeline: state + node wiring
-│       ├── crew_agents.py         # Web Search Agent (Milestone 1)
+│       ├── graph.py              # LangGraph pipeline: state + node wiring (Web Search summary is a template here, no LLM call)
 │       ├── market_agent.py        # Market Opportunity Agent (Milestone 2)
 │       ├── competitor_agent.py    # Competitor Discovery Agent (Milestone 2)
 │       ├── opportunity_score.py   # Opportunity Score post-processing node (Milestone 2 stretch)
-│       ├── output_guard.py        # shared reasoning-leak detection
+│       ├── output_guard.py        # shared reasoning-leak stripping used by market/competitor agents
 │       ├── retrieval.py           # 5-angle query expansion, dedup, academic-source filter
 │       ├── tools.py               # Tavily (primary) + DuckDuckGo/Wikipedia/Hacker News fallback
 │       └── llm.py                 # reasoning LLM provider/model selection + rate-limit retry
