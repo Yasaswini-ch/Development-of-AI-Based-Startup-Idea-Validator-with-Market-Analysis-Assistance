@@ -22,7 +22,7 @@ unblock order.
 | **Sashi** | **Confidence Indicator** | ❌ Not started | **Yes — start now, zero blockers** |
 | Anu | Null/"unavailable" section UI | ✅ Done | — |
 | Anu | Positioning grid (3×3 chart) | ✅ Done — confirmed still 3×3 (`high/mid/low` × `narrow/moderate/broad`) in `CompetitorAnalysis.jsx`, not reduced to 2×2 | — |
-| **Varshini** | Partial-failure verification | ✅ Verified live this session (see below) | — |
+| **Yasaswini** | Partial-failure verification | ✅ Done — verified live this session (see below) | — |
 | Varshini | Error-state UI verification | ⚠️ Partially covered (see below) — worth Varshini's own pass | Can start, low priority |
 | Varshini | Cross-industry validation report | ⚠️ Raw test data now available for 4 ideas (see below), report itself not yet written | **Yes — data's ready, write it up** |
 
@@ -61,7 +61,8 @@ unblock order.
   Discovery (no LLM call to fail) returned its own real result independently —
   confirming both the success path and, from earlier runs, the partial-failure path
   (`errors.marketOpportunity` populated, `competitors` still real data) both work as
-  designed. This also serves as **Varshini's partial-failure verification** item.
+  designed. This also serves as **Yasaswini's partial-failure verification** item —
+  done directly this session, not by Varshini.
 - **Null-state UI + positioning grid** (`MarketOpportunity.jsx`, `CompetitorAnalysis.jsx`,
   `ValidationResults.jsx`) — each section shows an inline "analysis wasn't available"
   message (with the real `errors.<node>` text) when the backend returns `null`, distinct
@@ -99,15 +100,16 @@ overdue item right now.
   layout.
 - **No coordination needed with anyone else before starting.**
 
-### 2. Varshini — most of the groundwork is already done; here's what's left
-- **Partial-failure verification** — ✅ effectively covered this session (see above):
-  a live run against the freelance-invoicing idea returned a real `errors.
-  marketOpportunity` message with `competitors` still populated from real data,
-  confirming the isolation works. `competitor_discovery` no longer has an LLM call to
-  force-fail this way (see the NER rewrite above) — the only way to fail it now is an
-  unexpected exception in the NER step itself, which isn't a meaningful test case
-  anymore. Worth a quick independent look, but this item doesn't need to be started
-  from scratch.
+### 2. Yasaswini — partial-failure verification, done
+- **Partial-failure verification** — ✅ done directly this session, not Varshini's
+  item to pick up: a live run against the freelance-invoicing idea returned a real
+  `errors.marketOpportunity` message with `competitors` still populated from real
+  data, confirming the isolation works. `competitor_discovery` no longer has an LLM
+  call to force-fail this way (see the NER rewrite above) — the only way to fail it
+  now is an unexpected exception in the NER step itself, which isn't a meaningful
+  test case anymore. Nothing further needed here.
+
+### 3. Varshini — two items left
 - **Error-state UI verification** — the null-state UI works and was exercised live
   this session, but that was incidental to other testing, not a deliberate UI-focused
   pass. Still worth 30 minutes of your own verification against the real running app
@@ -123,7 +125,7 @@ overdue item right now.
   Milestone 2 rubric. See the quota note below — it's now a much smaller risk than it
   was, but not zero.
 
-### 3. Anu — nothing outstanding from this list right now
+### 4. Anu — nothing outstanding from this list right now
 Both the null-state UI and the positioning grid were completed directly to unblock
 Varshini. Worth a quick look over the diff to make sure it matches how you'd have built
 it — it's a straightforward addition, not a redesign, but you own this component going
@@ -166,7 +168,7 @@ key under concurrent team usage — if a run does come back as fallback content,
 |---|---|
 | Sept 3 | Orchestration merged. Null-state UI and positioning grid landed. |
 | Sept 3–6 | Competitor Discovery rewritten to local NER (frees quota for Market Opportunity), the real `reasoning_effort` quota fix landed, request caching + submit cooldown added, tabbed results UI replaced the dashboard-tiles layout, positioning grid confirmed 3×3, and a live NER bug (comparison-table snippets losing real competitors) found and fixed. All docs (`README.md`, `backend/README.md`, `docs/architecture.md`, this file) brought back in sync with the code — they had drifted since Sept 3. |
-| **Sept 6 (today)** | Sashi starts confidence indicator (still zero blockers, still not started). Varshini: partial-failure verification effectively covered by this session's live testing; error-state UI and cross-industry report are the two remaining real action items, with test data for 4 ideas already available for the latter. |
+| **Sept 6 (today)** | Sashi starts confidence indicator (still zero blockers, still not started). Yasaswini's partial-failure verification is done. Varshini's error-state UI and cross-industry report are the two remaining real action items, with test data for 4 ideas already available for the latter. |
 | **Sept 7** | Buffer day — Sashi finishes confidence indicator, Varshini finishes error-state UI check + writes up the validation report, whole team bug bash, final submission polish. |
 
 Confidence Indicator (Sashi) and the cross-industry validation report write-up
