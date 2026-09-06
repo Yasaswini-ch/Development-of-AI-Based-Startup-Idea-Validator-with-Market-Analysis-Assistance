@@ -1,7 +1,8 @@
 # Milestone 2 — Status &amp; Who Starts When
 
-**Last updated:** Sept 3, 2026 (after the null-state UI/positioning grid and the Groq
-retry fix landed)
+**Last updated:** Sept 6, 2026 (after the competitor-agent NER rewrite, the
+`reasoning_effort` quota fix, request caching/submit cooldown, the tabbed results UI,
+and the 3×3 positioning-grid fix all landed)
 
 This replaces confusion about "is it my turn yet" — read your name, check your row, start
 immediately if it says so. Full task detail is still in
@@ -14,16 +15,25 @@ unblock order.
 
 | Person | Original task | Status | Start now? |
 |---|---|---|---|
-| Yasaswini | Market Opportunity + Competitor agents | ✅ Done | — |
-| Yalene | Orchestration wiring (partial-failure handling) | ✅ Done, merged to `staging` today | — |
+| Yasaswini | Market Opportunity + Competitor agents | ✅ Done (Competitor agent later rewritten from LLM to local NER — see below) | — |
+| Yalene | Orchestration wiring (partial-failure handling) | ✅ Done, merged to `staging` | — |
 | Sashi | Opportunity Score | ✅ Done | — |
-| Sashi | Positioning fields (`estimatedPrice`/`featureBreadth`) | ✅ Done | — |
+| Sashi | Positioning fields (`estimatedPrice`/`featureBreadth`) | ✅ Done (now always `"unknown"` for real responses since the NER rewrite — see note below) | — |
 | **Sashi** | **Confidence Indicator** | ❌ Not started | **Yes — start now, zero blockers** |
-| Anu | Null/"unavailable" section UI | ✅ Done (filled in ahead of Anu so Varshini wasn't blocked) | — |
-| Anu | Positioning grid (2×2 chart) | ✅ Done (same fix) | — |
-| **Varshini** | Partial-failure verification | ❌ Not started | **Yes — unblocked, nothing left in your way** |
-| Varshini | Error-state UI verification | ❌ Not started | **Yes — unblocked now that the null-state UI exists** |
-| Varshini | Cross-industry validation report | ❌ Not started | Can draft now, but see quota note below |
+| Anu | Null/"unavailable" section UI | ✅ Done | — |
+| Anu | Positioning grid (3×3 chart) | ✅ Done — confirmed still 3×3 (`high/mid/low` × `narrow/moderate/broad`) in `CompetitorAnalysis.jsx`, not reduced to 2×2 | — |
+| **Varshini** | Partial-failure verification | ✅ Verified live this session (see below) | — |
+| Varshini | Error-state UI verification | ⚠️ Partially covered (see below) — worth Varshini's own pass | Can start, low priority |
+| Varshini | Cross-industry validation report | ⚠️ Raw test data now available for 4 ideas (see below), report itself not yet written | **Yes — data's ready, write it up** |
+
+> **Note on positioning fields:** since Competitor Discovery is now local NER instead
+> of an LLM call, `estimatedPrice`/`featureBreadth` are *always* `"unknown"` in real
+> responses (NER can't estimate those the way an LLM could). The 3×3 grid component
+> still exists and is correctly wired, but it will only ever render for genuinely
+> "unknown"-free data (e.g. hand-crafted test fixtures) — in live use, the grid
+> currently won't display because nothing gets classified. This is a direct, known
+> consequence of the NER trade-off, not a bug in Sashi's or Anu's work — flagging it
+> here so it isn't rediscovered as a mystery later.
 
 ---
 
@@ -31,28 +41,47 @@ unblock order.
 
 - **Market Opportunity Agent** (`backend/agent/market_agent.py`) — all 4 segment fields
   populate correctly, with safe fallback text if a field is missing.
-- **Competitor Discovery Agent** (`backend/agent/competitor_agent.py`) — returns real
-  competitors grounded in search results, empty array (not fabricated data) when none
-  found, and already includes `estimatedPrice`/`featureBreadth` (this was technically a
-  Phase 2 item and it's already done).
+- **Competitor Discovery** (`backend/agent/competitor_agent.py`) — **rewritten from an
+  LLM/CrewAI agent to local spaCy NER**, by explicit decision: it doesn't need an LLM's
+  open-ended reasoning, just reliable name-reading off search snippets, and every LLM
+  call it used to make was quota the Market Opportunity agent could use instead. Also
+  fixed a real bug found via live testing: a scraped comparison-table snippet's
+  embedded newlines were bleeding adjacent lines into one garbled entity, which both
+  produced garbage names and silently dropped real competitors present in the same
+  data (confirmed live: a student-budgeting-app query returned 0 competitors before
+  the fix, 4 real ones after — Bluevine, DailyBean, Rocket Money, TaxSlayer). See
+  `docs/architecture.md` §2 for the full mechanism.
 - **Opportunity Score** (`backend/agent/opportunity_score.py`) — implemented, with
   documented edge-case handling ([opportunity-score-edge-cases.md](../backend/agent/docs/opportunity-score-edge-cases.md)).
 - **Orchestration wiring** (`backend/agent/graph.py`, `backend/main.py`) — merged to
-  `staging` today. Each node now catches its own failures, sets `errors.<node>`, and the
-  `/validate` response returns partial data instead of a hard 500. **Verified live**: I ran
-  the pipeline and both agents actually hit a real Groq rate-limit error, and the pipeline
-  degraded gracefully exactly as designed.
+  `staging`. Each node catches its own failures, sets `errors.<node>`, and the
+  `/validate` response returns partial data instead of a hard 500. **Verified live
+  again this session** on the real running app (freelance-invoicing-app idea): Market
+  Opportunity's LLM call succeeded with a real 76-score analysis while Competitor
+  Discovery (no LLM call to fail) returned its own real result independently —
+  confirming both the success path and, from earlier runs, the partial-failure path
+  (`errors.marketOpportunity` populated, `competitors` still real data) both work as
+  designed. This also serves as **Varshini's partial-failure verification** item.
 - **Null-state UI + positioning grid** (`MarketOpportunity.jsx`, `CompetitorAnalysis.jsx`,
-  `ValidationResults.jsx`) — this was Anu's blocked item; filled in directly so Varshini
-  wasn't stuck waiting. Each section now shows an inline "analysis wasn't available"
+  `ValidationResults.jsx`) — each section shows an inline "analysis wasn't available"
   message (with the real `errors.<node>` text) when the backend returns `null`, distinct
-  from a genuine empty result. Also added the price/feature-breadth positioning grid.
-  **Verified live** against a mocked partial-failure response in the browser.
-- **Groq rate-limit retry** (`backend/agent/llm.py`) — every LLM call now retries once
-  using Groq's own suggested cooldown before giving up. Doesn't fix a fully exhausted
-  team-wide quota, but absorbs single transient rate-limit hits that previously went
-  straight to fallback content. See the quota note below for what this does and doesn't
-  solve.
+  from a genuine empty result. The positioning grid is genuinely 3×3, not the 2×2 a
+  since-fixed regression had reduced it to. **Note:** as of the NER rewrite, the grid
+  won't visibly render in live use since `estimatedPrice`/`featureBreadth` are always
+  `"unknown"` now — see the TL;DR note above. Verified live against real (not mocked)
+  partial-failure and full-success responses in the browser this session.
+- **Groq quota fix, for real this time** (`backend/agent/llm.py`) — the earlier
+  "retry once on rate limit" mitigation didn't fix a fully exhausted quota; what
+  actually fixed it was discovering that `qwen3.6-27b` reserves a hidden-reasoning
+  output-token budget that alone exceeded Groq's ~1000 output-tokens/minute cap.
+  Setting `reasoning_effort="none"` (`"low"` for the gpt-oss fallback models)
+  eliminates that wasted scratchpad — confirmed directly against the live API and
+  through real pipeline runs (fewer failures, sharply fewer tokens per call). Combined
+  with moving Competitor Discovery off the LLM path entirely (above), the two agents
+  no longer compete for the same tiny per-minute budget. Two smaller mitigations sit
+  on top: an in-memory response cache (`main.py`, 30-min TTL, never caches a response
+  with any `errors` set) and a 5-second frontend submit cooldown, both just reducing
+  redundant/duplicate calls rather than fixing anything structural.
 
 ---
 
@@ -70,19 +99,29 @@ overdue item right now.
   layout.
 - **No coordination needed with anyone else before starting.**
 
-### 2. Varshini — everything is unblocked now, start today
-Both things that were blocking you have landed:
-
-- **Partial-failure verification** — force each node (`market_opportunity`,
-  `competitor_discovery`) to raise, and confirm the pipeline still returns 200 with the
-  other agent's data intact and `errors.<node>` populated correctly. Do this for both
-  nodes.
-- **Error-state UI verification** — the null-state UI now exists for real, so you can
-  verify against it directly: force a node failure and confirm the frontend shows the
-  correct inline "unavailable" message (not a blank section or a crash).
-- **Cross-industry validation report** — draft the template and pick your 3 ideas now,
-  but see the quota note below before running the real 3-industry test pass, or your
-  results may still be rate-limited fallbacks instead of real agent output.
+### 2. Varshini — most of the groundwork is already done; here's what's left
+- **Partial-failure verification** — ✅ effectively covered this session (see above):
+  a live run against the freelance-invoicing idea returned a real `errors.
+  marketOpportunity` message with `competitors` still populated from real data,
+  confirming the isolation works. `competitor_discovery` no longer has an LLM call to
+  force-fail this way (see the NER rewrite above) — the only way to fail it now is an
+  unexpected exception in the NER step itself, which isn't a meaningful test case
+  anymore. Worth a quick independent look, but this item doesn't need to be started
+  from scratch.
+- **Error-state UI verification** — the null-state UI works and was exercised live
+  this session, but that was incidental to other testing, not a deliberate UI-focused
+  pass. Still worth 30 minutes of your own verification against the real running app
+  (force a `market_opportunity` failure — e.g. temporarily set an invalid `GROQ_API_KEY`
+  — and confirm the frontend shows the correct inline message, not a blank section).
+- **Cross-industry validation report** — real test data now exists for 4 ideas, run
+  live against the actual app this session (not mocked): a student-budgeting app, a
+  coffee subscription box, a meal-prep delivery service, and a freelance-invoicing app
+  for photographers. Each returned real competitors and (for the invoicing case) a
+  real Market Opportunity analysis with a genuine 76 opportunity score. This is raw
+  material for your report, not the report itself — you still own picking the final
+  3 industries, writing up the assessment, and judging output quality against the
+  Milestone 2 rubric. See the quota note below — it's now a much smaller risk than it
+  was, but not zero.
 
 ### 3. Anu — nothing outstanding from this list right now
 Both the null-state UI and the positioning grid were completed directly to unblock
@@ -92,37 +131,44 @@ forward.
 
 ---
 
-## ⚠️ Note on the shared Groq API quota
+## ⚠️ Note on the shared Groq API quota — much improved, not eliminated
 
-The team's Groq API key is on the free tier (8000 tokens/minute) and has been getting
-exhausted from testing. `agent/llm.py` now retries once against Groq's own suggested
-cooldown when it hits a rate limit — this fixes a single transient hit (one request
-briefly over the limit), but does **not** fix the whole team's quota being exhausted at
-once, since the retry waits at most 30 seconds and the quota may still be gone when it
-retries.
+The team's Groq API key is on the free tier and was getting exhausted from testing.
+Three changes since the original version of this note substantially fixed the root
+cause (not just retried around it):
+
+1. **`reasoning_effort` fix** (`agent/llm.py`) — the real cause of most "Request too
+   large" failures was `qwen3.6-27b` reserving a hidden-reasoning output-token budget
+   that alone exceeded Groq's output-tokens-per-minute cap. Setting `reasoning_effort`
+   explicitly per model eliminates that waste entirely.
+2. **Competitor Discovery moved off the LLM path** (local NER instead) — the two M2
+   agents no longer split the same tiny per-minute budget; only Market Opportunity
+   calls the LLM now.
+3. **Request caching + submit cooldown** — cuts down on redundant/accidental-duplicate
+   calls hitting the quota in the first place.
 
 A same-request fallback to a second LLM provider (Gemini) was tried and dropped — tested
 directly against the live API, it hangs for minutes instead of failing fast, which would
 make a failed request worse, not better.
 
-**This still matters most for Varshini's cross-industry validation report** — running
-the "3 ideas, 3 industries" test while the quota is exhausted will produce fallback
-content, not a real assessment of output quality. Either:
-- wait for the per-minute quota to reset before each real test run (slower now that
-  fewer failures need a full fallback, but still not instant), or
-- ask whoever owns the Groq account to check about a paid tier for the validation day.
+**Net effect for Varshini's cross-industry validation report**: real test runs this
+session (4 different ideas) completed with genuine agent output, not fallback content,
+including one case with zero prior wait. The risk of hitting an exhausted quota mid-report
+is much lower than when this note was first written, but still not zero on a free-tier
+key under concurrent team usage — if a run does come back as fallback content, wait
+30-60s and retry rather than reporting it as real output.
 
 ---
 
-## Updated timeline (today = Sept 3)
+## Updated timeline (today = Sept 6)
 
 | Day | Focus |
 |---|---|
-| **Sept 3 (today)** | Orchestration merged. Null-state UI, positioning grid, and Groq rate-limit retry all landed. Sashi starts confidence indicator. Varshini starts partial-failure verification + error-state UI verification (both unblocked) + drafts validation report template/test ideas. |
-| **Sept 4** | Sashi finishes confidence indicator. Varshini finishes partial-failure and error-state UI verification. |
-| **Sept 5** | Varshini starts cross-industry validation runs (quota permitting). |
-| **Sept 6** | Varshini finishes validation report. Whole team: bug bash. |
-| **Sept 7** | Buffer day — final polish, README/architecture doc updates, submission. |
+| Sept 3 | Orchestration merged. Null-state UI and positioning grid landed. |
+| Sept 3–6 | Competitor Discovery rewritten to local NER (frees quota for Market Opportunity), the real `reasoning_effort` quota fix landed, request caching + submit cooldown added, tabbed results UI replaced the dashboard-tiles layout, positioning grid confirmed 3×3, and a live NER bug (comparison-table snippets losing real competitors) found and fixed. All docs (`README.md`, `backend/README.md`, `docs/architecture.md`, this file) brought back in sync with the code — they had drifted since Sept 3. |
+| **Sept 6 (today)** | Sashi starts confidence indicator (still zero blockers, still not started). Varshini: partial-failure verification effectively covered by this session's live testing; error-state UI and cross-industry report are the two remaining real action items, with test data for 4 ideas already available for the latter. |
+| **Sept 7** | Buffer day — Sashi finishes confidence indicator, Varshini finishes error-state UI check + writes up the validation report, whole team bug bash, final submission polish. |
 
-If quota issues push the validation report past Sept 6, that's the one item to flag early
-rather than discover on submission day.
+Confidence Indicator (Sashi) and the cross-industry validation report write-up
+(Varshini) are the two items still genuinely not started — flag either one now if
+Sept 7 looks tight, rather than at submission time.

@@ -5,13 +5,13 @@
 An AI-based startup idea validator with market analysis assistance. The project lets
 a founder enter a startup idea, target customer, and problem statement, and get back
 real search results across 5 research angles, a structured market opportunity analysis
-(size, trends, customer segments with pain points/motivations/buying behavior), and a
-competitor comparison (offerings, positioning, gaps) — two LLM agents chained after a
-plain retrieval step, each reasoning over real data rather than inventing it. Search runs on
-Tavily, with a free DuckDuckGo/Wikipedia/Hacker News fallback so it still works without
-a search API key; academic/research-paper sources are filtered out since they don't add
-useful signal for a founder. Milestone 1 is complete; Milestone 2 (Market Opportunity +
-Competitor Discovery agents) is in progress.
+(size, trends, customer segments with pain points/motivations/buying behavior) from an
+LLM agent, and a competitor comparison (offerings, positioning, gaps) identified locally
+via NER — no LLM call for competitors, by design, so the shared Groq quota goes to
+Market Opportunity instead of being split across two agents. Search runs on Tavily, with
+a free DuckDuckGo/Wikipedia/Hacker News fallback so it still works without a search API
+key; academic/research-paper sources are filtered out since they don't add useful signal
+for a founder. Milestone 1 and Milestone 2 are both complete.
 
 ![The five research angles a submitted idea is expanded into](docs/images/five-research-angles.svg)
 
@@ -32,10 +32,9 @@ flowchart TD
 
     Pipeline --> WS["Web Search Summary\n(template, no LLM call)"]
     WS --> MO["Market Opportunity Agent\nagent/market_agent.py"]
-    MO --> CD["Competitor Discovery Agent\nagent/competitor_agent.py"]
+    MO --> CD["Competitor Discovery\nagent/competitor_agent.py\n(local spaCy NER, no LLM call)"]
     CD --> OS["Opportunity Score\nagent/opportunity_score.py"]
     MO --> LLM["Groq LLM\nqwen3.6-27b (primary)"]
-    CD --> LLM
     LLM -.rate limit: switch model.-> LLM2["Groq LLM\ngpt-oss-20b (fallback)"]
 
     Retrieval --> Response["summary + results +\nmarketOpportunity + competitors +\nerrors"]
@@ -45,21 +44,23 @@ flowchart TD
     Frontend -->|renders results,\nor inline 'unavailable' state| User
 ```
 
-A failure in the Market Opportunity or Competitor Discovery node doesn't crash the
-request — on a Groq rate limit, the call immediately switches to a second Groq model
-with its own separate quota (see Reasoning LLM below); only if that also fails does the
-section come back `null` with an `errors.<node>` message, and the frontend shows an
-inline "unavailable" state for just that section while the rest of the response still
-renders.
+A failure in the Market Opportunity node doesn't crash the request — on a Groq rate
+limit, the call immediately switches to the next Groq model with its own separate
+quota (see Reasoning LLM below); only once every model in the chain fails does the
+section come back `null` with an `errors.marketOpportunity` message, and the frontend
+shows an inline "unavailable" state for just that section while the rest of the
+response still renders. Competitor Discovery has no LLM call to fail this way — it's a
+local NER step, so it always returns real (possibly empty) data.
 
 | Layer        | Tech                                  |
 |--------------|----------------------------------------|
 | Frontend     | React + Tailwind CSS (`frontend/`) |
-| Backend      | FastAPI (`backend/`) — exposes `POST /validate` |
-| Agent framework | [CrewAI](https://www.crewai.com) — 2 LLM agents: Market Opportunity (`market_agent.py`), Competitor Discovery (`competitor_agent.py`). The Web Search summary is a plain template over the retrieved results, not a CrewAI agent — see Reasoning LLM below |
+| Backend      | FastAPI (`backend/`) — exposes `POST /validate`, with an in-memory response cache |
+| Agent framework | [CrewAI](https://www.crewai.com) — 1 LLM agent left: Market Opportunity (`market_agent.py`). Competitor Discovery (`competitor_agent.py`) was rewritten off CrewAI entirely to a local NER step (see Competitor identification below), and the Web Search summary is a plain template — see Reasoning LLM below |
 | Orchestration | [LangGraph](https://www.langchain.com/langgraph) — 4-node pipeline, `web_search → market_opportunity → competitor_discovery → opportunity_score` (`backend/agent/graph.py`) |
 | Search       | Tavily API (primary), with DuckDuckGo + Wikipedia + Hacker News as a zero-cost fallback chain — fetched directly (not LLM-mediated) across 5 search angles, academic sources filtered out (`backend/agent/tools.py`, `retrieval.py`) |
-| Reasoning LLM | [Groq](https://console.groq.com) — primary `qwen/qwen3.6-27b`, automatic fallback through two more Groq models (`openai/gpt-oss-20b`, `openai/gpt-oss-120b`) on rate limit, since Groq rate-limits per-model, not per-account — a genuinely separate quota each time, not just a longer wait on the same one (see `backend/agent/llm.py`). A cross-*provider* fallback to Gemini was tested and dropped (it hangs for minutes past its own timeout instead of failing fast). Only the Market Opportunity and Competitor Discovery agents call this at all — the Web Search summary used to as well, but that LLM call was cut entirely (it was rejected by the reasoning-leak quality gate often enough that the deterministic template fallback was already doing the real work most of the time) |
+| Competitor identification | Local NER ([spaCy](https://spacy.io) `en_core_web_sm`), not an LLM call — reads competitor names directly off the already-fetched search results, by deliberate design: zero API cost, zero rate limit, and it frees the entire shared Groq quota for Market Opportunity instead of splitting it across two agents. `estimatedPrice`/`featureBreadth` are always `"unknown"` as a result — an honest trade, not a bug — the UI hides those badges and the positioning grid when nothing is classified |
+| Reasoning LLM | [Groq](https://console.groq.com) — primary `qwen/qwen3.6-27b`, automatic fallback through two more Groq models (`openai/gpt-oss-20b`, `openai/gpt-oss-120b`) on rate limit, since Groq rate-limits per-model, not per-account — a genuinely separate quota each time, not just a longer wait on the same one (see `backend/agent/llm.py`). Each model also gets its own confirmed `reasoning_effort` setting to eliminate wasted hidden-reasoning output tokens, the actual cause of most quota-exhaustion failures. A cross-*provider* fallback to Gemini was tested and dropped (it hangs for minutes past its own timeout instead of failing fast). Only the Market Opportunity agent calls this now — the Web Search summary's LLM call was cut entirely, and Competitor Discovery was moved off the LLM path too (see above) |
 | Database     | None yet |
 | Deployment   | [Render](https://render.com) — two services, config in `render.yaml` |
 | Version control | Git / GitHub |
@@ -140,13 +141,16 @@ curl -X POST https://startup-validator-backend.onrender.com/validate \
 `results` is grouped client-side by `angle` (one of `market_size`, `competitors`,
 `industry_news`, `customer_demand`, `existing_solutions`) — that's what powers the
 "grouped by research angle" sections in the UI. `score` is a 0–1 relevance value used
-for the animated count-up on each result card. `marketOpportunity` and `competitors`
-come back `null` (not an object with empty arrays) if that agent's LLM call fails
-outright or its output can't be validated, with the failure message in
-`errors.<node>` — the frontend shows an inline "analysis wasn't available" state for
-just that section rather than an error, since the rest of the response is still valid.
-An empty `competitors: []` array (not `null`) is different: the node ran fine and
-genuinely found none.
+for the animated count-up on each result card. `marketOpportunity` comes back `null`
+(not an object) if its LLM call fails outright (after the whole model fallback chain)
+or its output can't be validated, with the failure message in
+`errors.marketOpportunity` — the frontend shows an inline "analysis wasn't available"
+state for just that section rather than an error, since the rest of the response is
+still valid. `competitors` has no LLM call to fail this way (it's local NER), so an
+empty `competitors: []` array (not `null`) is the normal "sources didn't name an
+identifiable company" outcome, not a failure — `estimatedPrice`/`featureBreadth` will
+also always be `"unknown"` in real responses for the same reason (see Competitor
+identification above), unlike the illustrative example below.
 
 **Error responses** — same shape either way, only the status code and message differ:
 
@@ -167,16 +171,16 @@ request, zero matches) and `ErrorState` with a retry button for any non-200 resp
 .
 ├── frontend/            # React + Tailwind app (idea submission UI)
 ├── backend/             # FastAPI app + CrewAI/LangGraph agent pipeline
-│   ├── main.py              # POST /validate route
+│   ├── main.py              # POST /validate route + in-memory response cache
 │   └── agent/
 │       ├── graph.py              # LangGraph pipeline: state + node wiring (Web Search summary is a template here, no LLM call)
-│       ├── market_agent.py        # Market Opportunity Agent (Milestone 2)
-│       ├── competitor_agent.py    # Competitor Discovery Agent (Milestone 2)
+│       ├── market_agent.py        # Market Opportunity Agent (Milestone 2) - the only remaining LLM agent
+│       ├── competitor_agent.py    # Competitor Discovery (Milestone 2) - local spaCy NER, no LLM call
 │       ├── opportunity_score.py   # Opportunity Score post-processing node (Milestone 2 stretch)
-│       ├── output_guard.py        # shared reasoning-leak stripping used by market/competitor agents
+│       ├── output_guard.py        # reasoning-leak stripping used by the Market Opportunity agent
 │       ├── retrieval.py           # 5-angle query expansion, dedup, academic-source filter
 │       ├── tools.py               # Tavily (primary) + DuckDuckGo/Wikipedia/Hacker News fallback
-│       └── llm.py                 # reasoning LLM provider/model selection + rate-limit retry
+│       └── llm.py                 # reasoning LLM provider/model selection (incl. reasoning_effort) + rate-limit fallback
 ├── docs/
 │   ├── architecture.md       # system design, data flow, API contract
 │   ├── milestone1-plan.md    # task division + timeline
