@@ -37,13 +37,26 @@ instead - see _GAP_DISCLOSURE. `estimatedPrice`/`featureBreadth` are always
 classified, so this degrades cleanly rather than showing fabricated
 categories.
 
-Verified against three different real ideas (meal-prep delivery,
-freelance invoicing, plant care): consistently surfaced the actual real
-competitors (HelloFresh, Blue Apron, FreshBooks, QuickBooks, HoneyBook,
-PayPal...) that were also independently confirmed present in the raw
-search snippets, with a mention-count + pattern filter cutting out the
-single-common-word false positives spaCy's small model is prone to
-("Bank", "Unlimited", "Sync" tested and confirmed filtered).
+Verified against several real ideas (meal-prep delivery, freelance
+invoicing, coffee subscriptions, student budgeting): consistently
+surfaced the actual real competitors (HelloFresh, Blue Apron, Bluevine,
+Rocket Money, MistoBox, Trade Coffee...) that were also independently
+confirmed present in the raw search snippets, with a mention-count +
+pattern filter cutting out the single-common-word false positives
+spaCy's small model is prone to ("Bank", "Unlimited", "Sync" tested and
+confirmed filtered).
+
+Comparison-table/listicle sources (a "best budgeting apps" roundup page)
+scrape into snippets with one fact per line rather than prose. Naively
+squashing those embedded newlines into spaces let NER merge adjacent,
+unrelated lines into one garbled multi-word entity ("PocketGuard
+Managing Subscriptions") and lose the real competitors that were present
+but buried in that noise - confirmed live on a student-budgeting-app
+search that returned zero real competitors before this fix, despite
+several (Bluevine, Rocket Money) being present in the raw data.
+_normalize_snippet_text gives each line its own sentence boundary
+instead, which stopped the cross-line bleeding without needing to
+discard the whole source.
 """
 
 import logging
@@ -71,9 +84,11 @@ _GENERIC_WORDS = {
     "kit", "kits", "guide", "review", "reviews", "app", "apps", "software",
     "market", "industry", "report", "analysis", "options", "bank", "cloud",
     "sync", "unlimited", "premium", "team", "cash", "trade", "exploration",
+    "ratings", "rating", "awards", "award",
 }
 
 _INTERNAL_CAP = re.compile(r"[a-z][A-Z]")  # e.g. "HelloFresh", "QuickBooks"
+_CAMEL_SPLIT = re.compile(r"[A-Z][a-z]*")
 _MIN_MENTIONS_WITHOUT_CAMEL_CASE = 2
 
 try:
@@ -99,6 +114,39 @@ def _is_generic_phrase(name: str) -> bool:
     return any(w in _GENERIC_WORDS for w in words)
 
 
+def _is_duplicated_merge(name: str) -> bool:
+    """Catch "CostCost"-style artifacts: a scraped comparison table's
+    repeated header/label text gets tokenized by spaCy as a single
+    camelCase-looking span whose consecutive capitalized segments are the
+    same word repeated (confirmed live on a real budgeting-app search
+    result). A genuine two-part brand name like "PocketGuard" or
+    "HelloFresh" never repeats its own segment, so this only catches the
+    artifact, not real names.
+    """
+    segments = _CAMEL_SPLIT.findall(name)
+    return any(a.lower() == b.lower() for a, b in zip(segments, segments[1:]))
+
+
+def _normalize_snippet_text(title: str, snippet: str) -> str:
+    """Give each line of a scraped snippet its own sentence boundary
+    instead of squashing embedded newlines into a single space.
+
+    Comparison-table/listicle pages (e.g. a Forbes "best budgeting apps"
+    roundup) scrape into a snippet with one fact per line - a company name
+    line immediately followed by an unrelated price/feature-label line.
+    Joining those with a plain space let spaCy's NER merge adjacent lines
+    into one garbled multi-word span ("PocketGuard Managing
+    Subscriptions"). Joining with ". " instead gives the parser a sentence
+    boundary between lines, so it stops bleeding one table cell's text into
+    the next - confirmed live: this alone recovered real competitors
+    (Bluevine, Rocket Money) that were previously lost either to being
+    merged into garbage or to the whole source being unreadable.
+    """
+    lines = [line.strip() for line in snippet.split("\n") if line.strip()]
+    body = ". ".join(lines)
+    return f"{title}. {body}"
+
+
 def _extract_entities(results: list) -> dict[str, dict]:
     """One pass over the "Competitors"-angle results, tallying how many
     times each cleaned, filtered entity name is mentioned and remembering
@@ -119,7 +167,7 @@ def _extract_entities(results: list) -> dict[str, dict]:
     for r in results:
         if r.get("angle") != "Competitors":
             continue
-        text = f"{r.get('title', '')}. {r.get('snippet', '')}".replace("\n", " ")
+        text = _normalize_snippet_text(r.get("title", ""), r.get("snippet", ""))
         doc = _nlp(text)
         for ent in doc.ents:
             if ent.label_ != "ORG":
@@ -127,6 +175,8 @@ def _extract_entities(results: list) -> dict[str, dict]:
             name = _clean_entity_name(ent.text)
             words = name.split()
             if len(words) > 3 or len(name) < 3 or _is_generic_phrase(name):
+                continue
+            if _is_duplicated_merge(name):
                 continue
             entry = mentions.setdefault(name, {"count": 0, "source": r})
             entry["count"] += 1
@@ -136,6 +186,15 @@ def _extract_entities(results: list) -> dict[str, dict]:
         for name, info in mentions.items()
         if _INTERNAL_CAP.search(name) or info["count"] >= _MIN_MENTIONS_WITHOUT_CAMEL_CASE
     }
+
+
+def _clean_offering(snippet: str) -> str:
+    """Collapse a raw snippet's embedded newlines into a single readable
+    line before it reaches the frontend - a comparison-table-scraped
+    snippet (see _normalize_snippet_text) renders as garbled multi-line
+    text like "Noah Kaufman\\n Noah Kaufman\\n\\nBlack and White
+    Roasters\\n\\nCoffee" if shown raw, confirmed live."""
+    return " ".join(snippet.split())
 
 
 def _dedupe_near_matches(mentions: dict[str, dict]) -> list[str]:
@@ -168,7 +227,7 @@ def analyze_competitors(idea: str, target_customer: str, problem: str, results: 
     competitors = []
     for name in kept_names[:_MAX_COMPETITORS]:
         source = mentions[name]["source"]
-        offering = (source.get("snippet") or "").strip()
+        offering = _clean_offering((source.get("snippet") or "").strip())
         competitors.append(
             {
                 "name": name,
