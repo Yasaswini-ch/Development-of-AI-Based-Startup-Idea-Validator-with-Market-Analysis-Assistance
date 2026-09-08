@@ -20,7 +20,7 @@ and what came back) rather than just a status claim, see
 | Yasaswini | Market Opportunity + Competitor agents | ✅ Done (Competitor agent later rewritten from LLM to local NER — see below) | — |
 | Yalene | Orchestration wiring (partial-failure handling) | ✅ Done, merged to `staging` | — |
 | Sashi | Opportunity Score | ✅ Done | — |
-| Sashi | Positioning fields (`estimatedPrice`/`featureBreadth`) | ✅ Done (now always `"unknown"` for real responses since the NER rewrite — see note below) | — |
+| Sashi | Positioning fields (`estimatedPrice`/`featureBreadth`) | ✅ Done, and now actually classified sometimes again (see note below) | — |
 | **Sashi** | **Confidence Indicator** | ❌ Not started | **Yes — start now, zero blockers** |
 | Anu | Null/"unavailable" section UI | ✅ Done | — |
 | Anu | Positioning grid (3×3 chart) | ✅ Done — confirmed still 3×3 (`high/mid/low` × `narrow/moderate/broad`) in `CompetitorAnalysis.jsx`, not reduced to 2×2 | — |
@@ -28,14 +28,16 @@ and what came back) rather than just a status claim, see
 | Varshini | Error-state UI verification | ⚠️ Partially covered (see below) — worth Varshini's own pass | Can start, low priority |
 | Varshini | Cross-industry validation report | ⚠️ Raw test data now available for 4 ideas (see below), report itself not yet written | **Yes — data's ready, write it up** |
 
-> **Note on positioning fields:** since Competitor Discovery is now local NER instead
-> of an LLM call, `estimatedPrice`/`featureBreadth` are *always* `"unknown"` in real
-> responses (NER can't estimate those the way an LLM could). The 3×3 grid component
-> still exists and is correctly wired, but it will only ever render for genuinely
-> "unknown"-free data (e.g. hand-crafted test fixtures) — in live use, the grid
-> currently won't display because nothing gets classified. This is a direct, known
-> consequence of the NER trade-off, not a bug in Sashi's or Anu's work — flagging it
-> here so it isn't rediscovered as a mystery later.
+> **Note on positioning fields:** when Competitor Discovery moved to local NER,
+> `estimatedPrice`/`featureBreadth` briefly became *always* `"unknown"` in real
+> responses (NER couldn't estimate those the way an LLM could), so Sashi's and Anu's
+> 3×3 grid - correctly built - never actually rendered in live use. Fixed in
+> `d33effc`: `competitor_agent.py` now pattern-matches $ amounts and feature keywords
+> from each competitor's own local text to classify them when there's real textual
+> evidence, still `"unknown"` when there isn't. Verified live: the invoicing-app idea
+> now shows a real competitor placed in the grid. Most competitors will still land on
+> `"unknown"` for one or both fields (the heuristic is honest about not guessing) -
+> that's expected, not a regression.
 
 ---
 

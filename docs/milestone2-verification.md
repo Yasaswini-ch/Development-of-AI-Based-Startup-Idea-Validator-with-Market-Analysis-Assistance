@@ -1,7 +1,7 @@
 # Milestone 2 — Verification Log
 
-Owner: Yasaswini · Last updated Sept 6, 2026 (added check 1b — the second
-competitor-NER fix)
+Owner: Yasaswini · Last updated Sept 6, 2026 (added checks 1b-1e — the second
+competitor-NER fix, the directory-domain fix, and the positioning-grid fix)
 
 Separate from [`milestone2-status.md`](milestone2-status.md) (who's doing what, task
 by task) — this is a log of the actual checks run against the real running app this
@@ -136,6 +136,64 @@ retrieval".
 
 ---
 
+## 1d. Positioning grid renders in live use (was check 3 / 3b)
+
+**What this checks:** whether the 3×3 positioning grid built by Sashi/Anu actually
+shows real data, now that `estimatedPrice`/`featureBreadth` have a way to be
+classified again (see 1e - the fix landed together with this verification).
+
+**Method:** submitted the freelance-invoicing-app idea through the real running
+frontend (not the API directly), cleared `sessionStorage` first, clicked into the
+Competitors tab, and read the rendered DOM text.
+
+**Result:** "FreshBooks" genuinely appears placed in the grid at Low Price ×
+Moderate Breadth. The "Not placed (price/breadth unknown)" fallback note correctly
+lists the other three competitors (TurboTax, HoneyBook, QuickBooks) whose fields
+are still `"unknown"` - confirming the grid degrades per-competitor rather than
+all-or-nothing. First time any competitor has been placed since the NER rewrite.
+
+**Also fixed while verifying:** the grid's own copy still said "LLM-estimated
+placement," which became false the moment Competitor Discovery moved off the LLM
+path. Updated to "pattern-matched from source text" and confirmed the new copy
+renders (checked via the live DOM, not just the source diff).
+
+---
+
+## 1e. Price/breadth heuristic accuracy check
+
+**What this checks:** whether `_estimate_price`/`_estimate_breadth`'s classifications
+are trustworthy, not just present - i.e. is a real, present-in-text $ figure being
+attributed to the *right* competitor.
+
+**Method:** for each classified competitor across 5 ideas, traced the exact source
+text `_local_context` used to produce that classification, not just trusted the
+output.
+
+**Found and fixed:** "Rocket Money" was initially classified `"high"` price. Tracing
+the local context showed the matched `$200` was not Rocket Money's price at all - it
+was an unrelated sentence in the same source ("the average household is bleeding
+over $200 a year on charges nobody remembers signing up for"). Two compounding bugs:
+(1) the regex didn't recognize "a year"/"per year" phrasing, only "/year", so it
+silently treated the figure as monthly instead of annual; (2) even after fixing that,
+a bare `$` amount with no period at all was still being counted. Fixed by requiring
+an explicit, recognized period before counting a $ amount - ambiguous bare figures
+are now skipped (stay `"unknown"`) rather than guessed. Re-traced after the fix:
+"Rocket Money" now correctly returns `"mid"` (from the $200/yr figure, still not its
+real ~$6-12/mo price, but no longer misclassified as "high" from a monthly-treated
+annual figure).
+
+**Known, accepted residual risk:** this heuristic can still occasionally attribute a
+nearby-but-unrelated dollar figure to a competitor, since it has no way to verify
+"this price is actually about this specific company" beyond text proximity. This is
+the same category of limitation as check 1c's OneAir case - a precision/recall
+tradeoff, not a bug to keep chasing. Most competitors land on `"unknown"` for one or
+both fields, which is the intended, honest fallback.
+
+Commit: `d33effc` — "Give Competitor Discovery real price/breadth signal so the grid
+renders".
+
+---
+
 ## 2. Partial-failure isolation verification
 
 **What this checks:** that a failure in `market_opportunity` (e.g. a Groq rate limit)
@@ -180,14 +238,10 @@ correct 3×3 (a teammate's earlier regression had reduced it to 2×2, dropping
 **Result:** confirmed 3×3 — `PRICE_ROWS = ['high', 'mid', 'low']` (3 values) ×
 `BREADTH_COLS = ['narrow', 'moderate', 'broad']` (3 values). Not reduced to 2×2.
 
-**Finding surfaced during this check (not previously known):** since Competitor
-Discovery is now NER-based, `estimatedPrice`/`featureBreadth` are *always*
-`"unknown"` in real responses — NER can't estimate those categories the way an LLM
-could. `PositioningGrid` returns `null` when nothing passes its `placed` filter, so
-**the grid will not visibly render in live use**, even though it's correctly built
-and genuinely 3×3. This is a direct, known consequence of the NER trade-off, not a
-frontend bug — flagged in `milestone2-status.md` so it isn't rediscovered as a
-mystery later. Not fixed as part of this check since it wasn't what was asked.
+**Finding surfaced during this check (at the time):** since Competitor Discovery was
+NER-based, `estimatedPrice`/`featureBreadth` were *always* `"unknown"` in real
+responses, so the grid never had real data to place. **Since fixed — see checks 1d
+and 1e above.**
 
 ---
 
@@ -229,8 +283,9 @@ Varshini's item; see `milestone2-status.md`.
 | 1 | Competitor NER bug (0 competitors on budgeting idea) | ✅ Fixed & verified live | Table above, commit `046468f` |
 | 1b | Competitor NER bug, part 2 (single-word false positives — "CBT", "History", etc.) | ✅ Fixed & verified live across 7 ideas | Table above, commit `cdbd60f` |
 | 1c | Generic competitor-directory domain pollution (`competitors.app`) | ✅ Fixed & verified live; OneAir case documented as a known, unfixed relevance limitation (not a bug) | Above, commit `a992076` |
+| 1d | Positioning grid renders in live use | ✅ Fixed & verified live - "FreshBooks" genuinely placed in the grid | Above, commit `d33effc` |
+| 1e | Price/breadth heuristic attributes signal to the right competitor | ✅ Bug found (Rocket Money misattributed) & fixed; residual attribution risk documented as accepted, not chased further | Above, commit `d33effc` |
 | 2 | Partial-failure isolation | ✅ Verified (Market Opportunity side); ⚠️ Competitor Discovery side no longer force-failable the same way | Real `errors.marketOpportunity` response captured earlier in session |
 | 3 | Positioning grid is 3×3, not 2×2 | ✅ Confirmed in code | `CompetitorAnalysis.jsx:8-10` |
-| 3b | Positioning grid renders in live use | ❌ Does not (known consequence of NER rewrite, not a bug) | `estimatedPrice`/`featureBreadth` always `"unknown"` |
 | 4 | Quota fix produces real (non-fallback) agent output | ✅ Verified live | Real 76-score Market Opportunity analysis, `errors: {}` |
 | 5 | Error-state UI, dedicated pass | ❌ Not done — still Varshini's item | — |
