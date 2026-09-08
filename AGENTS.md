@@ -35,32 +35,32 @@ written up yet (§4).
 
 ## 3. Known bugs — read before touching related code
 
-### 3a. Competitor name-quality bug (real, unfixed, HIGH priority)
-**Symptom:** `backend/agent/competitor_agent.py`'s NER extraction sometimes returns
+### 3a. Competitor name-quality bug — FIXED in `cdbd60f`
+**Was:** `backend/agent/competitor_agent.py`'s NER extraction sometimes returned
 garbage as competitor names — generic single words mislabeled as `ORG` by spaCy's
-small model (`en_core_web_sm`), e.g. "History", "CBT", "Windows", "Journal" for a
-journaling-app idea, or a competitor name that doesn't match its own snippet's
-description. Found via live testing across 3 industries (fintech/health/hardware) —
+small model (`en_core_web_sm`), e.g. "History", "CBT", "Windows", "Reply",
+"Newsweek". Found via live testing across 3 industries (fintech/health/hardware) —
 see [`docs/milestone2-verification.md`](docs/milestone2-verification.md) and the
-validation-plan PDF a teammate (Varshini) produced. Quality degraded progressively
-across the 3 test ideas, suggesting a systemic gap, not a one-off fluke.
+validation-plan PDF a teammate (Varshini) produced.
 
-**What this is NOT:** don't confuse this with the newline-garbling bug already fixed
-in commit `046468f` ("PocketGuard Managing Subscriptions"-style merged entities from
-comparison-table snippets). That fix is in place and working. This is a *different*,
-still-open failure mode: single common words being mislabeled as company names, a
-known limitation the module's own docstring already flags but hasn't fully solved.
+**Fix:** single-word, non-camelCase candidates now also require product-ish context
+(price, subscription, "app", "alternative", etc.) nearby in at least one mention, on
+top of the existing 2+-mentions bar — see `_has_product_context` and the updated
+`_extract_entities` docstring in `competitor_agent.py`. camelCase and multi-word
+names (HelloFresh, Rocket Money, Onyx) were never the source of this failure mode
+and are untouched. Also expanded `_GENERIC_WORDS` for platform/UI-chrome words
+(android, ios, pdf, reply, ai) and a couple of merge-artifact fragments.
 
-**Where to start:** `backend/agent/competitor_agent.py`'s `_extract_entities()` and
-`_is_generic_phrase()`. The existing denylist approach (`_GENERIC_WORDS`) is
-reactive and already shows signs of not scaling (extending it fixes one case,
-surfaces new false positives elsewhere — this was observed directly during the
-newline-bug fix). Consider: a broader stopword source (spaCy's small model ships
-without real word frequency data, already noted in the docstring), or a minimum-
-mention threshold increase, or filtering entities that don't appear as a proper noun
-phrase pattern. Test against real, non-deterministic live search data (not fixtures)
-across at least 3 different ideas before considering it fixed — a single clean test
-run proves nothing given how source-dependent this bug is.
+**Verified:** live, across 7 ideas (the 3 that surfaced the bug + the 4 already-
+confirmed-good ones) — every single-word false positive and merge-artifact phrase
+from the original reports is gone, no previously-confirmed real competitor lost.
+
+**Residual, out of scope:** occasional real-but-irrelevant companies still surface
+(e.g. "Verizon" for a bill-negotiation idea) — that's the search/retrieval step
+surfacing weakly-relevant sources, a different root cause (topical relevance, not
+entity-extraction correctness) than this bug was. Don't conflate the two if you see
+an odd name again — check whether it's a real company mentioned off-topic (retrieval
+issue) vs. actual mislabeled text (would be a new instance of this bug class).
 
 ### 3b. Positioning grid doesn't render in live use (real, unfixed, MEDIUM priority)
 **Symptom:** `frontend/src/components/CompetitorAnalysis.jsx`'s 3×3 positioning grid

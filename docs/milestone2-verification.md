@@ -1,6 +1,7 @@
 # Milestone 2 — Verification Log
 
-Owner: Yasaswini · Last updated Sept 6, 2026
+Owner: Yasaswini · Last updated Sept 6, 2026 (added check 1b — the second
+competitor-NER fix)
 
 Separate from [`milestone2-status.md`](milestone2-status.md) (who's doing what, task
 by task) — this is a log of the actual checks run against the real running app this
@@ -49,6 +50,51 @@ cached render — the Competitors tab genuinely displays 4 real names, confirmed
 
 Commit: `046468f` — "Fix competitor NER losing real matches on comparison-table
 sources".
+
+---
+
+## 1b. Competitor NER bug fix, part 2 — single-word false positives
+
+**Bug reported:** a teammate's (Varshini's) cross-industry validation testing found
+a *different* class of bad competitor names than 1's: single generic words
+mislabeled as `ORG` by spaCy — "History", "CBT", "Windows", "Journal" for a
+journaling-app idea — and a name mismatched to its own snippet's description for a
+smart-water-bottle idea, with real competitors (Stanley Quencher, HidrateSpark)
+missing entirely. Quality degraded progressively across her 3 test ideas.
+
+**Root cause found:** unlike part 1 (a text-normalization bug), this was a filtering
+gap — spaCy's small model has no real word-frequency data, so it can't tell "a
+common English word that happens to be capitalized" from "a real proper noun,"
+and the existing filters (camelCase pattern, 2+ mentions, a denylist) didn't
+distinguish either. Reproducing live confirmed real single-mention noise ("CBT",
+"Plutchik", "AI", "PDF") alongside a real, correctly-identified competitor
+("Rosebud", 4 mentions) in the same result set — proving count alone isn't enough
+for single-word candidates.
+
+**Fix:** single-word, non-camelCase candidates now also require nearby product-ish
+context (price, subscription, "app", "alternative", etc. — see
+`_has_product_context`) in at least one mention, in addition to the existing
+2+-mentions bar. Also expanded the denylist for platform/UI-chrome words (android,
+ios, pdf, reply, ai) and merge-artifact fragments (newsletter, social, media,
+broadband) found along the way.
+
+**Checks run (via the actual `analyze_competitors()` function, live search data,
+non-deterministic across runs so tested twice per idea):**
+
+| Idea | Before fix | After fix |
+|---|---|---|
+| Journaling app (Varshini's reported case) | "CBT", "Plutchik", "Reflection", "AI", "PDF" alongside real "Rosebud" | Just "Rosebud" |
+| Smart water bottle (Varshini's reported case) | "Android", "RDN", "Reply" | Ulla, WaterMinder, Apple Watch, HabitBox — all real products |
+| Bill-negotiation fintech app (Varshini's reported case) | "Apple", "OneAir", "Verizon", "Rotman"; separately "The Daily NewsletterReady", "NextSocial Media Monitoring" (merge artifacts) | OneAir, Verizon, Apple Memories — merge artifacts gone; Verizon is a real company caught by weak topical relevance in retrieval, a separate, out-of-scope issue |
+| Budgeting, coffee, meal-prep, invoicing (the 4 ideas from check 1) | — (re-run as a regression check) | All previously-confirmed real names still present (Rocket Money, MistoBox, HelloFresh, FreshBooks, etc.) — no real competitor lost by the new filter |
+
+**What's still open:** occasional real-but-topically-irrelevant companies (e.g.
+Verizon for a bill-negotiation idea) — that's the search/retrieval step surfacing
+weakly-relevant sources, not an entity-extraction defect. Not addressed by this fix;
+would need work in `retrieval.py`'s relevance scoring, not `competitor_agent.py`.
+
+Commit: `cdbd60f` — "Fix competitor NER mistagging generic single words as company
+names".
 
 ---
 
@@ -143,6 +189,7 @@ Varshini's item; see `milestone2-status.md`.
 | # | Check | Status | Evidence |
 |---|---|---|---|
 | 1 | Competitor NER bug (0 competitors on budgeting idea) | ✅ Fixed & verified live | Table above, commit `046468f` |
+| 1b | Competitor NER bug, part 2 (single-word false positives — "CBT", "History", etc.) | ✅ Fixed & verified live across 7 ideas | Table above, commit `cdbd60f` |
 | 2 | Partial-failure isolation | ✅ Verified (Market Opportunity side); ⚠️ Competitor Discovery side no longer force-failable the same way | Real `errors.marketOpportunity` response captured earlier in session |
 | 3 | Positioning grid is 3×3, not 2×2 | ✅ Confirmed in code | `CompetitorAnalysis.jsx:8-10` |
 | 3b | Positioning grid renders in live use | ❌ Does not (known consequence of NER rewrite, not a bug) | `estimatedPrice`/`featureBreadth` always `"unknown"` |
