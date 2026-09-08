@@ -85,16 +85,54 @@ non-deterministic across runs so tested twice per idea):**
 |---|---|---|
 | Journaling app (Varshini's reported case) | "CBT", "Plutchik", "Reflection", "AI", "PDF" alongside real "Rosebud" | Just "Rosebud" |
 | Smart water bottle (Varshini's reported case) | "Android", "RDN", "Reply" | Ulla, WaterMinder, Apple Watch, HabitBox — all real products |
-| Bill-negotiation fintech app (Varshini's reported case) | "Apple", "OneAir", "Verizon", "Rotman"; separately "The Daily NewsletterReady", "NextSocial Media Monitoring" (merge artifacts) | OneAir, Verizon, Apple Memories — merge artifacts gone; Verizon is a real company caught by weak topical relevance in retrieval, a separate, out-of-scope issue |
+| Bill-negotiation fintech app (Varshini's reported case) | "Apple", "OneAir", "Verizon", "Rotman"; separately "The Daily NewsletterReady", "NextSocial Media Monitoring" (merge artifacts) | Merge artifacts gone. Verizon and OneAir remain - see check 1c below, this is a separate, more precise finding than "weak relevance" |
 | Budgeting, coffee, meal-prep, invoicing (the 4 ideas from check 1) | — (re-run as a regression check) | All previously-confirmed real names still present (Rocket Money, MistoBox, HelloFresh, FreshBooks, etc.) — no real competitor lost by the new filter |
 
-**What's still open:** occasional real-but-topically-irrelevant companies (e.g.
-Verizon for a bill-negotiation idea) — that's the search/retrieval step surfacing
-weakly-relevant sources, not an entity-extraction defect. Not addressed by this fix;
-would need work in `retrieval.py`'s relevance scoring, not `competitor_agent.py`.
+**What's still open:** see check 1c below - the "Verizon"/"OneAir" residue in the
+fintech-bills row turned out to be two different things, not one retrieval-quality
+issue as first assumed here.
 
 Commit: `cdbd60f` — "Fix competitor NER mistagging generic single words as company
 names".
+
+---
+
+## 1c. Generic competitor-directory domain pollution
+
+**What looked like the issue:** "Verizon" and "OneAir" both still appeared for the
+bill-negotiation idea after check 1b's fix, initially assumed to be one "weak
+topical relevance in retrieval" problem.
+
+**What it actually was, on inspection of the raw source snippets:**
+- **Verizon is correct, not a bug.** Its source (`webpronews.com`) is genuinely
+  about "Verizon's AI Tool Analyzes Rival Bills for Custom Switch Deals" - a real,
+  on-topic competitor to a bill-negotiation app. Filtering it out would have removed
+  a correct result.
+- **The real noise was `competitors.app`**, a generic "AI Alternatives" directory
+  page - its entire content model is a cross-category listicle template, not
+  idea-specific reporting. It scored as the *second-highest-relevance* source for
+  this query purely on generic keyword overlap ("AI", "alternatives",
+  "competitors"), and its scraped listing fed unrelated app names into NER.
+- **OneAir is a separate, unresolved case**, not fixed by the domain exclusion: a
+  real product, correctly extracted, from a real publication (PCMag) - but that
+  specific article is about a different product category (travel-deal finding, not
+  bill negotiation) that only superficially keyword-matches the query ("AI-powered
+  app", "cheaper deals"). This is a topical-relevance judgment call that local NER
+  structurally cannot make - solving it properly would need an LLM call, which
+  contradicts the entire point of Competitor Discovery's zero-LLM design. Documented
+  as a known limitation, not fixed.
+
+**Fix applied:** added `competitors.app`, `alternativeto.net`, and `saashub.com` to
+`retrieval.py`'s `_EXCLUDED_DOMAINS` - the same mechanism already used to exclude
+academic sources, extended to this category of generic directory aggregator.
+
+**Verified live:** `competitors.app` no longer appears in the Competitors-angle
+source list for the bill-negotiation idea. Re-ran 5 previously-confirmed ideas
+(budgeting, coffee, meal-prep, invoicing, journaling) - no regression, all still
+return their real competitors.
+
+Commit: `a992076` — "Exclude generic competitor-directory aggregator domains from
+retrieval".
 
 ---
 
@@ -190,6 +228,7 @@ Varshini's item; see `milestone2-status.md`.
 |---|---|---|---|
 | 1 | Competitor NER bug (0 competitors on budgeting idea) | ✅ Fixed & verified live | Table above, commit `046468f` |
 | 1b | Competitor NER bug, part 2 (single-word false positives — "CBT", "History", etc.) | ✅ Fixed & verified live across 7 ideas | Table above, commit `cdbd60f` |
+| 1c | Generic competitor-directory domain pollution (`competitors.app`) | ✅ Fixed & verified live; OneAir case documented as a known, unfixed relevance limitation (not a bug) | Above, commit `a992076` |
 | 2 | Partial-failure isolation | ✅ Verified (Market Opportunity side); ⚠️ Competitor Discovery side no longer force-failable the same way | Real `errors.marketOpportunity` response captured earlier in session |
 | 3 | Positioning grid is 3×3, not 2×2 | ✅ Confirmed in code | `CompetitorAnalysis.jsx:8-10` |
 | 3b | Positioning grid renders in live use | ❌ Does not (known consequence of NER rewrite, not a bug) | `estimatedPrice`/`featureBreadth` always `"unknown"` |

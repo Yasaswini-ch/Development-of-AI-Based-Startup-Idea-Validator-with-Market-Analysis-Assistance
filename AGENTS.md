@@ -55,12 +55,28 @@ and are untouched. Also expanded `_GENERIC_WORDS` for platform/UI-chrome words
 confirmed-good ones) — every single-word false positive and merge-artifact phrase
 from the original reports is gone, no previously-confirmed real competitor lost.
 
-**Residual, out of scope:** occasional real-but-irrelevant companies still surface
-(e.g. "Verizon" for a bill-negotiation idea) — that's the search/retrieval step
-surfacing weakly-relevant sources, a different root cause (topical relevance, not
-entity-extraction correctness) than this bug was. Don't conflate the two if you see
-an odd name again — check whether it's a real company mentioned off-topic (retrieval
-issue) vs. actual mislabeled text (would be a new instance of this bug class).
+**Related fix, `a992076`:** one apparent instance of "irrelevant company" turned out
+to be two different things bundled together. "Verizon" surfacing for a bill-
+negotiation idea was actually *correct* (its source article is genuinely about
+Verizon's own AI bill-negotiation tool - not a bug). The real issue was a different
+source in the same result set: `competitors.app`, a generic "AI Alternatives"
+directory page that keyword-matches almost any "X competitors" query without being
+about the idea at all. Fixed by adding it (and similar generic-directory sites -
+`alternativeto.net`, `saashub.com`) to `retrieval.py`'s `_EXCLUDED_DOMAINS`, the same
+mechanism already used for academic sources.
+
+**Residual, genuinely out of scope:** a real product (OneAir) correctly extracted
+from a real publication (PCMag), but the article itself is about a *different*
+product category (travel deals) that only superficially keyword-matches the query
+("AI-powered app", "cheaper deals"). That's a topical-relevance judgment call, not a
+directory-page or entity-extraction defect - solving it properly needs the kind of
+reasoning the NER design deliberately avoids (an LLM call), so it's a known
+limitation, not a bug to chase with more domain-list guessing. If you see an odd
+name again, check which of these three buckets it's actually in before assuming it's
+a repeat of this bug class: (1) mislabeled generic text → NER bug, (2) a generic
+directory/aggregator source → add the domain to `_EXCLUDED_DOMAINS`, (3) a real
+company/product genuinely off-topic for the idea → the unsolved relevance-judgment
+limitation above.
 
 ### 3b. Positioning grid doesn't render in live use (real, unfixed, MEDIUM priority)
 **Symptom:** `frontend/src/components/CompetitorAnalysis.jsx`'s 3×3 positioning grid
