@@ -1,10 +1,11 @@
 import { Fragment } from 'react'
 import { IconAlertTriangle } from './icons'
 
-// Matches the backend's actual categories (competitor_agent.py prompts for
-// low/mid/high and narrow/moderate/broad) - a 2x2 version of this grid
-// dropped "mid"/"moderate" competitors into "not placed" alongside genuinely
-// unknown ones, misrepresenting real data as missing.
+// Matches the backend's actual categories (competitor_agent.py's
+// _estimate_price/_estimate_breadth pattern-match these from source text,
+// not an LLM call) - a 2x2 version of this grid dropped "mid"/"moderate"
+// competitors into "not placed" alongside genuinely unknown ones,
+// misrepresenting real data as missing.
 const PRICE_ROWS = ['high', 'mid', 'low']
 const PRICE_LABELS = { high: 'High price', mid: 'Mid price', low: 'Low price' }
 const BREADTH_COLS = ['narrow', 'moderate', 'broad']
@@ -85,8 +86,8 @@ function PositioningGrid({ competitors }) {
         Positioning snapshot
       </h3>
       <p className="mb-3 text-[11px] leading-snug text-muted">
-        Approximate, LLM-estimated placement by price and feature breadth &mdash; not
-        verified market data.
+        Approximate placement by price and feature breadth, pattern-matched from
+        source text &mdash; not verified market data.
       </p>
 
       <div className="grid grid-cols-[auto_repeat(3,1fr)] gap-1.5">
