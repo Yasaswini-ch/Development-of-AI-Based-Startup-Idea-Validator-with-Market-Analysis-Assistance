@@ -57,6 +57,21 @@ several (Bluevine, Rocket Money) being present in the raw data.
 _normalize_snippet_text gives each line its own sentence boundary
 instead, which stopped the cross-line bleeding without needing to
 discard the whole source.
+
+A second, distinct false-positive class was found via cross-industry
+testing (a journaling app, a smart water bottle, a bill-negotiation
+app): single plain words spaCy's small model mistags as ORG when
+mentioned only in passing - "History", "CBT", "Android", "Reply",
+"Newsweek" - not merged garbage, just a real word/acronym/company
+correctly spelled but not actually being discussed as a product. Unlike
+the newline bug, more denylist entries alone don't scale here (each idea
+surfaces new ones). _has_product_context requires a single-word,
+non-camelCase candidate to appear near actual product language (price,
+subscription, "app", "alternative", etc.) in at least one mention,
+in addition to the existing 2+-mentions bar - camelCase and multi-word
+names (HelloFresh, Rocket Money, Onyx) never needed this and are
+unaffected. Verified across 7 ideas: eliminated every single-word false
+positive seen without losing any previously-confirmed real competitor.
 """
 
 import logging
@@ -85,11 +100,38 @@ _GENERIC_WORDS = {
     "market", "industry", "report", "analysis", "options", "bank", "cloud",
     "sync", "unlimited", "premium", "team", "cash", "trade", "exploration",
     "ratings", "rating", "awards", "award",
+    # Platform/tech/UI-chrome words that show up as capitalized ORG mentions
+    # in almost any product-related source, regardless of the idea's actual
+    # domain - "Available on Android and iOS", "Export as PDF", a forum
+    # "Reply" link - confirmed live across multiple unrelated ideas (a
+    # journaling app and a bill-negotiation app both produced several of
+    # these as false-positive "competitors").
+    "ai", "pdf", "android", "ios", "iphone", "windows", "mac", "reply",
+    "log", "sign", "comment", "comments", "history",
+    # Words that keep showing up as one piece of a multi-word merge
+    # artifact from scraped page chrome ("The Daily NewsletterReady",
+    # "NextSocial Media Monitoring") - confirmed live. These are broadly
+    # generic (news/media/scheduling boilerplate), not idea-specific.
+    "daily", "newsletter", "social", "media", "monitoring", "next",
+    "broadband", "newsweek",
 }
 
 _INTERNAL_CAP = re.compile(r"[a-z][A-Z]")  # e.g. "HelloFresh", "QuickBooks"
 _CAMEL_SPLIT = re.compile(r"[A-Z][a-z]*")
 _MIN_MENTIONS_WITHOUT_CAMEL_CASE = 2
+
+# Words whose presence in the same sentence as a single-word, non-camelCase
+# candidate suggest it's actually being discussed as a product - used to
+# require more than just "capitalized + mentioned twice" for the riskiest
+# candidate shape (see _extract_entities). Not applied to camelCase or
+# multi-word names, which are already reliable on their own.
+_PRODUCT_CONTEXT_WORDS = {
+    "app", "apps", "product", "service", "platform", "tool", "device",
+    "subscription", "plan", "price", "pricing", "feature", "features",
+    "alternative", "alternatives", "competitor", "compare", "compares",
+    "comparison", "vs", "review", "reviews", "tracker", "software",
+    "bottle", "wearable", "download", "free", "premium",
+}
 
 try:
     import spacy
@@ -147,21 +189,32 @@ def _normalize_snippet_text(title: str, snippet: str) -> str:
     return f"{title}. {body}"
 
 
+def _has_product_context(sentence: str) -> bool:
+    words = {w.strip(",.!?():;$") for w in sentence.lower().split()}
+    return bool(words & _PRODUCT_CONTEXT_WORDS) or "$" in sentence
+
+
 def _extract_entities(results: list) -> dict[str, dict]:
     """One pass over the "Competitors"-angle results, tallying how many
     times each cleaned, filtered entity name is mentioned and remembering
     one source result per name (for its URL/snippet).
 
-    A candidate is kept only if it's camelCase (a strong, count-independent
+    A candidate is kept if it's camelCase (a strong, count-independent
     signal - a very common SaaS/startup naming pattern: HelloFresh,
-    QuickBooks, FreshBooks, HoneyBook) or mentioned 2+ times across the
-    Competitors-angle results. Repetition across a "best X" listicle is
-    itself a reasonable real-brand signal in place of the word-frequency
-    check the small spaCy model can't reliably provide - confirmed live:
-    this combination correctly returned zero competitors (rather than 3
-    confidently wrong ones - "Pacific Northwest", "Single-Origin
-    Exploration") for a coffee-subscription idea whose sources didn't
-    actually name any companies more than once.
+    QuickBooks, FreshBooks, HoneyBook), or if it's a multi-word phrase
+    mentioned 2+ times, or if it's a single plain word mentioned 2+ times
+    *and* at least one mention sits in a sentence with product-ish context
+    (see _PRODUCT_CONTEXT_WORDS). That last, stricter rule exists because
+    single plain words are where spaCy's small model actually gets it
+    wrong in practice - confirmed live across several ideas returning
+    "History", "CBT", "Android", "Reply", "Apple", "Verizon" as
+    "competitors": real proper nouns or acronyms spaCy tags ORG, but
+    mentioned only in passing (a platform note, a forum UI element, an
+    unrelated company cited in a different context) rather than actually
+    being discussed as a product. Requiring nearby product-context text
+    doesn't touch camelCase or multi-word names (HelloFresh, Rocket Money,
+    Onyx never needed this to be identified correctly) - only the riskiest
+    shape gets the extra bar.
     """
     mentions: dict[str, dict] = {}
     for r in results:
@@ -178,14 +231,24 @@ def _extract_entities(results: list) -> dict[str, dict]:
                 continue
             if _is_duplicated_merge(name):
                 continue
-            entry = mentions.setdefault(name, {"count": 0, "source": r})
+            entry = mentions.setdefault(
+                name, {"count": 0, "source": r, "has_context": False}
+            )
             entry["count"] += 1
+            if len(words) == 1 and _has_product_context(ent.sent.text):
+                entry["has_context"] = True
 
-    return {
-        name: info
-        for name, info in mentions.items()
-        if _INTERNAL_CAP.search(name) or info["count"] >= _MIN_MENTIONS_WITHOUT_CAMEL_CASE
-    }
+    kept = {}
+    for name, info in mentions.items():
+        if _INTERNAL_CAP.search(name):
+            kept[name] = info
+            continue
+        if info["count"] < _MIN_MENTIONS_WITHOUT_CAMEL_CASE:
+            continue
+        if len(name.split()) == 1 and not info["has_context"]:
+            continue
+        kept[name] = info
+    return kept
 
 
 def _clean_offering(snippet: str) -> str:
