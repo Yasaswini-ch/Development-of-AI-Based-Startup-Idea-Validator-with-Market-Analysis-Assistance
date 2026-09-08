@@ -32,6 +32,19 @@ _EXCLUDED_DOMAINS = {
     "dl.acm.org",
     "wiley.com",
     "tandfonline.com",
+    # Generic "alternatives to X" / competitor-directory aggregator sites -
+    # their whole content model is a cross-category listicle template, not
+    # idea-specific reporting, so they superficially keyword-match almost
+    # any "X competitors and alternatives" query while contributing zero
+    # real signal. Confirmed live: competitors.app's generic "AI
+    # Alternatives" page scored as the *second-highest-relevance* result
+    # for a bill-negotiation-app query purely on "AI"/"alternatives"/
+    # "competitors" keyword overlap, and its scraped listicle content fed
+    # unrelated app names into Competitor Discovery's NER step as false
+    # "competitors" for that idea.
+    "competitors.app",
+    "alternativeto.net",
+    "saashub.com",
 }
 
 
