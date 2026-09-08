@@ -78,21 +78,37 @@ directory/aggregator source → add the domain to `_EXCLUDED_DOMAINS`, (3) a rea
 company/product genuinely off-topic for the idea → the unsolved relevance-judgment
 limitation above.
 
-### 3b. Positioning grid doesn't render in live use (real, unfixed, MEDIUM priority)
-**Symptom:** `frontend/src/components/CompetitorAnalysis.jsx`'s 3×3 positioning grid
-(`PositioningGrid`) is correctly built and dimensioned, but since Competitor
-Discovery moved to NER, `estimatedPrice`/`featureBreadth` are *always* `"unknown"`
-in real responses (NER can't estimate those categories the way an LLM could). The
-grid's `placed` filter requires both fields to be classified, so `placed.length` is
-always 0 and the grid silently returns `null` — never visible to a real user.
+### 3b. Positioning grid doesn't render in live use — FIXED in `d33effc`
+**Was:** `frontend/src/components/CompetitorAnalysis.jsx`'s 3×3 positioning grid
+(`PositioningGrid`) was correctly built and dimensioned, but since Competitor
+Discovery moved to NER, `estimatedPrice`/`featureBreadth` were *always* `"unknown"`
+in real responses. The grid's `placed` filter requires both fields to be classified,
+so it silently returned `null` — never visible to a real user.
 
-**Where to start:** either (a) give Competitor Discovery a cheap heuristic for
-these two fields (e.g. price signal from `$`-amount mentions in the snippet text,
-breadth from feature-keyword density) so it's not always `"unknown"`, or (b) accept
-the grid is dead code under the current design and remove it / replace it with
-something NER can actually support, or (c) leave it and document it as a known
-limitation for submission. This is a product decision as much as a coding one —
-surface it to the team rather than picking silently.
+**Fix:** `competitor_agent.py`'s `_estimate_price`/`_estimate_breadth` pattern-match
+$ amounts and a small feature-keyword vocabulary from each competitor's own *local*
+context (its sentence + the one after - not the whole shared source snippet, which
+is often actually about a different competitor from the same source). Both stay
+`"unknown"` when no signal is found, rather than guessing - same honesty tradeoff as
+the `gap` field. Found and fixed a real bug while building this: a bare `$200` with
+no explicit period got treated as monthly by default, misclassifying "Rocket Money"
+as high-price when the $200 was actually an unrelated "average household loses $200
+a year" statistic in the same source, not even Rocket Money's own price. Fixed by
+requiring an explicit period match (extended to also catch "a year"/"per month"
+phrasing, not just "/year") before counting a $ amount, rather than assuming one.
+
+**Verified live:** the invoicing-app idea now shows "FreshBooks" genuinely placed in
+the grid (low price / moderate breadth) through the real running frontend - first
+time any competitor has had both fields classified since the NER rewrite. No
+regression across 5 previously-confirmed ideas. The frontend's stale "LLM-estimated"
+copy was also updated to describe what actually produces these values now.
+
+**Known limitation, by design:** this heuristic is genuinely rough - a `$` amount
+near a name isn't verified pricing, and can occasionally still reflect a nearby but
+unrelated figure rather than that specific competitor's real price. Most
+competitors will still land on `"unknown"` for one or both fields; that's the
+intended, honest behavior (see the module docstring), not a sign the heuristic is
+broken.
 
 ## 4. Not started / not finished
 
