@@ -31,11 +31,22 @@ for zero API cost, zero rate limit, and zero latency variance.
 The real cost of this trade: `gap` can't be a genuine comparative judgment
 the way an LLM's would be (that specific field does need reasoning over the
 startup idea, which NER can't do), so it's an honest, generic disclosure
-instead - see _GAP_DISCLOSURE. `estimatedPrice`/`featureBreadth` are always
-"unknown" for the same reason; the frontend already hides badges for
-"unknown" values and hides the positioning grid when nothing is
-classified, so this degrades cleanly rather than showing fabricated
-categories.
+instead - see _GAP_DISCLOSURE.
+
+`estimatedPrice`/`featureBreadth` were "unknown" unconditionally at first
+(the same reasoning-limitation as `gap`), which meant the frontend's
+positioning grid never had real data to place - correctly built, never
+visible. _estimate_price/_estimate_breadth now do a much narrower,
+mechanical job instead of the comparative reasoning `gap` needs: pattern-
+match $ amounts and a small set of feature-ish keywords in the text right
+around each competitor's own mention (see _local_context - deliberately
+scoped to 1-2 sentences, not the whole shared source snippet, since two
+different competitors from the same source would otherwise get identical,
+wrongly-attributed values). Genuinely rough - a $ sign near a name isn't
+verified pricing - so both stay "unknown" whenever no signal is found at
+all, rather than guessing a bucket. The frontend still hides badges/grid
+cells for "unknown" values, so this only adds real classification where
+there's real textual evidence, never fabricates one where there isn't.
 
 Verified against several real ideas (meal-prep delivery, freelance
 invoicing, coffee subscriptions, student budgeting): consistently
@@ -114,6 +125,11 @@ _GENERIC_WORDS = {
     # generic (news/media/scheduling boilerplate), not idea-specific.
     "daily", "newsletter", "social", "media", "monitoring", "next",
     "broadband", "newsweek",
+    # News/media outlet names - almost always the publisher citing/
+    # reviewing a product, never themselves a competitor to whatever idea
+    # is being validated. Same rationale as "newsweek" above; confirmed
+    # live ("TechCrunch" surfaced as a "competitor" for a journaling app).
+    "techcrunch", "forbes", "reuters", "bloomberg", "cnn", "bbc",
 }
 
 _INTERNAL_CAP = re.compile(r"[a-z][A-Z]")  # e.g. "HelloFresh", "QuickBooks"
@@ -131,6 +147,29 @@ _PRODUCT_CONTEXT_WORDS = {
     "alternative", "alternatives", "competitor", "compare", "compares",
     "comparison", "vs", "review", "reviews", "tracker", "software",
     "bottle", "wearable", "download", "free", "premium",
+}
+
+# Regex + keyword vocabulary for the price/feature-breadth heuristics (see
+# _estimate_price / _estimate_breadth). Deliberately small and generic
+# rather than domain-specific, since this runs across arbitrary startup
+# ideas - a bigger list would mean tuning it per-domain, which doesn't
+# scale any better than the entity-name denylist did.
+_PRICE_PATTERN = re.compile(
+    r"\$\s?([\d,]+(?:\.\d{1,2})?)"
+    r"\s*(?:/\s*|per\s+|a\s+)?"
+    r"(mo(?:nth)?|yr|year|annually|monthly|yearly)?",
+    re.IGNORECASE,
+)
+_FREE_PATTERN = re.compile(r"\bfree\b", re.IGNORECASE)
+
+_FEATURE_WORDS = {
+    "tracking", "budgeting", "invoicing", "reports", "reporting",
+    "analytics", "sync", "integration", "integrations", "automation",
+    "automatically", "reminders", "alerts", "dashboard", "contracts",
+    "proposals", "scheduling", "payments", "negotiate", "negotiation",
+    "cancel", "cancellation", "monitor", "monitoring", "coaching",
+    "personalized", "categorization", "notifications", "templates",
+    "multi-currency", "portal",
 }
 
 try:
@@ -194,6 +233,84 @@ def _has_product_context(sentence: str) -> bool:
     return bool(words & _PRODUCT_CONTEXT_WORDS) or "$" in sentence
 
 
+def _local_context(doc, ent) -> str:
+    """The entity's own sentence plus the one right after it.
+
+    Comparison-table-style sources often put a name on one line and its
+    price on the very next (now the following sentence, post
+    _normalize_snippet_text) - using just ent.sent alone would miss that.
+    Bounded to two sentences on purpose: this needs to stay about *this*
+    competitor, not drift into a neighboring competitor's own pricing in
+    the same shared snippet.
+    """
+    sents = list(doc.sents)
+    try:
+        idx = sents.index(ent.sent)
+    except ValueError:
+        return ent.sent.text
+    return " ".join(s.text for s in sents[idx : idx + 2])
+
+
+def _estimate_price(text: str) -> str | None:
+    """A rough price bucket from $ amounts near the mention - "rough"
+    because it's pattern-matching, not real pricing data (see
+    analyze_competitors' docstring for the honesty tradeoff). Returns
+    None (not a fabricated bucket) when no price signal is present at
+    all, so the field stays "unknown" rather than guessing.
+    """
+    _YEARLY = {"yr", "year", "annually", "yearly"}
+
+    monthly_amounts = []
+    for amount_str, period in _PRICE_PATTERN.findall(text):
+        if not period:
+            # A bare "$200" with no "/month"/"a year"/etc nearby is too
+            # ambiguous to safely bucket - it's exactly this shape that
+            # misattributed an unrelated "average household loses $200 a
+            # year" statistic as if it were a monthly price, confirmed
+            # live against a real Rocket Money mention. Skip rather than
+            # guess a period.
+            continue
+        try:
+            amount = float(amount_str.replace(",", ""))
+        except ValueError:
+            continue
+        if period.lower() in _YEARLY:
+            amount /= 12
+        monthly_amounts.append(amount)
+
+    if monthly_amounts:
+        cheapest = min(monthly_amounts)
+    elif _FREE_PATTERN.search(text):
+        cheapest = 0.0
+    else:
+        return None
+
+    if cheapest < 10:
+        return "low"
+    if cheapest < 25:
+        return "mid"
+    return "high"
+
+
+def _estimate_breadth(text: str) -> str | None:
+    """A rough feature-breadth bucket from how many distinct
+    capability-ish words appear near the mention. Same honesty tradeoff
+    as _estimate_price - returns None (stays "unknown") rather than
+    calling zero detected keywords "narrow", since that's as likely to
+    mean "the snippet just didn't happen to describe features" as it is
+    to mean a genuinely narrow product.
+    """
+    lowered = text.lower()
+    found = {w for w in _FEATURE_WORDS if w in lowered}
+    if not found:
+        return None
+    if len(found) <= 2:
+        return "narrow"
+    if len(found) <= 4:
+        return "moderate"
+    return "broad"
+
+
 def _extract_entities(results: list) -> dict[str, dict]:
     """One pass over the "Competitors"-angle results, tallying how many
     times each cleaned, filtered entity name is mentioned and remembering
@@ -232,11 +349,24 @@ def _extract_entities(results: list) -> dict[str, dict]:
             if _is_duplicated_merge(name):
                 continue
             entry = mentions.setdefault(
-                name, {"count": 0, "source": r, "has_context": False}
+                name,
+                {
+                    "count": 0,
+                    "source": r,
+                    "has_context": False,
+                    "price": None,
+                    "breadth": None,
+                },
             )
             entry["count"] += 1
             if len(words) == 1 and _has_product_context(ent.sent.text):
                 entry["has_context"] = True
+
+            local_text = _local_context(doc, ent)
+            if entry["price"] is None:
+                entry["price"] = _estimate_price(local_text)
+            if entry["breadth"] is None:
+                entry["breadth"] = _estimate_breadth(local_text)
 
     kept = {}
     for name, info in mentions.items():
@@ -289,7 +419,8 @@ def analyze_competitors(idea: str, target_customer: str, problem: str, results: 
 
     competitors = []
     for name in kept_names[:_MAX_COMPETITORS]:
-        source = mentions[name]["source"]
+        info = mentions[name]
+        source = info["source"]
         offering = _clean_offering((source.get("snippet") or "").strip())
         competitors.append(
             {
@@ -297,8 +428,8 @@ def analyze_competitors(idea: str, target_customer: str, problem: str, results: 
                 "offering": offering[:200] if offering else "See source for details.",
                 "url": source.get("url", ""),
                 "gap": _GAP_DISCLOSURE,
-                "estimatedPrice": "unknown",
-                "featureBreadth": "unknown",
+                "estimatedPrice": info["price"] or "unknown",
+                "featureBreadth": info["breadth"] or "unknown",
             }
         )
 
