@@ -25,4 +25,7 @@ docs/milestone3-plan.md
 docs/milestone4-plan.md
 docs/claude-code-prompts.md
 
+# Agent handoff doc - local reference only, not for the shared repo
+AGENTS.md
+
 backend/venv/
