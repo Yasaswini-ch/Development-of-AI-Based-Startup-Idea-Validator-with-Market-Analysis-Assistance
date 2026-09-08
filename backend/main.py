@@ -12,25 +12,61 @@ from pydantic import BaseModel
 
 from agent.graph import pipeline
 
+
+# --------------------------------------------------
+# ENVIRONMENT
+# --------------------------------------------------
+
 load_dotenv()
 
-# Without this, the root logger has no handler at INFO level - every
-# logger.info()/logger.warning() call in agent/graph.py (the per-node
-# START/COMPLETE/FAILED boundary logs) silently goes nowhere, since
-# Python's handler-of-last-resort only surfaces WARNING and above.
-# Uvicorn configures its own access/error loggers independently of this.
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+# --------------------------------------------------
+# LOGGING
+# --------------------------------------------------
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Affinity API")
 
-# The same idea/target customer/problem gets resubmitted constantly during
-# testing - each resubmission was burning real Groq quota for output that's
-# already been generated once. In-memory is fine here: a single Render
-# instance, and losing the cache on a restart just means the next identical
-# request pays for itself again, not a correctness problem.
+# --------------------------------------------------
+# FASTAPI APP
+# --------------------------------------------------
+
+app = FastAPI(
+    title="Affinity API",
+    description="AI-Based Startup Idea Validator with Market Analysis",
+    version="1.0.0",
+)
+
+
+# --------------------------------------------------
+# CORS
+# --------------------------------------------------
+
+frontend_origin = os.environ.get(
+    "FRONTEND_ORIGIN",
+    "http://localhost:5173",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[frontend_origin],
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
+
+
+# --------------------------------------------------
+# CACHE
+# --------------------------------------------------
+
 _CACHE_TTL_SECONDS = 30 * 60
+
 _cache: dict[str, tuple[float, dict]] = {}
 
 
@@ -43,31 +79,37 @@ def _cache_key(payload: "ValidateRequest") -> str:
         },
         sort_keys=True,
     )
-    return hashlib.sha256(normalized.encode()).hexdigest()
+
+    return hashlib.sha256(
+        normalized.encode()
+    ).hexdigest()
 
 
 def _get_cached(key: str) -> dict | None:
     entry = _cache.get(key)
+
     if entry is None:
         return None
+
     cached_at, data = entry
+
     if time.time() - cached_at > _CACHE_TTL_SECONDS:
         del _cache[key]
         return None
+
     return data
 
 
 def _set_cached(key: str, data: dict) -> None:
-    _cache[key] = (time.time(), data)
+    _cache[key] = (
+        time.time(),
+        data,
+    )
 
-frontend_origin = os.environ.get("FRONTEND_ORIGIN", "http://localhost:5173")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[frontend_origin],
-    allow_methods=["POST"],
-    allow_headers=["Content-Type"],
-)
 
+# --------------------------------------------------
+# REQUEST MODEL
+# --------------------------------------------------
 
 class ValidateRequest(BaseModel):
     idea: str
@@ -75,45 +117,171 @@ class ValidateRequest(BaseModel):
     problem: str = ""
 
 
-@app.post("/validate")
-def validate_idea(payload: ValidateRequest):
-    if not payload.idea.strip():
-        return JSONResponse(status_code=400, content={"error": "idea is required"})
+# --------------------------------------------------
+# ROOT ROUTE
+# --------------------------------------------------
 
-    cache_key = _cache_key(payload)
-    cached = _get_cached(cache_key)
-    if cached is not None:
-        logger.info("Cache hit - skipping the pipeline for an identical request")
-        return cached
-
-    state = pipeline.invoke(
-        {
-            "idea": payload.idea,
-            "targetCustomer": payload.targetCustomer,
-            "problem": payload.problem,
-        }
-    )
-
-    if state.get("error"):
-        return JSONResponse(status_code=502, content={"error": state["error"]})
-
-    response = {
-        "summary": state["summary"],
-        "results": state["results"],
-        "marketOpportunity": state.get("marketOpportunity"),
-        "competitors": state.get("competitors"),
-        "errors": state.get("errors", {}),
+@app.get("/")
+def root():
+    return {
+        "message": "Affinity API is running",
+        "status": "ok",
+        "docs": "/docs",
+        "health": "/health",
+        "validate_endpoint": "/validate",
     }
 
-    # Only cache a genuinely complete result - caching a rate-limited partial
-    # failure would lock a real, fixable problem in place for the full TTL
-    # instead of letting the next attempt actually succeed once quota frees up.
-    if not any(response["errors"].values()):
-        _set_cached(cache_key, response)
 
-    return response
-
+# --------------------------------------------------
+# HEALTH CHECK
+# --------------------------------------------------
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "service": "Affinity API",
+    }
+
+
+# --------------------------------------------------
+# VALIDATE STARTUP IDEA
+# --------------------------------------------------
+
+@app.post("/validate")
+def validate_idea(payload: ValidateRequest):
+
+    # ----------------------------------------------
+    # Validate input
+    # ----------------------------------------------
+
+    if not payload.idea.strip():
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "idea is required"
+            },
+        )
+
+    logger.info(
+        "Validation request received: %s",
+        payload.idea,
+    )
+
+    # ----------------------------------------------
+    # Check cache
+    # ----------------------------------------------
+
+    cache_key = _cache_key(payload)
+
+    cached = _get_cached(cache_key)
+
+    if cached is not None:
+
+        logger.info(
+            "Cache hit - skipping pipeline"
+        )
+
+        return cached
+
+    # ----------------------------------------------
+    # Run LangGraph pipeline
+    # ----------------------------------------------
+
+    try:
+
+        state = pipeline.invoke(
+            {
+                "idea": payload.idea,
+                "targetCustomer": payload.targetCustomer,
+                "problem": payload.problem,
+            }
+        )
+
+    except Exception as exc:
+
+        logger.exception(
+            "Pipeline execution failed"
+        )
+
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": str(exc)
+            },
+        )
+
+    # ----------------------------------------------
+    # Pipeline error
+    # ----------------------------------------------
+
+    if state.get("error"):
+
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": state["error"]
+            },
+        )
+
+    # ----------------------------------------------
+    # Prepare response
+    # ----------------------------------------------
+
+    response = {
+        "summary": state.get(
+            "summary",
+            "",
+        ),
+
+        "results": state.get(
+            "results",
+            [],
+        ),
+
+        # Sashi's Cross-Source Confidence
+        "confidence": state.get(
+            "confidence"
+        ),
+
+        # Sashi's Opportunity Score is attached
+        # inside marketOpportunity
+        "marketOpportunity": state.get(
+            "marketOpportunity"
+        ),
+
+        "competitors": state.get(
+            "competitors"
+        ),
+
+        "errors": state.get(
+            "errors",
+            {},
+        ),
+    }
+
+    # ----------------------------------------------
+    # Cache only complete responses
+    # ----------------------------------------------
+
+    errors = response.get(
+        "errors",
+        {},
+    )
+
+    if not any(errors.values()):
+
+        _set_cached(
+            cache_key,
+            response,
+        )
+
+        logger.info(
+            "Validation result cached"
+        )
+
+    # ----------------------------------------------
+    # Return response
+    # ----------------------------------------------
+
+    return response
