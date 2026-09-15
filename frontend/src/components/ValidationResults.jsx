@@ -3,6 +3,7 @@ import useCountUp from '../hooks/useCountUp'
 import { IconTrendingUp, IconUsers, IconShield, IconNewspaper, IconGlobe } from './icons'
 import MarketOpportunity from './MarketOpportunity'
 import CompetitorAnalysis from './CompetitorAnalysis'
+import WhiteSpaceAnalysis from './WhiteSpaceAnalysis'
 
 const INITIAL_VISIBLE = 3
 
@@ -99,9 +100,17 @@ const TABS = [
   { key: 'sources', label: 'Sources' },
   { key: 'market', label: 'Market Opportunity' },
   { key: 'competitors', label: 'Competitors' },
+  { key: 'white-space', label: 'White Space' },
 ]
 
-export default function ValidationResults({ summary, results, marketOpportunity, competitors, errors }) {
+export default function ValidationResults({
+  summary,
+  results,
+  marketOpportunity,
+  competitors,
+  whiteSpace,
+  errors,
+}) {
   const [activeTab, setActiveTab] = useState('sources')
 
   const groups = []
@@ -190,6 +199,12 @@ export default function ValidationResults({ summary, results, marketOpportunity,
         {activeTab === 'competitors' && (
           <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
             <CompetitorAnalysis data={competitors} error={errors?.competitors} />
+          </div>
+        )}
+
+        {activeTab === 'white-space' && (
+          <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+            <WhiteSpaceAnalysis data={whiteSpace} />
           </div>
         )}
       </div>

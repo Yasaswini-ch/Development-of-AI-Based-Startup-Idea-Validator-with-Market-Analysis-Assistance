@@ -34,11 +34,12 @@ flowchart TD
     WS --> MO["Market Opportunity Agent\nagent/market_agent.py"]
     MO --> CD["Competitor Discovery\nagent/competitor_agent.py\n(local spaCy NER, no LLM call)"]
     CD --> OS["Opportunity Score\nagent/opportunity_score.py"]
+    OS --> WA["White-space Analysis\nagent/white_space.py"]
     MO --> LLM["Groq LLM\nqwen3.6-27b (primary)"]
     LLM -.rate limit: switch model.-> LLM2["Groq LLM\ngpt-oss-20b (fallback)"]
 
     Retrieval --> Response["summary + results +\nmarketOpportunity + competitors +\nerrors"]
-    OS --> Response
+    WA --> Response
     Response --> Backend
     Backend -->|JSON| Frontend
     Frontend -->|renders results,\nor inline 'unavailable' state| User
@@ -57,7 +58,7 @@ local NER step, so it always returns real (possibly empty) data.
 | Frontend     | React + Tailwind CSS (`frontend/`) |
 | Backend      | FastAPI (`backend/`) — exposes `POST /validate`, with an in-memory response cache |
 | Agent framework | [CrewAI](https://www.crewai.com) — 1 LLM agent left: Market Opportunity (`market_agent.py`). Competitor Discovery (`competitor_agent.py`) was rewritten off CrewAI entirely to a local NER step (see Competitor identification below), and the Web Search summary is a plain template — see Reasoning LLM below |
-| Orchestration | [LangGraph](https://www.langchain.com/langgraph) — 4-node pipeline, `web_search → market_opportunity → competitor_discovery → opportunity_score` (`backend/agent/graph.py`) |
+| Orchestration | [LangGraph](https://www.langchain.com/langgraph) — `web_search → confidence → market_opportunity → competitor_discovery → opportunity_score → white_space` (`backend/agent/graph.py`) |
 | Search       | Tavily API (primary), with DuckDuckGo + Wikipedia + Hacker News as a zero-cost fallback chain — fetched directly (not LLM-mediated) across 5 search angles, academic sources filtered out (`backend/agent/tools.py`, `retrieval.py`) |
 | Competitor identification | Local NER ([spaCy](https://spacy.io) `en_core_web_sm`), not an LLM call — reads competitor names directly off the already-fetched search results, by deliberate design: zero API cost, zero rate limit, and it frees the entire shared Groq quota for Market Opportunity instead of splitting it across two agents. `estimatedPrice`/`featureBreadth` are always `"unknown"` as a result — an honest trade, not a bug — the UI hides those badges and the positioning grid when nothing is classified |
 | Reasoning LLM | [Groq](https://console.groq.com) — primary `qwen/qwen3.6-27b`, automatic fallback through two more Groq models (`openai/gpt-oss-20b`, `openai/gpt-oss-120b`) on rate limit, since Groq rate-limits per-model, not per-account — a genuinely separate quota each time, not just a longer wait on the same one (see `backend/agent/llm.py`). Each model also gets its own confirmed `reasoning_effort` setting to eliminate wasted hidden-reasoning output tokens, the actual cause of most quota-exhaustion failures. A cross-*provider* fallback to Gemini was tested and dropped (it hangs for minutes past its own timeout instead of failing fast). Only the Market Opportunity agent calls this now — the Web Search summary's LLM call was cut entirely, and Competitor Discovery was moved off the LLM path too (see above) |

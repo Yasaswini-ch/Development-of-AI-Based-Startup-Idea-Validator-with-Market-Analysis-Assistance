@@ -254,6 +254,10 @@ def validate_idea(payload: ValidateRequest):
             "competitors"
         ),
 
+        "whiteSpace": state.get(
+            "whiteSpace"
+        ),
+
         "errors": state.get(
             "errors",
             {},
