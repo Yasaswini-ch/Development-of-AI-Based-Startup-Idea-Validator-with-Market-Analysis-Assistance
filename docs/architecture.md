@@ -40,11 +40,12 @@ flowchart TD
     WS --> MO["Market Opportunity Agent\nagent/market_agent.py"]
     MO --> CD["Competitor Discovery\nagent/competitor_agent.py\n(local spaCy NER, no LLM call)"]
     CD --> OS["Opportunity Score\nagent/opportunity_score.py"]
+    OS --> WA["White-space Analysis\nagent/white_space.py"]
     MO --> LLM["Groq LLM\nqwen3.6-27b (primary)"]
     LLM -.rate limit: switch model.-> LLM2["Groq LLM\ngpt-oss-20b (fallback)"]
 
     Retrieval --> Response["summary + results +\nmarketOpportunity + competitors +\nerrors"]
-    OS --> Response
+    WA --> Response
     Response --> Backend
     Backend -->|JSON| Frontend
     Frontend -->|renders results,\nor inline 'unavailable'\nstate per section| User
@@ -181,6 +182,11 @@ wired into the same graph with `add_edge`. LangGraph's state dict carries each s
 output forward so later agents can consume earlier agents' results (context passing),
 and partial failures are handled per-node rather than crashing the whole pipeline.
 
+### White-space Analysis
+
+The final Milestone 2 node reuses customer pain points, competitor density, and source
+evidence to identify focused opportunity gaps. It performs no search or LLM call.
+
 ## 3. Data Flow
 
 1. User fills in idea / target customer / problem and submits the form
@@ -283,6 +289,13 @@ Response 200:
     ]
   } | null,   // null only on an unexpected exception (see errors.competitors) - no LLM
               // call here to rate-limit or fail, so this is rare in practice
+  "whiteSpace": {
+    "summary": string,
+    "competitionNote": string,
+    "opportunities": [
+      { "title": string, "why": string, "fit": string, "evidence": string }
+    ]
+  } | null,
   "errors": {
     "marketOpportunity": string | null,
     "competitors": string | null
@@ -390,6 +403,7 @@ local vs. deployed).
 │       ├── market_agent.py      # Market Opportunity Agent (Milestone 2) - the only remaining LLM agent
 │       ├── competitor_agent.py  # Competitor Discovery (Milestone 2) - local spaCy NER, no LLM call
 │       ├── opportunity_score.py # Opportunity Score post-processing node (Milestone 2 stretch)
+│       ├── white_space.py       # evidence-backed opportunity gaps (no LLM call)
 │       ├── output_guard.py      # reasoning-leak stripping used by the Market Opportunity agent
 │       ├── retrieval.py         # multi-angle query expansion + dedup
 │       ├── tools.py             # Tavily (primary) + DuckDuckGo/Wikipedia/Hacker News fallback

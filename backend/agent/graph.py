@@ -7,6 +7,7 @@ from . import retrieval
 from .competitor_agent import analyze_competitors
 from .market_agent import analyze_market_opportunity
 from .opportunity_score import calculate_opportunity_score
+from .white_space import analyze_white_space
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,9 @@ class PipelineState(TypedDict, total=False):
 
     # Competitor analysis
     competitors: dict
+
+    # Evidence-backed opportunity gaps
+    whiteSpace: dict
 
     # Errors
     error: str
@@ -411,6 +415,44 @@ def opportunity_score_node(state: PipelineState) -> PipelineState:
 
 
 # --------------------------------------------------
+# MILESTONE 2: WHITE-SPACE ANALYSIS
+# --------------------------------------------------
+
+def white_space_node(state: PipelineState) -> PipelineState:
+    """Reuse pipeline artifacts to identify opportunity gaps without an LLM."""
+
+    logger.info("[white_space] START")
+
+    if state.get("error"):
+        logger.warning("[white_space] Skipped because web search failed")
+        return state
+
+    try:
+        white_space = analyze_white_space(
+            state.get("marketOpportunity"),
+            state.get("competitors"),
+            state.get("results", []),
+        )
+    except Exception as exc:
+        logger.exception("[white_space] FAILED")
+        errors = {
+            **state.get("errors", {}),
+            "whiteSpace": _friendly_error_message(exc),
+        }
+        return {
+            **state,
+            "whiteSpace": None,
+            "errors": errors,
+        }
+
+    logger.info("[white_space] COMPLETE")
+    return {
+        **state,
+        "whiteSpace": white_space,
+    }
+
+
+# --------------------------------------------------
 # BUILD LANGGRAPH PIPELINE
 # --------------------------------------------------
 
@@ -446,6 +488,11 @@ def build_pipeline():
     graph.add_node(
         "opportunity_score",
         opportunity_score_node,
+    )
+
+    graph.add_node(
+        "white_space",
+        white_space_node,
     )
 
     # --------------------------------------------------
@@ -492,9 +539,14 @@ def build_pipeline():
 
     # Opportunity Score
     #        ↓
-    # END
+    # White-space Analysis
     graph.add_edge(
         "opportunity_score",
+        "white_space",
+    )
+
+    graph.add_edge(
+        "white_space",
         END,
     )
 

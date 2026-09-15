@@ -5,7 +5,7 @@ for the full API contract and data flow.
 
 Agents are orchestrated by a **LangGraph** state graph (`agent/graph.py`) with 4 nodes
 so far: `web_search` (Milestone 1) → `market_opportunity` → `competitor_discovery` →
-`opportunity_score` (all Milestone 2). Each later node consumes the Web Search step's
+`opportunity_score` → `white_space` (all Milestone 2). Each later node consumes the Web Search step's
 real results as context (no re-searching). Future milestones add more agents the same
 way, as additional graph nodes.
 
@@ -94,6 +94,8 @@ uvicorn main:app --reload --port 8000
 - `agent/opportunity_score.py` — Opportunity Score post-processing node (Milestone 2
   stretch) — combines the two agents' output into a 0–100 score, with a raw
   search-signal fallback if both upstream agents failed
+- `agent/white_space.py` — evidence-backed opportunity-gap analysis that reuses market,
+  competitor, and source artifacts without another search or LLM call
 - `agent/output_guard.py` — `strip_reasoning()`, used by the Market Opportunity agent
   before its own JSON-shape validation
 - `agent/retrieval.py` — expands one idea into 5 search angles, filters out academic
