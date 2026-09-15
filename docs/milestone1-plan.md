@@ -3,6 +3,12 @@
 Aug 25 – Aug 28, 2026 (compressed, deadline-driven) · Goal: working idea-submission
 interface + live Tavily web search agent, with the full system architecture documented.
 
+> **Note (post-implementation):** the plan below is the original task breakdown. What
+> actually got built ended up using **CrewAI + LangGraph** for orchestration (not a
+> plain Python module) and **Tavily with a DuckDuckGo/Wikipedia/Hacker News fallback
+> chain** (not Tavily alone) for search. See [`docs/architecture.md`](architecture.md)
+> for the accurate, current state.
+
 ## Task Division (4 people)
 
 ### 1. System Architecture — Yasaswini

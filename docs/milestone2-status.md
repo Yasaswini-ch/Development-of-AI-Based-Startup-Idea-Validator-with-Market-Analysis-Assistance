@@ -1,6 +1,8 @@
 # Milestone 2 — Status &amp; Who Starts When
 
-**Last updated:** Sept 6, 2026 (after the competitor-agent NER rewrite, the
+**Last updated:** Sept 15, 2026 (Varshini's two remaining items closed — see the
+task table and §3; plus the qwen3.8 model-swap fix, verification log check #7).
+Previous update Sept 6, 2026 (after the competitor-agent NER rewrite, the
 `reasoning_effort` quota fix, request caching/submit cooldown, the tabbed results UI,
 and the 3×3 positioning-grid fix all landed)
 
@@ -25,8 +27,8 @@ and what came back) rather than just a status claim, see
 | Anu | Null/"unavailable" section UI | ✅ Done | — |
 | Anu | Positioning grid (3×3 chart) | ✅ Done — confirmed still 3×3 (`high/mid/low` × `narrow/moderate/broad`) in `CompetitorAnalysis.jsx`, not reduced to 2×2 | — |
 | **Yasaswini** | Partial-failure verification | ✅ Done — verified live this session (see below) | — |
-| Varshini | Error-state UI verification | ⚠️ Partially covered (see below) — worth Varshini's own pass | Can start, low priority |
-| Varshini | Cross-industry validation report | ⚠️ Raw test data now available for 4 ideas (see below), report itself not yet written | **Yes — data's ready, write it up** |
+| Varshini | Error-state UI verification | ✅ Done — two deliberate forced-failure runs Sept 15 (`uvicorn-errorcheck.log`); check 5 in verification log | — |
+| Varshini | Cross-industry validation report | ✅ Done — `docs/milestone2-validation-report.md` written; includes Varshini's 3 locked ideas (fintech, health, hardware) + team's 4 earlier runs | — |
 
 > **Note on positioning fields:** when Competitor Discovery moved to local NER,
 > `estimatedPrice`/`featureBreadth` briefly became *always* `"unknown"` in real
@@ -113,21 +115,21 @@ overdue item right now.
   now is an unexpected exception in the NER step itself, which isn't a meaningful
   test case anymore. Nothing further needed here.
 
-### 3. Varshini — two items left
-- **Error-state UI verification** — the null-state UI works and was exercised live
-  this session, but that was incidental to other testing, not a deliberate UI-focused
-  pass. Still worth 30 minutes of your own verification against the real running app
-  (force a `market_opportunity` failure — e.g. temporarily set an invalid `GROQ_API_KEY`
-  — and confirm the frontend shows the correct inline message, not a blank section).
-- **Cross-industry validation report** — real test data now exists for 4 ideas, run
-  live against the actual app this session (not mocked): a student-budgeting app, a
-  coffee subscription box, a meal-prep delivery service, and a freelance-invoicing app
-  for photographers. Each returned real competitors and (for the invoicing case) a
-  real Market Opportunity analysis with a genuine 76 opportunity score. This is raw
-  material for your report, not the report itself — you still own picking the final
-  3 industries, writing up the assessment, and judging output quality against the
-  Milestone 2 rubric. See the quota note below — it's now a much smaller risk than it
-  was, but not zero.
+### 3. Varshini — both items now done ✅
+- **Error-state UI verification** — ✅ done Sept 15. Deliberately corrupted the
+  `GROQ_API_KEY` in `backend/.env`, ran backend on `:8001` (logged to
+  `backend/uvicorn-errorcheck.log`), submitted the same idea twice. Both runs returned
+  `200 OK` with `marketOpportunity: null`, `errors.marketOpportunity` set, and
+  `competitors` from NER still populated. Frontend showed the correct inline
+  `UnavailableCard` on the Market Opportunity tab; Competitors and Sources tabs
+  rendered normally. Full write-up in `milestone2-verification.md` check 5.
+- **Cross-industry validation report** — ✅ done Sept 15. Written at
+  `docs/milestone2-validation-report.md`. Part I covers the team's four earlier verification
+  runs (budgeting, coffee, meal-prep, invoicing — three selected as the distinct-
+  industry set). Part II incorporates Varshini's own locked test ideas (fintech bill-
+  negotiation, health journaling, consumer hardware smart water bottle) with their B1
+  captured results and the competitor-quality degradation pattern that triggered the
+  NER investigation. B2/B3 status from the plan mapped to existing verification checks.
 
 ### 4. Anu — nothing outstanding from this list right now
 Both the null-state UI and the positioning grid were completed directly to unblock
@@ -166,15 +168,16 @@ key under concurrent team usage — if a run does come back as fallback content,
 
 ---
 
-## Updated timeline (today = Sept 6)
+## Updated timeline
 
 | Day | Focus |
 |---|---|
 | Sept 3 | Orchestration merged. Null-state UI and positioning grid landed. |
 | Sept 3–6 | Competitor Discovery rewritten to local NER (frees quota for Market Opportunity), the real `reasoning_effort` quota fix landed, request caching + submit cooldown added, tabbed results UI replaced the dashboard-tiles layout, positioning grid confirmed 3×3, and a live NER bug (comparison-table snippets losing real competitors) found and fixed. All docs (`README.md`, `backend/README.md`, `docs/architecture.md`, this file) brought back in sync with the code — they had drifted since Sept 3. |
-| **Sept 6 (today)** | Sashi starts confidence indicator (still zero blockers, still not started). Yasaswini's partial-failure verification is done. Varshini's error-state UI and cross-industry report are the two remaining real action items, with test data for 4 ideas already available for the latter. |
-| **Sept 7** | Buffer day — Sashi finishes confidence indicator, Varshini finishes error-state UI check + writes up the validation report, whole team bug bash, final submission polish. |
+| **Sept 6** | Confidence Indicator implemented and verified live. Yasaswini's partial-failure verification done. |
+| **Sept 15** | Error-state UI verification completed (two forced-failure runs, `uvicorn-errorcheck.log`). Cross-industry validation report written (`docs/milestone2-validation-report.md`) incorporating both team verification data and Varshini's locked three-idea test set. All Milestone 2 deliverables complete. Also found and fixed a real production incident the runs surfaced: Groq had deprecated `qwen3.6-27b` entirely — the fallback chain now switches on `model_not_found`, the model config moved to `qwen3.8-27b`, and an invalid-JSON-escape repair was added for the new model's output quirk (verification log check #7, 16/16 regression tests). |
+| **Sept 7** | Buffer day — whole team bug bash, final submission polish. (Varshini's items above were completed Sept 15.) |
 
-Confidence Indicator (Sashi) and the cross-industry validation report write-up
-(Varshini) are the two items still genuinely not started — flag either one now if
-Sept 7 looks tight, rather than at submission time.
+With Varshini's two items closed, **no Milestone 2 action items remain** on this
+list — see [`milestone2-verification.md`](milestone2-verification.md)'s summary
+table for the full verified-evidence picture.

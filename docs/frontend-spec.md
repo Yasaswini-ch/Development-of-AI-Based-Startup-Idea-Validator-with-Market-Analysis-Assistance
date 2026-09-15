@@ -1,5 +1,10 @@
 # Frontend Design Spec — Idea Submission Interface
 
+> **Note (post-implementation):** the palette/typography sections below are the original
+> spec. What actually shipped is a monochrome, JetBrains-Mono "technical dashboard"
+> theme (near-black background, uppercase mono labels, pill buttons, live status
+> readouts) — see the actual component code in `frontend/src/` for the current design.
+
 **Stack**: React (Vite) + Tailwind CSS. No component library — build custom for a
 distinct, non-templated feel.
 
@@ -30,8 +35,9 @@ distinct, non-templated feel.
 1. `IdeaForm` — idea (textarea), target customer (input), problem (textarea), submit
    button with loading state
 2. `SubmitButton` — disabled/loading/default states, subtle hover transition
-3. `ValidationResults` — renders search-agent output: summary + market/competitor cards
-   (grid of 2–3 cards, not a wall of text)
+3. `ValidationResults` — renders search-agent output: summary panel, then results
+   grouped by search angle (Market size & trends, Competitors, Customer demand, ...),
+   capped at 3 cards per group with a "Show more" expand — not a flat wall of cards
 4. `EmptyState` / `ErrorState` — for no results or failed API call (must not just blank
    out)
 
@@ -51,5 +57,5 @@ See [`milestone1-plan.md`](milestone1-plan.md) for the full contract. Summary:
 ```
 POST /validate
 Request:  { idea, targetCustomer, problem }
-Response: { summary, results: [{ title, snippet, url }] }
+Response: { summary, results: [{ title, snippet, url, query, angle, score }] }
 ```

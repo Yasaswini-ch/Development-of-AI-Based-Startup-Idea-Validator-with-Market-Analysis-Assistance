@@ -94,7 +94,9 @@ def _build_market_crew(idea: str, target_customer: str, problem: str, context: s
             "purchase, if the sources suggest anything about this).\n"
             "Do not invent statistics, segments, or behaviors that aren't "
             "supported by the sources - if buying behavior isn't evident from "
-            "the sources, say so plainly rather than guessing."
+            "the sources, say so plainly rather than guessing.\n"
+            "Output strict JSON only: within JSON strings, never escape an "
+            "apostrophe with a backslash - write don't directly, not don\\'t."
         ),
         expected_output=(
             "A single JSON object, and nothing else - no markdown code fences, no "
@@ -102,7 +104,7 @@ def _build_market_crew(idea: str, target_customer: str, problem: str, context: s
             "content from the sources above. For example, for a different idea "
             "this might look like:\n"
             '{"marketSize": "The global market was valued at $2.1 billion in 2024 '
-            'and is growing at 12% annually.", '
+            'and is growing at 12% annually; TAM/SAM are not clear from the provided sources.", '
             '"trends": ["Rising demand for subscription-based delivery", '
             '"Increased focus on eco-friendly packaging"], '
             '"segments": ['
@@ -122,6 +124,42 @@ def _build_market_crew(idea: str, target_customer: str, problem: str, context: s
     )
 
     return Crew(agents=[analyst], tasks=[task], process=Process.sequential, verbose=False)
+
+
+_JSON_LEGAL_ESCAPES = set('"\\/bfnrtu')
+
+
+def _repair_invalid_escapes(text: str) -> str:
+    """Repair invalid escape sequences some models emit inside JSON strings.
+
+    Found live on Sept 15, 2026 with groq/qwen/qwen3.8-27b (the replacement
+    for the deprecated qwen3.6-27b): inside JSON string values it wrote
+    apostrophes with a backslash (don't as don\\'t), which is not a valid
+    JSON escape - json.loads rejects the entire object, and a genuinely
+    good, fully grounded analysis was thrown away by the shape gate purely
+    on that artifact. JSON only allows the escapes \\" \\\\ \\/ \\b \\f \\n
+    \\r \\t and \\uXXXX, so a backslash before any other character is the
+    model's own escaping slip rather than real JSON - rewriting those pairs
+    to the bare character is a pure repair, never a content change.
+    Already-valid escapes (including an escaped backslash) are preserved
+    untouched.
+    """
+    out = []
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if ch == "\\" and i + 1 < len(text):
+            nxt = text[i + 1]
+            if nxt in _JSON_LEGAL_ESCAPES:
+                out.append(ch)
+            # An invalid escape (e.g. a backslash before an apostrophe) drops
+            # the backslash and keeps the character either way.
+            out.append(nxt)
+            i += 2
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
 
 
 def _find_balanced_objects(text: str) -> list[str]:
@@ -151,14 +189,19 @@ def _extract_json(text: str) -> dict | None:
     first one that's both valid JSON and has the right shape. This
     recovers the real answer even when the model buries it in a rambling
     scratchpad, as long as it does eventually produce valid JSON somewhere.
+
+    Each candidate gets two parse attempts: as-is, then after
+    _repair_invalid_escapes - so a correct answer carrying a stray invalid
+    escape still lands instead of being discarded wholesale.
     """
     for candidate in reversed(_find_balanced_objects(text)):
-        try:
-            data = json.loads(candidate)
-        except (json.JSONDecodeError, ValueError):
-            continue
-        if isinstance(data, dict) and _is_valid_shape(data):
-            return data
+        for attempt_text in (candidate, _repair_invalid_escapes(candidate)):
+            try:
+                data = json.loads(attempt_text)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if isinstance(data, dict) and _is_valid_shape(data):
+                return data
     return None
 
 

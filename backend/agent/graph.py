@@ -352,10 +352,33 @@ def competitor_discovery_node(state: PipelineState) -> PipelineState:
         }
 
 
-# --------------------------------------------------
-# SASHI'S MILESTONE 2 FEATURE
-# OPPORTUNITY SCORE
-# --------------------------------------------------
+def white_space_node(state: PipelineState) -> PipelineState:
+    """M2 presentation feature: evidence-backed white-space analysis.
+
+    This is local post-processing over already-generated market,
+    competitor, and search data. It intentionally does not add another LLM
+    call to the request path.
+    """
+
+    logger.info("[white_space] START")
+
+    if state.get("error"):
+        logger.warning("[white_space] Skipped because web search failed")
+        return state
+
+    white_space = analyze_white_space(
+        state.get("marketOpportunity"),
+        state.get("competitors"),
+        state.get("results", []),
+    )
+    logger.info("[white_space] COMPLETE")
+
+    return {**state, "whiteSpace": white_space}
+
+
+# -------------------------------
+# MILESTONE 2: OPPORTUNITY SCORE
+# -------------------------------
 
 def opportunity_score_node(state: PipelineState) -> PipelineState:
     """
@@ -459,96 +482,25 @@ def white_space_node(state: PipelineState) -> PipelineState:
 def build_pipeline():
     graph = StateGraph(PipelineState)
 
-    # --------------------------------------------------
-    # NODES
-    # --------------------------------------------------
+    graph.add_node("web_search", web_search_node)
+    graph.add_node("market_opportunity", market_opportunity_node)
+    graph.add_node("competitor_discovery", competitor_discovery_node)
 
-    graph.add_node(
-        "web_search",
-        web_search_node,
-    )
+    # Sashi's Milestone 2 features
+    graph.add_node("confidence_indicator", confidence_node)
+    graph.add_node("white_space", white_space_node)
+    graph.add_node("opportunity_score", opportunity_score_node)
 
-    # Sashi: Cross-source confidence
-    graph.add_node(
-        "confidence",
-        confidence_node,
-    )
+    # Pipeline flow
+    graph.add_edge(START, "web_search")
+    graph.add_edge("web_search", "confidence_indicator")
+    graph.add_edge("confidence_indicator", "market_opportunity")
+    graph.add_edge("market_opportunity", "competitor_discovery")
+    graph.add_edge("competitor_discovery", "white_space")
 
-    graph.add_node(
-        "market_opportunity",
-        market_opportunity_node,
-    )
-
-    graph.add_node(
-        "competitor_discovery",
-        competitor_discovery_node,
-    )
-
-    # Sashi: Opportunity Score
-    graph.add_node(
-        "opportunity_score",
-        opportunity_score_node,
-    )
-
-    graph.add_node(
-        "white_space",
-        white_space_node,
-    )
-
-    # --------------------------------------------------
-    # PIPELINE FLOW
-    # --------------------------------------------------
-
-    # START
-    graph.add_edge(
-        START,
-        "web_search",
-    )
-
-    # Web Search
-    #        ↓
-    # Confidence
-    graph.add_edge(
-        "web_search",
-        "confidence",
-    )
-
-    # Confidence
-    #        ↓
-    # Market Opportunity
-    graph.add_edge(
-        "confidence",
-        "market_opportunity",
-    )
-
-    # Market Opportunity
-    #        ↓
-    # Competitor Discovery
-    graph.add_edge(
-        "market_opportunity",
-        "competitor_discovery",
-    )
-
-    # Competitor Discovery
-    #        ↓
-    # Opportunity Score
-    graph.add_edge(
-        "competitor_discovery",
-        "opportunity_score",
-    )
-
-    # Opportunity Score
-    #        ↓
-    # White-space Analysis
-    graph.add_edge(
-        "opportunity_score",
-        "white_space",
-    )
-
-    graph.add_edge(
-        "white_space",
-        END,
-    )
+    # Calculate score after both analyses are available
+    graph.add_edge("white_space", "opportunity_score")
+    graph.add_edge("opportunity_score", END)
 
     return graph.compile()
 
