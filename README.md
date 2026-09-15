@@ -35,11 +35,12 @@ flowchart TD
     MO --> CD["Competitor Discovery\nagent/competitor_agent.py\n(local spaCy NER, no LLM call)"]
     CD --> OS["Opportunity Score\nagent/opportunity_score.py"]
     OS --> WA["White-space Analysis\nagent/white_space.py"]
-    MO --> LLM["Groq LLM\nqwen3.6-27b (primary)"]
+    MO --> LLM["Groq LLM\nqwen3.8-27b (primary)"]
     LLM -.rate limit: switch model.-> LLM2["Groq LLM\ngpt-oss-20b (fallback)"]
 
-    Retrieval --> Response["summary + results +\nmarketOpportunity + competitors +\nerrors"]
+    Retrieval --> Response["summary + results +\nmarketOpportunity + competitors +\nconfidence + whiteSpace + errors"]
     WA --> Response
+    OS --> Response
     Response --> Backend
     Backend -->|JSON| Frontend
     Frontend -->|renders results,\nor inline 'unavailable' state| User
@@ -58,10 +59,11 @@ local NER step, so it always returns real (possibly empty) data.
 | Frontend     | React + Tailwind CSS (`frontend/`) |
 | Backend      | FastAPI (`backend/`) — exposes `POST /validate`, with an in-memory response cache |
 | Agent framework | [CrewAI](https://www.crewai.com) — 1 LLM agent left: Market Opportunity (`market_agent.py`). Competitor Discovery (`competitor_agent.py`) was rewritten off CrewAI entirely to a local NER step (see Competitor identification below), and the Web Search summary is a plain template — see Reasoning LLM below |
-| Orchestration | [LangGraph](https://www.langchain.com/langgraph) — `web_search → confidence → market_opportunity → competitor_discovery → opportunity_score → white_space` (`backend/agent/graph.py`) |
+| Orchestration | [LangGraph](https://www.langchain.com/langgraph) — `web_search → confidence_indicator → market_opportunity → competitor_discovery → white_space → opportunity_score` (`backend/agent/graph.py`) |
 | Search       | Tavily API (primary), with DuckDuckGo + Wikipedia + Hacker News as a zero-cost fallback chain — fetched directly (not LLM-mediated) across 5 search angles, academic sources filtered out (`backend/agent/tools.py`, `retrieval.py`) |
-| Competitor identification | Local NER ([spaCy](https://spacy.io) `en_core_web_sm`), not an LLM call — reads competitor names directly off the already-fetched search results, by deliberate design: zero API cost, zero rate limit, and it frees the entire shared Groq quota for Market Opportunity instead of splitting it across two agents. `estimatedPrice`/`featureBreadth` are always `"unknown"` as a result — an honest trade, not a bug — the UI hides those badges and the positioning grid when nothing is classified |
-| Reasoning LLM | [Groq](https://console.groq.com) — primary `qwen/qwen3.6-27b`, automatic fallback through two more Groq models (`openai/gpt-oss-20b`, `openai/gpt-oss-120b`) on rate limit, since Groq rate-limits per-model, not per-account — a genuinely separate quota each time, not just a longer wait on the same one (see `backend/agent/llm.py`). Each model also gets its own confirmed `reasoning_effort` setting to eliminate wasted hidden-reasoning output tokens, the actual cause of most quota-exhaustion failures. A cross-*provider* fallback to Gemini was tested and dropped (it hangs for minutes past its own timeout instead of failing fast). Only the Market Opportunity agent calls this now — the Web Search summary's LLM call was cut entirely, and Competitor Discovery was moved off the LLM path too (see above) |
+| Competitor identification | Local NER ([spaCy](https://spacy.io) `en_core_web_sm`), not an LLM call — reads competitor names directly off the already-fetched search results, by deliberate design: zero API cost, zero rate limit, and it frees the shared Groq quota for Market Opportunity. `estimatedPrice`/`featureBreadth` are rough pattern matches from nearby source text when evidence exists, otherwise `"unknown"` |
+| White-space analysis | Local post-processing over customer pain points, competitor density, and source snippets — surfaces evidence-backed opportunity gaps without another LLM call |
+| Reasoning LLM | [Groq](https://console.groq.com) — primary `qwen/qwen3.8-27b` (the original primary, `qwen3.6-27b`, was deprecated and removed by Groq mid-project — the fallback chain now also switches on `model_not_found`, not just rate limits; see `docs/milestone2-verification.md` #7), automatic fallback through two more Groq models (`openai/gpt-oss-20b`, `openai/gpt-oss-120b`) on rate limit or missing model, since Groq rate-limits per-model, not per-account — a genuinely separate quota each time, not just a longer wait on the same one (see `backend/agent/llm.py`). Each model also gets its own confirmed `reasoning_effort` setting to eliminate wasted hidden-reasoning output tokens, the actual cause of most quota-exhaustion failures. A cross-*provider* fallback to Gemini was tested and dropped (it hangs for minutes past its own timeout instead of failing fast). Only the Market Opportunity agent calls this now — the Web Search summary's LLM call was cut entirely, and Competitor Discovery was moved off the LLM path too (see above) |
 | Database     | None yet |
 | Deployment   | [Render](https://render.com) — two services, config in `render.yaml` |
 | Version control | Git / GitHub |
@@ -149,9 +151,9 @@ or its output can't be validated, with the failure message in
 state for just that section rather than an error, since the rest of the response is
 still valid. `competitors` has no LLM call to fail this way (it's local NER), so an
 empty `competitors: []` array (not `null`) is the normal "sources didn't name an
-identifiable company" outcome, not a failure — `estimatedPrice`/`featureBreadth` will
-also always be `"unknown"` in real responses for the same reason (see Competitor
-identification above), unlike the illustrative example below.
+identifiable company" outcome, not a failure. `estimatedPrice`/`featureBreadth` are
+best-effort pattern matches from source text and remain `"unknown"` when the evidence
+doesn't support a bucket.
 
 **Error responses** — same shape either way, only the status code and message differ:
 

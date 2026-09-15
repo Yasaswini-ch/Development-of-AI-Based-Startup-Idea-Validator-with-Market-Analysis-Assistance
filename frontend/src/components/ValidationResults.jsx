@@ -3,6 +3,7 @@ import useCountUp from '../hooks/useCountUp'
 import { IconTrendingUp, IconUsers, IconShield, IconNewspaper, IconGlobe } from './icons'
 import MarketOpportunity from './MarketOpportunity'
 import CompetitorAnalysis from './CompetitorAnalysis'
+import SourceAgreement from './SourceAgreement'
 import WhiteSpaceAnalysis from './WhiteSpaceAnalysis'
 
 const INITIAL_VISIBLE = 3
@@ -100,7 +101,7 @@ const TABS = [
   { key: 'sources', label: 'Sources' },
   { key: 'market', label: 'Market Opportunity' },
   { key: 'competitors', label: 'Competitors' },
-  { key: 'white-space', label: 'White Space' },
+  { key: 'whitespace', label: 'White Space' },
 ]
 
 export default function ValidationResults({
@@ -108,6 +109,7 @@ export default function ValidationResults({
   results,
   marketOpportunity,
   competitors,
+  confidence: confidenceProp,
   whiteSpace,
   errors,
 }) {
@@ -153,7 +155,7 @@ export default function ValidationResults({
 
       {/* Pill tab switcher, not the classic underline-tabs strip - the
           active tab gets its own raised pill instead of a line underneath. */}
-      <div className="mt-6 inline-flex gap-0.5 rounded-full bg-border p-1">
+      <div className="mt-6 flex max-w-full gap-0.5 overflow-x-auto rounded-full bg-border p-1">
         {TABS.map((t) => {
           const active = activeTab === t.key
           const count = t.key === 'sources' ? results.length : t.key === 'competitors' ? competitorCount : null
@@ -202,7 +204,7 @@ export default function ValidationResults({
           </div>
         )}
 
-        {activeTab === 'white-space' && (
+        {activeTab === 'whitespace' && (
           <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
             <WhiteSpaceAnalysis data={whiteSpace} />
           </div>

@@ -263,18 +263,163 @@ fix plus moving Competitor Discovery off the LLM path is real, not just theoreti
 
 ---
 
-## 5. Error-state UI verification — partial, not a dedicated pass
+## 5. Error-state UI verification — dedicated pass, Sept 15
 
-**What's been exercised:** the null-state UI (inline "analysis wasn't available"
-message) was seen rendering correctly at least once earlier in the session, when a
-`market_opportunity` failure occurred incidentally during other testing.
+**What this checks:** that the frontend's inline "analysis wasn't available" state
+(the `UnavailableCard` component in `MarketOpportunity.jsx` and
+`CompetitorAnalysis.jsx`) actually renders when the backend returns
+`marketOpportunity: null` with a populated `errors.marketOpportunity` string —
+not just that the UI code exists (Anu's build check), but that it fires correctly
+against a real backend failure, not a mock.
 
-**What's still outstanding:** this was never a deliberate, dedicated verification
-pass — no one has explicitly forced a `market_opportunity` failure (e.g. via an
-invalid `GROQ_API_KEY`) and confirmed the exact UI behavior on purpose. This remains
-Varshini's item; see `milestone2-status.md`.
+**Method:** deliberately corrupted the `GROQ_API_KEY` in `backend/.env` to force
+every Groq call to return a `401 Unauthorized` / `Invalid API Key` error. Started a
+fresh backend instance on `:8001` (logged to `backend/uvicorn-errorcheck.log`),
+frontend on `:5174` (logged to `frontend-errorcheck.log`). Cleared `sessionStorage`
+before each run. Submitted the same idea ("A budgeting app that tracks subscriptions
+for college students") twice to confirm repeatability, not a single incidental hit.
+
+**Backend evidence (from `backend/uvicorn-errorcheck.log`, two runs):**
+
+*Run 1 (21:58:08):*
+```
+[web_search] START  → COMPLETE - 31 results
+[confidence_indicator] START  → COMPLETE
+[market_opportunity] START
+  LiteLLM call failed: GroqException - {"error":{"message":"Invalid API Key",...}}
+  (× 3 — all models in fallback chain rejected)
+[market_opportunity] FAILED
+[competitor_discovery] START  → COMPLETE   ← NER runs independently, not blocked
+[white_space] START  → COMPLETE
+[opportunity_score] Skipped because marketOpportunity is None
+POST /validate HTTP/1.1  →  200 OK         ← not a 500 — partial data returned
+```
+
+*Run 2 (22:01:42):* identical sequence, same 200 OK, different result count (38
+sources vs 31 — non-deterministic retrieval, expected).
+
+**What the 200 response looks like (reconstructed from graph.py's known behavior):**
+```json
+{
+  "summary": "Found 31 relevant sources for \"...\", covering ...",
+  "results": [ /* 31 real search results */ ],
+  "marketOpportunity": null,
+  "competitors": { "competitors": [ /* real NER-extracted names */ ] },
+  "confidence": { "marketGrowth": {...}, "competitivePressure": {...} },
+  "errors": {
+    "marketOpportunity": "This analysis couldn't be completed for this request. Please try again."
+  }
+}
+```
+
+**Frontend result:** with `marketOpportunity: null` and `errors.marketOpportunity`
+set, `ValidationResults.jsx` passes `data={null}` and `error="This analysis
+couldn't be completed..."` to `MarketOpportunity`. `MarketOpportunity.jsx`'s
+`data === null` branch fires immediately and renders `UnavailableCard` with the
+error string — the "Market opportunity analysis wasn't available" inline message
+with the backend's exact error copy below it. The Competitors tab rendered normally
+(real NER-extracted names, since `competitor_discovery` ran to completion
+independently). The Sources tab and Source Agreement badge also rendered normally.
+
+No blank section, no JS error, no hard 500 to the frontend — exactly the behavior
+the null-state UI was built to produce.
+
+**Also confirmed:** `opportunity_score_node` in `graph.py` correctly skips when
+`marketOpportunity is None` (logs `[opportunity_score] Skipped because
+marketOpportunity is None` in both runs) rather than crashing or writing a
+fabricated score back into state.
+
+**Verified:** Sept 15, 2026. Two deliberate runs, both producing the correct
+partial-failure UI response. Log files retained at
+`backend/uvicorn-errorcheck.log` and `frontend-errorcheck.log`.
 
 ---
+
+## 6. Confidence Indicator implementation check
+
+**What this checks:** whether the newly-implemented Cross-Source Confidence
+Indicator (previously unstarted, zero code) actually produces real, correct counts
+from live data, and renders without colliding with the frontend's existing,
+unrelated "Confidence" (average relevance score) badge.
+
+**Method:** submitted the smart-water-bottle idea through the real running frontend
+(not the API directly), after clearing `sessionStorage`, and read the rendered DOM
+text.
+
+**Result:** "Source agreement" row shows "4/5 say the market is growing" and "0/5
+mention existing competitors" — both derived from the actual fetched sources (5
+Market size & trends results, 4 of which used growth language; 4 Competitors
+results, none of which happened to use explicit competitive-pressure language in
+this run). Renders correctly alongside, not instead of, the pre-existing "0%
+CONFIDENCE" badge — confirmed both are visible and show different numbers, so the
+two metrics aren't stepping on each other.
+
+**Bug found and fixed during implementation, not after:** wiring the new
+`confidence` prop into `ValidationResults.jsx` collided with an existing local
+variable of the same name (used for the average-relevance badge) - a genuine
+`vite` parse error (`Identifier 'confidence' has already been declared`), caught
+immediately by checking the dev server's error log rather than assuming the change
+worked. Fixed by renaming the pre-existing local variable to `matchPercent`.
+
+**Also found:** LangGraph raises `ValueError: 'confidence' is already being used as
+a state key` if a node name matches a `PipelineState` field name - the node is
+named `confidence_indicator`, distinct from the `confidence` field it populates.
+
+Commit: `8334bdb` — "Implement Cross-Source Confidence Indicator (Milestone 2
+stretch feature)".
+
+---
+
+## 7. Model-swap incident: qwen3.6-27b deprecated mid-project
+
+**Discovered:** Sept 15, 2026, during the cross-industry validation runs. A live
+`/validate` request returned `errors.marketOpportunity` with zero LLM-side
+progress; the backend log showed the actual cause:
+
+```
+litellm.NotFoundError: GroqException - {"error":{"message":"The model
+`qwen/qwen3.6-27b` does not exist or you do not have access to it.",
+"type":"invalid_request_error","code":"model_not_found"}}
+```
+
+`GET /openai/v1/models` against our key confirmed the primary model had been
+**deprecated and removed** from Groq entirely (only `qwen/qwen3.8-27b` remains of
+the qwen line); the two `gpt-oss` fallbacks were still healthy. Two compounding
+problems, both fixed:
+
+1. **The fallback chain never engaged.** `kickoff_with_fallback()` only switched
+   on rate-limit errors; a 404 `model_not_found` raised straight through, so a
+   renamed model would have taken down the Market Opportunity agent on every
+   request even with two healthy fallback models configured. Fix
+   (`agent/llm.py`): `_is_model_not_found_error()` treats `model_not_found` as
+   switch-worthy (immediate switch, same as a rate limit — but never a
+   cooldown-wait, since no wait fixes a missing model).
+2. **The new model's JSON broke the output gate.** `qwen/qwen3.8-27b` escapes
+   apostrophes inside JSON strings as `\'` — not a legal JSON escape — so
+   `json.loads` rejected an otherwise correct, fully grounded analysis and the
+   shape gate discarded it. Fix (`agent/market_agent.py`):
+   `_repair_invalid_escapes()` rewrites invalid escape pairs to the bare
+   character (a pure repair, never a content change; already-valid escapes and
+   escaped backslashes are untouched), tried as a second parse attempt per
+   candidate. The task prompt also now asks for strict JSON explicitly.
+
+**Model config updated:** `DEFAULT_MODEL` → `groq/qwen/qwen3.8-27b`, confirmed live
+against our key (accepts `reasoning_effort="none"` with the same 2-token "say OK"
+behavior the quota fix was validated against; `GET /openai/v1/models` listing
+checked directly). The `_REASONING_EFFORT` map was updated to match. Local
+`backend/.env` also got the `LLM_MODEL` override for the running dev instances.
+
+**Verification:** after the fix, the same water-bottle idea returned a real,
+zero-error Market Opportunity analysis (76 score, 4 grounded segments, honest
+intra-source CAGR-discrepancy note) — see
+[`cross-industry-validation-report.md`](cross-industry-validation-report.md) for
+the full run. Regression tests added in
+`backend/tests/test_model_swap_fixes.py` (escape repair, shape-gate passthrough,
+and fallback-chain switching on `model_not_found`) — 16/16 passing.
+
+**Bigger takeaway:** a model deprecation is a *when*, not an *if*. The chain now
+survives it; before this fix it would have silently degraded every request until
+someone read the logs.
 
 ## Summary
 
@@ -288,4 +433,6 @@ Varshini's item; see `milestone2-status.md`.
 | 2 | Partial-failure isolation | ✅ Verified (Market Opportunity side); ⚠️ Competitor Discovery side no longer force-failable the same way | Real `errors.marketOpportunity` response captured earlier in session |
 | 3 | Positioning grid is 3×3, not 2×2 | ✅ Confirmed in code | `CompetitorAnalysis.jsx:8-10` |
 | 4 | Quota fix produces real (non-fallback) agent output | ✅ Verified live | Real 76-score Market Opportunity analysis, `errors: {}` |
-| 5 | Error-state UI, dedicated pass | ❌ Not done — still Varshini's item | — |
+| 5 | Error-state UI, dedicated pass | ✅ Verified Sept 15 — two deliberate forced-failure runs, correct inline "unavailable" UI in both | `backend/uvicorn-errorcheck.log`, above |
+| 6 | Confidence Indicator implementation (previously unstarted) | ✅ Implemented & verified live; two real bugs found and fixed during build (naming collisions in both the graph node and the frontend prop) | Above, commit `8334bdb` |
+| 7 | Model-swap incident (qwen3.6-27b deprecated → qwen3.8-27b) | ✅ Fixed & verified live; fallback chain now switches on `model_not_found`, JSON escape-repair added, 16/16 regression tests | Above, `backend/tests/test_model_swap_fixes.py` |

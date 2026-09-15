@@ -7,7 +7,12 @@ from crewai import LLM
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "groq/qwen/qwen3.6-27b"
+# qwen3.6-27b was deprecated and removed from Groq (confirmed via
+# GET /openai/v1/models on Sept 15, 2026: only qwen/qwen3.8-27b remains of the
+# qwen line). qwen3.8-27b was confirmed live against our key, including
+# accepting reasoning_effort="none" with the same 2-token "say OK" behavior
+# the quota fix below was validated against.
+DEFAULT_MODEL = "groq/qwen/qwen3.8-27b"
 
 # More models hosted on the *same* Groq account, each with its own rate-limit
 # bucket - confirmed via `GET /openai/v1/models` against our own key and a
@@ -33,8 +38,10 @@ _MAX_RETRY_WAIT_SECONDS = 30
 # directly, not assumed) - qwen3.6-27b accepts "none" or "default";
 # openai/gpt-oss-20b and -120b reject "none" outright and require one of
 # "low"/"medium"/"high", so "low" is the closest equivalent for those.
+# (qwen3.6-27b's "none" entry was dropped with the model itself - see
+# DEFAULT_MODEL above; qwen3.8-27b was confirmed to accept "none" live.)
 _REASONING_EFFORT = {
-    "groq/qwen/qwen3.6-27b": "none",
+    "groq/qwen/qwen3.8-27b": "none",
     "groq/openai/gpt-oss-20b": "low",
     "groq/openai/gpt-oss-120b": "low",
 }
@@ -70,6 +77,20 @@ def get_llm(max_tokens: int | None = None, model: str | None = None):
     if not kwargs:
         return model
     return LLM(model=model, **kwargs)
+
+
+def _is_model_not_found_error(exc: Exception) -> bool:
+    """True when the model itself doesn't exist / isn't accessible (Groq code
+    "model_not_found"). Found live on Sept 15, 2026: the then-primary
+    qwen/qwen3.6-27b was deprecated out from under a deployed config, and this
+    404-shaped failure was raised straight through kickoff_with_fallback
+    instead of trying the fallback models - even though they were perfectly
+    healthy and on completely separate quota buckets. A missing model is at
+    least as switch-worthy as an exhausted one: waiting can't fix it, but the
+    next model can.
+    """
+    text = str(exc)
+    return "model_not_found" in text or "does not exist or you do not have access" in text
 
 
 def _is_rate_limit_error(exc: Exception) -> bool:
@@ -135,22 +156,32 @@ def kickoff_with_fallback(build_crew):
             return build_crew(model).kickoff()
         except Exception as exc:
             last_exc = exc
-            if not _is_rate_limit_error(exc):
+            # model_not_found switches immediately too (see
+            # _is_model_not_found_error) - but only ever waits out a cooldown
+            # for an actual rate limit, since no wait fixes a missing model.
+            if not (_is_rate_limit_error(exc) or _is_model_not_found_error(exc)):
                 raise
 
             is_last = i == len(models) - 1
             if not is_last:
+                reason = (
+                    "Rate limited" if _is_rate_limit_error(exc)
+                    else "Model unavailable"
+                )
                 logger.warning(
-                    "Rate limited on %s, switching to fallback model %s",
-                    model, models[i + 1],
+                    "%s on %s, switching to fallback model %s",
+                    reason, model, models[i + 1],
                 )
                 continue
 
-            # Every model in the chain is rate limited. Only wait if this
-            # last failure actually names a cooldown - if it's the
-            # "requested output exceeds the model's own per-minute cap"
-            # shape instead, no wait fixes that on this same model, so
-            # there's nothing left to do but report the failure.
+            # Every model in the chain is exhausted or unavailable. Only wait
+            # if this last failure is a rate limit that actually names a
+            # cooldown - if it's the "requested output exceeds the model's own
+            # per-minute cap" shape, or the model simply doesn't exist, no
+            # wait fixes that, so there's nothing left to do but report the
+            # failure.
+            if not _is_rate_limit_error(exc):
+                raise
             wait = _retry_after_seconds(exc)
             if wait is None:
                 raise

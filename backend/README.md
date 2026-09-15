@@ -20,11 +20,12 @@ a call `market_opportunity` might need instead, and identifying which capitalize
 phrases in real search snippets are company names doesn't need an LLM's open-ended
 reasoning, just reliable name-reading, which NER does at zero API cost and zero rate
 limit. The trade: `gap` is an honest generic disclosure rather than a genuine
-comparative judgment, and `estimatedPrice`/`featureBreadth` are always `"unknown"` -
-the frontend already hides those badges and the positioning grid when nothing is
-classified. See `agent/competitor_agent.py`'s module docstring for the full rationale
-and how a scraped snippet's embedded newlines are normalized before NER to avoid
-comparison-table pages producing garbled entity names.
+comparative judgment, and `estimatedPrice`/`featureBreadth` are rough pattern matches
+from nearby source text when evidence exists, otherwise `"unknown"`. The frontend
+hides unsupported badges and only places competitors in the positioning grid when both
+fields have evidence. See `agent/competitor_agent.py`'s module docstring for the full
+rationale and how a scraped snippet's embedded newlines are normalized before NER to
+avoid comparison-table pages producing garbled entity names.
 
 `market_opportunity` catches its own failure: if its LLM call fails (after exhausting
 the model fallback chain — see below), `marketOpportunity` comes back `null` with a
@@ -53,15 +54,20 @@ Groq is the only reasoning LLM *provider* wired in — a same-request switch to 
 past its own `timeout` parameter instead of failing fast. Instead, `agent/llm.py`'s
 `kickoff_with_fallback()` chains through two more *models* on the same Groq account
 (`openai/gpt-oss-20b`, then `openai/gpt-oss-120b`, alongside the primary
-`qwen/qwen3.6-27b`): Groq rate-limits per model, not per account, so on a rate limit it
+`qwen/qwen3.8-27b` — updated Sept 15, 2026 after Groq deprecated and removed the
+original primary `qwen3.6-27b` entirely, which also exposed that the chain only
+switched on rate limits and let a `model_not_found` 404 raise straight through; it
+now switches on that too): Groq rate-limits per model, not per account, so on a
+rate limit or a missing model it
 switches to the next model immediately (no wait) instead of retrying the same exhausted
-one. Only once every model in the chain has been rate limited does it wait out the last
-one's suggested cooldown (capped at 30s) for one final try. Each model also has its own
+one. Only once every model in the chain has failed does it wait out the last
+rate limit's suggested cooldown (capped at 30s) for one final try. Each model also has its own
 confirmed-working `reasoning_effort` value (`llm.py`'s `_REASONING_EFFORT` map) - by
-default `qwen3.6-27b` reserves an output-token budget for hidden `<think>` reasoning
+default the old `qwen3.6-27b` reserved an output-token budget for hidden `<think>` reasoning
 that alone exceeded Groq's ~1000 output-tokens-per-minute cap, the actual cause of most
-"Request too large" failures; `reasoning_effort="none"` (or `"low"` for the gpt-oss
-fallbacks, which reject `"none"`) eliminates that wasted scratchpad, confirmed directly
+"Request too large" failures; `reasoning_effort="none"` (the current qwen primary
+accepts it, confirmed live; the gpt-oss fallbacks require `"low"`) eliminates that
+wasted scratchpad, confirmed directly
 against the live API - fewer real failures and far fewer tokens used per call.
 
 Two more quota-pressure mitigations sit on top of this: `main.py` caches identical
@@ -104,4 +110,5 @@ uvicorn main:app --reload --port 8000
   fallback chain
 - `agent/llm.py` — reasoning LLM model selection (Groq, incl. per-model
   `reasoning_effort`) and `kickoff_with_fallback()`, which chains through the fallback
-  models immediately on a rate limit rather than retrying the same exhausted one
+  models immediately on a rate limit or a `model_not_found` response rather than
+  retrying the same exhausted/missing one
