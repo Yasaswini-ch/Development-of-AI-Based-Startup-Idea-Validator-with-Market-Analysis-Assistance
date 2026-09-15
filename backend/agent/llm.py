@@ -19,6 +19,26 @@ DEFAULT_MODEL = "groq/qwen/qwen3.6-27b"
 FALLBACK_MODELS = ("groq/openai/gpt-oss-20b", "groq/openai/gpt-oss-120b")
 _MAX_RETRY_WAIT_SECONDS = 30
 
+# The actual cause of most "Request too large... exceeds the enforced limit"
+# failures all session: by default, qwen3.6-27b reserves an output-token
+# budget for its own hidden <think> reasoning that alone exceeds Groq's 1000
+# output-tokens-per-minute cap - confirmed directly: the same trivial "say
+# OK" prompt failed outright with reasoning left at its default, and
+# succeeded using 2 completion tokens with reasoning_effort="none". Real
+# agent calls (market/competitor analysis) confirmed the same fix end to
+# end: fewer real failures, and the tokens actually used drop sharply since
+# there's no wasted scratchpad to generate or strip.
+#
+# Each model takes a different set of valid values (also confirmed
+# directly, not assumed) - qwen3.6-27b accepts "none" or "default";
+# openai/gpt-oss-20b and -120b reject "none" outright and require one of
+# "low"/"medium"/"high", so "low" is the closest equivalent for those.
+_REASONING_EFFORT = {
+    "groq/qwen/qwen3.6-27b": "none",
+    "groq/openai/gpt-oss-20b": "low",
+    "groq/openai/gpt-oss-120b": "low",
+}
+
 
 def get_llm(max_tokens: int | None = None, model: str | None = None):
     """LLM used by every CrewAI agent, via LiteLLM.
@@ -34,23 +54,48 @@ def get_llm(max_tokens: int | None = None, model: str | None = None):
     static fallback content the caller already returns on total failure, so
     it's not a usable fallback with our pinned litellm version.
 
-    Returns a plain model string by default (proven reliable for the Web
-    Search Agent's summary). Only pass max_tokens for an agent that's
-    specifically running out of room - we found that raising the default
-    for every agent made this model MORE likely to ramble through a visible
-    chain-of-thought instead of answering directly, not less, so don't
-    apply it globally.
+    Returns an `LLM` object with the model's known-good reasoning_effort
+    applied whenever the model is one of the three above; falls back to a
+    plain model string for anything else (e.g. a manual LLM_MODEL override
+    to an untested model), so an unrecognized model doesn't get a
+    reasoning_effort value it was never confirmed to accept.
     """
     model = model or os.environ.get("LLM_MODEL", DEFAULT_MODEL)
-    if max_tokens is None:
+    kwargs = {}
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
+    reasoning_effort = _REASONING_EFFORT.get(model)
+    if reasoning_effort is not None:
+        kwargs["reasoning_effort"] = reasoning_effort
+    if not kwargs:
         return model
-    return LLM(model=model, max_tokens=max_tokens)
+    return LLM(model=model, **kwargs)
+
+
+def _is_rate_limit_error(exc: Exception) -> bool:
+    """True for any Groq rate-limit response, whether or not it names a
+    concrete cooldown. Groq has (at least) two differently-shaped rate-limit
+    errors: "Used 980/1000, try again in 6.2s" (a real cooldown to wait out)
+    and "Requested 2048, limit is 1000" (a single request's own configured
+    output cap exceeds the model's entire per-minute budget - no amount of
+    waiting fixes that on this model, only a different model can). Both
+    carry Groq's own "rate_limit_exceeded" code, so checking for that -
+    instead of requiring the "try again in Ns" phrase - is what actually
+    catches both, confirmed live: the second shape was silently treated as
+    unrecoverable before this fix, raising immediately instead of trying the
+    next model, even though the next model doesn't share that request's
+    conflict with the first one's tighter per-minute cap.
+    """
+    text = str(exc)
+    return "rate_limit_exceeded" in text or "RateLimitError" in text
 
 
 def _retry_after_seconds(exc: Exception) -> float | None:
-    """Groq's rate-limit error message names its own cooldown, e.g. "Please
-    try again in 25.545s" - parse that instead of guessing a backoff.
-    Returns None for anything that isn't this specific, recoverable error.
+    """Groq's rate-limit error message sometimes names its own cooldown,
+    e.g. "Please try again in 25.545s" - parse that instead of guessing a
+    backoff. Returns None when no concrete cooldown is present (see
+    _is_rate_limit_error - that's still a rate limit, just not one where
+    waiting would help).
     """
     match = re.search(r"try again in ([\d.]+)s", str(exc))
     return float(match.group(1)) if match else None
@@ -90,17 +135,25 @@ def kickoff_with_fallback(build_crew):
             return build_crew(model).kickoff()
         except Exception as exc:
             last_exc = exc
-            wait = _retry_after_seconds(exc)
-            if wait is None:
+            if not _is_rate_limit_error(exc):
                 raise
 
             is_last = i == len(models) - 1
             if not is_last:
                 logger.warning(
-                    "Rate limited on %s, switching to fallback model %s instead of waiting %.1fs",
-                    model, models[i + 1], wait,
+                    "Rate limited on %s, switching to fallback model %s",
+                    model, models[i + 1],
                 )
                 continue
+
+            # Every model in the chain is rate limited. Only wait if this
+            # last failure actually names a cooldown - if it's the
+            # "requested output exceeds the model's own per-minute cap"
+            # shape instead, no wait fixes that on this same model, so
+            # there's nothing left to do but report the failure.
+            wait = _retry_after_seconds(exc)
+            if wait is None:
+                raise
 
             wait = min(wait, _MAX_RETRY_WAIT_SECONDS) + 0.5
             logger.warning("All models rate limited, waiting %.1fs before one final retry", wait)
