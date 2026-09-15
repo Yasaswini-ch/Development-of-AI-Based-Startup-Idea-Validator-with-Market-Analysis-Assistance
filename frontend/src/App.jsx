@@ -8,6 +8,7 @@ import useLoadingSteps from './hooks/useLoadingSteps'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 const STORAGE_KEY = 'affinity:lastValidation'
+const SUBMIT_COOLDOWN_MS = 5000
 
 // Clicking a competitor/result link opens a new tab (target="_blank"), but on
 // some browsers - especially mobile - a backgrounded tab can get discarded
@@ -30,6 +31,12 @@ function loadPersisted() {
 export default function App() {
   const [persisted] = useState(loadPersisted)
   const [isLoading, setIsLoading] = useState(false)
+  // The button already disables mid-request, but re-enables the instant a
+  // response lands - nothing stopped someone from immediately firing another
+  // request right after, which is exactly the kind of burst that exhausts
+  // the shared Groq quota fastest. A short cooldown after each request
+  // finishes (success or failure) spaces that out.
+  const [cooldown, setCooldown] = useState(false)
   const [validation, setValidation] = useState(persisted?.validation ?? null)
   const [errorMessage, setErrorMessage] = useState('')
   const [lastSubmission, setLastSubmission] = useState(persisted?.lastSubmission ?? null)
@@ -75,6 +82,8 @@ export default function App() {
       setErrorMessage('Could not reach the server. Please try again.')
     } finally {
       setIsLoading(false)
+      setCooldown(true)
+      setTimeout(() => setCooldown(false), SUBMIT_COOLDOWN_MS)
     }
   }
 
@@ -106,7 +115,7 @@ export default function App() {
             </p>
           </header>
 
-          <IdeaForm onSubmit={validateIdea} isLoading={isLoading} loadingStep={loadingStep} />
+          <IdeaForm onSubmit={validateIdea} isLoading={isLoading} loadingStep={loadingStep} disabled={cooldown} />
 
           {errorMessage && (
             <ErrorState

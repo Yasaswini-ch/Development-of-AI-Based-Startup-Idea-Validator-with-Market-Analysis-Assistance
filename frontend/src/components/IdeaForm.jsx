@@ -3,7 +3,7 @@ import { IconLightbulb, IconUsers, IconAlertTriangle, IconCheckCircle } from './
 
 const IDEA_MAX = 300
 
-export default function IdeaForm({ onSubmit, isLoading, loadingStep }) {
+export default function IdeaForm({ onSubmit, isLoading, loadingStep, disabled }) {
   const [idea, setIdea] = useState('')
   const [targetCustomer, setTargetCustomer] = useState('')
   const [problem, setProblem] = useState('')
@@ -88,10 +88,10 @@ export default function IdeaForm({ onSubmit, isLoading, loadingStep }) {
 
         <button
           type="submit"
-          disabled={isLoading}
+          disabled={isLoading || disabled}
           className="w-full rounded-full bg-accent px-4 py-2.5 font-mono text-sm font-semibold uppercase tracking-wide text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {isLoading ? 'Validating…' : 'Validate idea'}
+          {isLoading ? 'Validating…' : disabled ? 'One moment…' : 'Validate idea'}
         </button>
 
         {isLoading && (
