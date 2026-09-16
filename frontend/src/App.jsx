@@ -187,7 +187,6 @@ export default function App() {
               results={validation.results ?? []}
               marketOpportunity={validation.marketOpportunity}
               competitors={validation.competitors}
-              confidence={validation.confidence}
               whiteSpace={validation.whiteSpace}
               swot={validation.swot}
               mvp={validation.mvp}
