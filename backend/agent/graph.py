@@ -5,6 +5,7 @@ from langgraph.graph import END, START, StateGraph
 
 from . import retrieval
 from .competitor_agent import analyze_competitors
+from .gtm_agent import analyze_gtm_strategy
 from .market_agent import analyze_market_opportunity
 from .mvp_agent import analyze_mvp_features
 from .opportunity_score import calculate_opportunity_score
@@ -76,6 +77,9 @@ class PipelineState(TypedDict, total=False):
 
     # Milestone 3: MVP Feature Recommendations
     mvp: dict
+
+    # Milestone 3: Go-To-Market Strategy
+    gtm: dict
 
     # Errors
     error: str
@@ -568,6 +572,47 @@ def mvp_node(state: PipelineState) -> PipelineState:
 
 
 # --------------------------------------------------
+# MILESTONE 3: GTM STRATEGY
+# --------------------------------------------------
+
+def gtm_node(state: PipelineState) -> PipelineState:
+    """Go-To-Market Strategy Agent."""
+
+    logger.info("[gtm] START")
+
+    if state.get("error"):
+        logger.warning("[gtm] Skipped because web search failed")
+        return state
+
+    try:
+        gtm_data = analyze_gtm_strategy(
+            state["idea"],
+            state.get("targetCustomer", ""),
+            state.get("problem", ""),
+            state.get("marketOpportunity"),
+            state.get("competitors"),
+            state.get("results", []),
+        )
+    except Exception as exc:
+        logger.exception("[gtm] FAILED")
+        errors = {
+            **state.get("errors", {}),
+            "gtm": _friendly_error_message(exc),
+        }
+        return {
+            **state,
+            "gtm": None,
+            "errors": errors,
+        }
+
+    logger.info("[gtm] COMPLETE")
+    return {
+        **state,
+        "gtm": gtm_data,
+    }
+
+
+# --------------------------------------------------
 # BUILD LANGGRAPH PIPELINE
 # --------------------------------------------------
 
@@ -586,6 +631,7 @@ def build_pipeline():
     # Milestone 3 features
     graph.add_node("swot_analysis", swot_node)
     graph.add_node("mvp_recommendation", mvp_node)
+    graph.add_node("gtm_strategy", gtm_node)
 
     # Pipeline flow
     graph.add_edge(START, "web_search")
@@ -595,9 +641,10 @@ def build_pipeline():
     graph.add_edge("competitor_discovery", "white_space")
     graph.add_edge("white_space", "swot_analysis")
     graph.add_edge("swot_analysis", "mvp_recommendation")
+    graph.add_edge("mvp_recommendation", "gtm_strategy")
 
     # Calculate score after all analyses are available
-    graph.add_edge("mvp_recommendation", "opportunity_score")
+    graph.add_edge("gtm_strategy", "opportunity_score")
     graph.add_edge("opportunity_score", END)
 
     return graph.compile()
