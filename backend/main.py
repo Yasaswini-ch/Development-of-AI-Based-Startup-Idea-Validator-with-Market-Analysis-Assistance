@@ -7,12 +7,13 @@ import time
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 from agent.chat_agent import advisor_respond
 from agent.graph import pipeline
-from agent.session_store import create_session
+from agent.pdf_exporter import generate_dossier_pdf
+from agent.session_store import create_session, get_session
 
 
 # --------------------------------------------------
@@ -327,3 +328,55 @@ def chat_turn(payload: ChatRequest):
         )
 
     return res
+
+
+# --------------------------------------------------
+# MILESTONE 3: AUTOMATED PDF REPORT EXPORTER
+# --------------------------------------------------
+
+@app.post("/export-pdf")
+def export_pdf_post(payload: dict):
+    """Compile validation payload into a downloadable PDF report."""
+    try:
+        pdf_bytes = generate_dossier_pdf(payload)
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": 'attachment; filename="Affinity_Validation_Report.pdf"'
+            },
+        )
+    except Exception as exc:
+        logger.exception("PDF generation failed")
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"PDF export failed: {str(exc)}"},
+        )
+
+
+@app.get("/validate/{session_id}/pdf")
+def export_pdf_session(session_id: str):
+    """Generate PDF report from a active sessionId."""
+    session_data = get_session(session_id)
+    if not session_data:
+        return JSONResponse(
+            status_code=404,
+            content={"error": "Session not found or expired."},
+        )
+
+    try:
+        pdf_bytes = generate_dossier_pdf(session_data)
+        filename = f"Affinity_Report_{session_id}.pdf"
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            },
+        )
+    except Exception as exc:
+        logger.exception("PDF generation failed for session %s", session_id)
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"PDF export failed: {str(exc)}"},
+        )
