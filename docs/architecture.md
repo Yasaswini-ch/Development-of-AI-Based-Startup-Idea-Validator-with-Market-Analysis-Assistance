@@ -41,7 +41,7 @@ flowchart TD
     MO --> CD["Competitor Discovery\nagent/competitor_agent.py\n(local spaCy NER, no LLM call)"]
     CD --> OS["Opportunity Score\nagent/opportunity_score.py"]
     OS --> WA["White-space Analysis\nagent/white_space.py"]
-    MO --> LLM["Groq LLM\nqwen/qwen3.6-27b (primary)"]
+    MO --> LLM["Groq LLM\nqwen3.8-27b (primary)"]
     LLM -.rate limit: switch model.-> LLM2["Groq LLM\ngpt-oss-20b (fallback)"]
 
     Retrieval --> Response["summary + results +\nmarketOpportunity + competitors +\nconfidence + whiteSpace + errors"]
