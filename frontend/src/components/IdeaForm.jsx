@@ -2,11 +2,14 @@ import { useState } from 'react'
 import { IconLightbulb, IconUsers, IconAlertTriangle, IconCheckCircle } from './icons'
 
 const IDEA_MAX = 300
+const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 
 export default function IdeaForm({ onSubmit, isLoading, loadingStep, disabled }) {
   const [idea, setIdea] = useState('')
   const [targetCustomer, setTargetCustomer] = useState('')
   const [problem, setProblem] = useState('')
+  const [email, setEmail] = useState('')
+  const [wantsEmail, setWantsEmail] = useState(false)
   const [error, setError] = useState('')
 
   function handleSubmit(e) {
@@ -15,8 +18,12 @@ export default function IdeaForm({ onSubmit, isLoading, loadingStep, disabled })
       setError('Please describe your startup idea before validating.')
       return
     }
+    if (wantsEmail && !EMAIL_PATTERN.test(email.trim())) {
+      setError('Please enter a valid email address, or turn off email delivery.')
+      return
+    }
     setError('')
-    onSubmit({ idea, targetCustomer, problem })
+    onSubmit({ idea, targetCustomer, problem, email: wantsEmail ? email.trim() : '' })
   }
 
   return (
@@ -84,6 +91,32 @@ export default function IdeaForm({ onSubmit, isLoading, loadingStep, disabled })
             placeholder="What painful problem does this startup solve?"
             className="w-full rounded-lg bg-surface border border-border px-3.5 py-2.5 text-sm text-text placeholder:text-muted outline-none transition-colors focus:border-accent"
           />
+        </div>
+
+        <div>
+          <label className="flex items-start gap-2.5 rounded-lg border border-border bg-surface px-3.5 py-3">
+            <input
+              type="checkbox"
+              checked={wantsEmail}
+              onChange={(e) => setWantsEmail(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-accent"
+            />
+            <span className="text-sm text-text">
+              <span className="block">Email me the report if it takes a while</span>
+              <span className="block text-xs text-muted">
+                For a longer-running analysis, we'll keep working and send the full report to your inbox instead of making you wait.
+              </span>
+            </span>
+          </label>
+          {wantsEmail && (
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              className="mt-2 w-full rounded-lg bg-surface border border-border px-3.5 py-2.5 text-sm text-text placeholder:text-muted outline-none transition-colors focus:border-accent"
+            />
+          )}
         </div>
 
         <button

@@ -1,121 +1,98 @@
-"""
-SWOT & Risk Analysis Agent for Milestone 3.
-
-Synthesizes Strengths, Weaknesses, Opportunities, Threats, and Risk Assessment
-with severity and likelihood metrics from market opportunity signals, competitor density,
-and retrieved web evidence.
-"""
+"""SWOT and risk analysis grounded in existing pipeline artifacts."""
 
 import logging
-from typing import Any, Dict, List, Optional
+
+from crewai import Agent, Crew, Process, Task
+
+from .deterministic_fallback import deterministic_swot
+from .llm import get_llm, kickoff_with_fallback
+from .structured_output import compact_json, compact_sources, extract_json_object
 
 logger = logging.getLogger(__name__)
 
-_MAX_SWOT_ITEMS = 4
-_MAX_RISKS = 3
+_LEVELS = {"low", "medium", "high", "unknown"}
+_MAX_ITEMS = 4
+_MAX_RISKS = 4
 
 
-def _clean(text: Any) -> str:
-    return " ".join(str(text or "").split())
+def _valid_string_list(value) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) and item.strip() for item in value)
 
 
-def analyze_swot_and_risk(
-    idea: str,
-    target_customer: str,
-    problem: str,
-    market_opportunity: Optional[Dict[str, Any]] = None,
-    competitors: Optional[Dict[str, Any]] = None,
-    confidence: Optional[Dict[str, Any]] = None,
-    results: Optional[List[Dict[str, Any]]] = None,
-) -> Dict[str, Any]:
-    """Derive SWOT & Risk Analysis from pipeline outputs and source evidence."""
-    results = results or []
-    market_opportunity = market_opportunity or {}
-    competitors = competitors or {}
-    confidence = confidence or {}
+def _valid_shape(value: dict) -> bool:
+    if not all(_valid_string_list(value.get(key)) for key in ("strengths", "weaknesses", "opportunities", "threats")):
+        return False
+    risks = value.get("risks")
+    if not isinstance(risks, list):
+        return False
+    return all(
+        isinstance(item, dict)
+        and isinstance(item.get("risk"), str)
+        and item.get("severity") in _LEVELS
+        and item.get("likelihood") in _LEVELS
+        for item in risks
+    )
 
-    competitor_list = competitors.get("competitors") or []
-    competitor_count = len(competitor_list)
 
-    market_size = _clean(market_opportunity.get("marketSize", "Emerging market sector"))
-    cagr = _clean(market_opportunity.get("cagr", ""))
-    segments = market_opportunity.get("segments") or []
-
-    # 1. Strengths
-    strengths = []
-    if target_customer:
-        strengths.append(f"Clear focus on target customer segment: {target_customer[:60]}")
-    if problem:
-        strengths.append(f"Direct alignment with user pain point: {problem[:60]}")
-    if not strengths:
-        strengths.append("Identified early-stage product opportunity with targeted value proposition.")
-    strengths.append("Sub-second automated validation pipeline backed by live market retrieval evidence.")
-
-    # 2. Weaknesses
-    weaknesses = []
-    if competitor_count > 3:
-        weaknesses.append(f"High market competition with {competitor_count} established alternatives already active.")
-    else:
-        weaknesses.append("Early-stage brand awareness requiring targeted early adopter acquisition.")
-    weaknesses.append("Resource constraints typical of early-stage bootstrapped execution.")
-
-    # 3. Opportunities
-    opportunities = []
-    if cagr:
-        opportunities.append(f"Capitalize on positive industry tailwinds ({cagr}).")
-    elif market_size:
-        opportunities.append(f"Tap into the expanding market space ({market_size}).")
-
-    if segments:
-        first_seg = _clean(segments[0].get("segment", "underserved users"))
-        opportunities.append(f"Capture unserved demand in the {first_seg} niche.")
-    else:
-        opportunities.append("Expand solution capabilities into adjacent product categories.")
-
-    # 4. Threats
-    threats = []
-    if competitor_list:
-        comp_names = ", ".join([c.get("name", "") for c in competitor_list[:3] if c.get("name")])
-        if comp_names:
-            threats.append(f"Aggressive feature expansions by existing market players ({comp_names}).")
-    if not threats:
-        threats.append("Potential entry of well-funded incumbents offering similar capabilities.")
-    threats.append("Rapidly shifting consumer preferences and technology adoption cycles.")
-
-    # 5. Risks with Severity & Likelihood Metrics
-    risks = []
-    
-    # Competition Risk
-    comp_severity = "high" if competitor_count >= 3 else ("medium" if competitor_count > 0 else "low")
-    comp_likelihood = "high" if competitor_count >= 2 else "medium"
-    risks.append({
-        "risk": f"Market Saturation Risk: {competitor_count} named competitors detected in niche.",
-        "severity": comp_severity,
-        "likelihood": comp_likelihood,
-    })
-
-    # Customer Acquisition Risk
-    risks.append({
-        "risk": "Customer Discovery Risk: High cost of acquiring initial target users.",
-        "severity": "medium",
-        "likelihood": "medium",
-    })
-
-    # Execution Risk
-    risks.append({
-        "risk": "Product Execution Risk: Delivering core feature set before competitors adapt.",
-        "severity": "medium",
-        "likelihood": "low",
-    })
-
-    return {
-        "summary": (
-            f"SWOT and Risk Assessment for '{idea[:40]}...'. Derived from {len(results)} "
-            f"retrieved sources and {competitor_count} identified market competitors."
+def _build_crew(idea: str, context: str, model: str) -> Crew:
+    analyst = Agent(
+        role="SWOT and Risk Analyst",
+        goal="Produce concise, evidence-grounded strategic strengths, weaknesses, opportunities, threats, and risks.",
+        backstory="A skeptical startup analyst who separates evidence from assumptions and never invents unsupported facts.",
+        # Rebalanced to 750 (was 900, briefly tried 250 then 550) - see
+        # market_agent.py for the full rationale; SWOT's schema (4 list
+        # fields plus per-risk severity/likelihood) is similarly verbose
+        # and was confirmed live to truncate at 550.
+        llm=get_llm(max_tokens=750, model=model),
+        verbose=False,
+    )
+    task = Task(
+        description=(
+            f'Startup idea: "{idea}"\n'
+            f"Validated pipeline context: {context}\n\n"
+            "Use only this context. Return up to four concise items in each SWOT category and up to four risks. "
+            "Rate severity and likelihood as low, medium, high, or unknown. Use unknown when evidence is insufficient."
         ),
-        "strengths": strengths[:_MAX_SWOT_ITEMS],
-        "weaknesses": weaknesses[:_MAX_SWOT_ITEMS],
-        "opportunities": opportunities[:_MAX_SWOT_ITEMS],
-        "threats": threats[:_MAX_SWOT_ITEMS],
-        "risks": risks[:_MAX_RISKS],
-    }
+        expected_output=(
+            'One JSON object only: {"strengths":["..."],"weaknesses":["..."],'
+            '"opportunities":["..."],"threats":["..."],"risks":['
+            '{"risk":"...","severity":"low|medium|high|unknown",'
+            '"likelihood":"low|medium|high|unknown"}]}.'
+        ),
+        agent=analyst,
+    )
+    return Crew(agents=[analyst], tasks=[task], process=Process.sequential, verbose=False)
+
+
+def analyze_swot(
+    idea: str,
+    market_opportunity: dict | None,
+    competitors: dict | None,
+    white_space: dict | None,
+    results: list,
+) -> dict:
+    context = compact_json(
+        {
+            "marketOpportunity": market_opportunity,
+            "competitors": competitors,
+            "whiteSpace": white_space,
+            "sources": compact_sources(results),
+        }
+    )
+    try:
+        output = kickoff_with_fallback(lambda model: _build_crew(idea, context, model))
+        data = extract_json_object(output.raw, _valid_shape)
+        if data is None:
+            logger.warning("SWOT agent returned no valid JSON")
+            raise ValueError("SWOT analysis did not return a valid result.")
+
+        for key in ("strengths", "weaknesses", "opportunities", "threats"):
+            data[key] = data[key][:_MAX_ITEMS]
+        data["risks"] = data["risks"][:_MAX_RISKS]
+        return data
+    except Exception:
+        logger.warning(
+            "SWOT: LLM analysis unavailable, using deterministic evidence-based fallback",
+            exc_info=True,
+        )
+        return deterministic_swot(idea, market_opportunity, competitors, white_space, results)

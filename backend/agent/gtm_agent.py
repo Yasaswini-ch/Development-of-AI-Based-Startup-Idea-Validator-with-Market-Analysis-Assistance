@@ -1,82 +1,80 @@
-"""
-Go-To-Market (GTM) Strategy Agent for Milestone 3.
-
-Synthesizes strategic market positioning statements, primary acquisition channels,
-and early customer outreach tactics derived from target customer demographics and market opportunity data.
-"""
+"""Go-to-market strategy grounded in validated market artifacts."""
 
 import logging
-from typing import Any, Dict, List, Optional
+
+from crewai import Agent, Crew, Process, Task
+
+from .deterministic_fallback import deterministic_gtm
+from .llm import get_llm, kickoff_with_fallback
+from .structured_output import compact_json, extract_json_object
 
 logger = logging.getLogger(__name__)
 
 _MAX_CHANNELS = 4
 
 
-def _clean(text: Any) -> str:
-    return " ".join(str(text or "").split())
+def _valid_shape(value: dict) -> bool:
+    return (
+        isinstance(value.get("positioning"), str)
+        and isinstance(value.get("channels"), list)
+        and all(isinstance(item, str) and item.strip() for item in value["channels"])
+        and isinstance(value.get("earlyCustomerApproach"), str)
+    )
 
 
-def analyze_gtm_strategy(
+def _build_crew(idea: str, target_customer: str, context: str, model: str) -> Crew:
+    analyst = Agent(
+        role="Go-to-Market Strategy Analyst",
+        goal="Create a focused positioning and early acquisition plan grounded in validated customer and competitor evidence.",
+        backstory="An early-stage growth strategist who recommends a few testable channels instead of generic marketing lists.",
+        # Rebalanced to 450 (was 800, briefly tried 250) - see
+        # market_agent.py for the full rationale; 250 was confirmed live to
+        # truncate JSON output itself, not just hit the rate limit.
+        llm=get_llm(max_tokens=450, model=model),
+        verbose=False,
+    )
+    task = Task(
+        description=(
+            f'Startup idea: "{idea}"\nTarget customer: {target_customer or "not specified"}\n'
+            f"Validated strategy context: {context}\n\n"
+            "Write one differentiated positioning statement, up to four specific acquisition channels, "
+            "and one practical early-customer approach. Do not invent traction or partnerships."
+        ),
+        expected_output=(
+            'One JSON object only: {"positioning":"...","channels":["..."],'
+            '"earlyCustomerApproach":"..."}.'
+        ),
+        agent=analyst,
+    )
+    return Crew(agents=[analyst], tasks=[task], process=Process.sequential, verbose=False)
+
+
+def analyze_gtm(
     idea: str,
     target_customer: str,
-    problem: str,
-    market_opportunity: Optional[Dict[str, Any]] = None,
-    competitors: Optional[Dict[str, Any]] = None,
-    results: Optional[List[Dict[str, Any]]] = None,
-) -> Dict[str, Any]:
-    """Derive Go-To-Market strategy, positioning statement, and acquisition channels."""
-    results = results or []
-    market_opportunity = market_opportunity or {}
-    competitors = competitors or {}
-
-    customer = _clean(target_customer) or "Target Early Adopters"
-    prob = _clean(problem) or "unresolved customer pain points"
-    idea_clean = _clean(idea)
-
-    # 1. Strategic Positioning Statement
-    positioning = (
-        f"For {customer} who experience {prob}, '{idea_clean}' is the focused "
-        f"solution that provides immediate value through an automated, streamlined experience."
+    market_opportunity: dict | None,
+    competitors: dict | None,
+    swot: dict | None,
+) -> dict:
+    context = compact_json(
+        {
+            "marketOpportunity": market_opportunity,
+            "competitors": competitors,
+            "swot": swot,
+        },
+        max_chars=4000,
     )
-
-    # 2. Key Customer Acquisition Channels
-    channels = []
-    
-    # Check target customer keywords for targeted channel recommendations
-    cust_lower = customer.lower()
-    if "developer" in cust_lower or "engineer" in cust_lower or "tech" in cust_lower:
-        channels.extend([
-            "Developer Communities & Forums (GitHub, Hacker News, Reddit /r/programming)",
-            "Technical Content Marketing & Documentation-led Growth",
-        ])
-    elif "student" in cust_lower or "academic" in cust_lower or "university" in cust_lower:
-        channels.extend([
-            "Campus Pitch Competitions & University Incubator Networks",
-            "Student Founder Groups & Social Media (LinkedIn, Discord, X)",
-        ])
-    elif "business" in cust_lower or "b2b" in cust_lower or "saas" in cust_lower:
-        channels.extend([
-            "Outbound LinkedIn Outreach & B2B Industry Newsletters",
-            "Product Hunt Launch & Vertical Industry Directory Listings",
-        ])
-    else:
-        channels.extend([
-            "Niche Online Communities & Focused Social Media Outreach",
-            "Search Engine Optimization (SEO) targeting high-intent long-tail keywords",
-        ])
-
-    channels.append("Direct Referral Incentive Program for Early Adopters")
-
-    # 3. Early Customer Approach Tactic
-    early_customer_approach = (
-        f"Conduct direct qualitative outreach to 20-30 high-intent {customer}. "
-        f"Offer exclusive free beta access in exchange for structured feedback and baseline retention metrics."
-    )
-
-    return {
-        "summary": f"Go-To-Market acquisition strategy and positioning for '{idea_clean[:40]}...'.",
-        "positioning": positioning,
-        "channels": channels[:_MAX_CHANNELS],
-        "earlyCustomerApproach": early_customer_approach,
-    }
+    try:
+        output = kickoff_with_fallback(lambda model: _build_crew(idea, target_customer, context, model))
+        data = extract_json_object(output.raw, _valid_shape)
+        if data is None:
+            logger.warning("GTM agent returned no valid JSON")
+            raise ValueError("GTM analysis did not return a valid result.")
+        data["channels"] = data["channels"][:_MAX_CHANNELS]
+        return data
+    except Exception:
+        logger.warning(
+            "GTM: LLM analysis unavailable, using deterministic evidence-based fallback",
+            exc_info=True,
+        )
+        return deterministic_gtm(idea, target_customer, market_opportunity, competitors, swot)

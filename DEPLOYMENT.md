@@ -35,6 +35,14 @@ GROQ_API_KEY       required
 TAVILY_API_KEY     optional
 FRONTEND_ORIGIN    frontend Render URL
 PYTHON_VERSION     3.12.7
+
+# Optional - email-on-completion for long-running validations (see
+# docs/unique-features-plan.md, section 7). Without RESEND_API_KEY,
+# /validate still accepts an email and returns 202/jobId past the
+# threshold below, it just never actually sends the email.
+RESEND_API_KEY               optional
+RESEND_FROM_EMAIL             optional - must be a domain verified in Resend
+VALIDATE_ASYNC_THRESHOLD_SECONDS   optional, default 25
 ```
 
 ## Frontend Service
@@ -86,4 +94,6 @@ Expected response:
 ```
 
 Then open the frontend URL, submit a sample idea, and confirm the UI shows sources,
-market opportunity, competitors, source agreement, and white-space analysis.
+market opportunity, competitors, source agreement, white-space analysis, SWOT, MVP,
+and GTM sections. Send a `/chat` follow-up and verify the advisor replies. Chat state
+is intentionally in memory and is cleared when the backend restarts.

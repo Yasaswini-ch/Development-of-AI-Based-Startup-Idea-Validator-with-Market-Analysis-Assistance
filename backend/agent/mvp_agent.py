@@ -1,87 +1,84 @@
-"""
-MVP Feature Recommendation Agent for Milestone 3.
-
-Synthesizes prioritized MVP features with effort and impact ratings
-derived from white-space gap analysis, market segment needs, and competitor density.
-"""
+"""MVP feature recommendations grounded in SWOT and customer evidence."""
 
 import logging
-from typing import Any, Dict, List, Optional
+
+from crewai import Agent, Crew, Process, Task
+
+from .deterministic_fallback import deterministic_mvp
+from .llm import get_llm, kickoff_with_fallback
+from .structured_output import compact_json, extract_json_object
 
 logger = logging.getLogger(__name__)
 
-_MAX_MVP_FEATURES = 4
+_LEVELS = {"low", "medium", "high", "unknown"}
+_MAX_FEATURES = 5
 
 
-def _clean(text: Any) -> str:
-    return " ".join(str(text or "").split())
+def _valid_shape(value: dict) -> bool:
+    features = value.get("features")
+    if not isinstance(features, list) or not features:
+        return False
+    return all(
+        isinstance(item, dict)
+        and isinstance(item.get("feature"), str)
+        and isinstance(item.get("rationale"), str)
+        and item.get("impact") in _LEVELS
+        and item.get("effort") in _LEVELS
+        for item in features
+    )
 
 
-def analyze_mvp_features(
-    idea: str,
-    target_customer: str,
-    problem: str,
-    market_opportunity: Optional[Dict[str, Any]] = None,
-    white_space: Optional[Dict[str, Any]] = None,
-    competitors: Optional[Dict[str, Any]] = None,
-    results: Optional[List[Dict[str, Any]]] = None,
-) -> Dict[str, Any]:
-    """Derive prioritized MVP feature recommendations with impact and effort ratings."""
-    results = results or []
-    market_opportunity = market_opportunity or {}
-    white_space = white_space or {}
-    competitors = competitors or {}
-
-    opportunities = white_space.get("opportunities") or []
-    segments = market_opportunity.get("segments") or []
-    competitor_list = competitors.get("competitors") or []
-    competitor_count = len(competitor_list)
-
-    features = []
-
-    # Feature 1: Core Problem Solution (High Impact, Medium Effort)
-    if problem:
-        features.append({
-            "feature": f"Core Problem Solver: Direct fix for '{problem[:50]}...'",
-            "rationale": f"Primary motivation for {target_customer[:40] or 'target users'} to switch from status quo.",
-            "impact": "high",
-            "effort": "medium",
-        })
-
-    # Feature 2: Derived from White-Space Opportunities
-    for opp in opportunities[:2]:
-        title = _clean(opp.get("title", "Targeted White-Space Feature"))
-        why = _clean(opp.get("why", "Addresses identified market gap."))
-        features.append({
-            "feature": f"Wedge Feature: {title}",
-            "rationale": why,
-            "impact": "high",
-            "effort": "low" if competitor_count <= 1 else "medium",
-        })
-
-    # Feature 3: Segment-Specific Onboarding / Workflow Integration
-    if segments:
-        first_seg = _clean(segments[0].get("segment", "Target Users"))
-        features.append({
-            "feature": f"Streamlined Onboarding for {first_seg}",
-            "rationale": "Reduces friction to initial value realization and boosts day-1 retention.",
-            "impact": "medium",
-            "effort": "low",
-        })
-
-    # Fallback Feature if few were derived
-    if len(features) < 2:
-        features.append({
-            "feature": "Automated Insights & Export Dashboard",
-            "rationale": "Enables users to export and share validation results with stakeholders.",
-            "impact": "medium",
-            "effort": "low",
-        })
-
-    return {
-        "summary": (
-            f"MVP feature set recommended for '{idea[:40]}...'. Designed to maximize market fit "
-            f"while minimizing early engineering overhead."
+def _build_crew(idea: str, problem: str, context: str, model: str) -> Crew:
+    analyst = Agent(
+        role="MVP Feature Recommendation Analyst",
+        goal="Prioritize the smallest feature set that tests the startup's riskiest assumptions.",
+        backstory="A product strategist who resists feature bloat and ties every recommendation to validated customer evidence.",
+        # Rebalanced to 450 (was 800, briefly tried 250) - see
+        # market_agent.py for the full rationale; 250 was confirmed live to
+        # truncate JSON output itself, not just hit the rate limit.
+        llm=get_llm(max_tokens=450, model=model),
+        verbose=False,
+    )
+    task = Task(
+        description=(
+            f'Startup idea: "{idea}"\nProblem: {problem or "not specified"}\n'
+            f"SWOT and customer context: {context}\n\n"
+            "Recommend at most five ordered MVP features. Keep each feature testable and narrow. "
+            "Rate impact and effort as low, medium, high, or unknown."
         ),
-        "features": features[:_MAX_MVP_FEATURES],
-    }
+        expected_output=(
+            'One JSON object only: {"features":[{"feature":"...","rationale":"...",'
+            '"impact":"low|medium|high|unknown","effort":"low|medium|high|unknown"}]}.'
+        ),
+        agent=analyst,
+    )
+    return Crew(agents=[analyst], tasks=[task], process=Process.sequential, verbose=False)
+
+
+def analyze_mvp(
+    idea: str,
+    problem: str,
+    swot: dict | None,
+    market_opportunity: dict | None,
+) -> dict:
+    context = compact_json(
+        {
+            "swot": swot,
+            "segments": (market_opportunity or {}).get("segments", [])[:4],
+        },
+        max_chars=3500,
+    )
+    try:
+        output = kickoff_with_fallback(lambda model: _build_crew(idea, problem, context, model))
+        data = extract_json_object(output.raw, _valid_shape)
+        if data is None:
+            logger.warning("MVP agent returned no valid JSON")
+            raise ValueError("MVP analysis did not return a valid result.")
+        data["features"] = data["features"][:_MAX_FEATURES]
+        return data
+    except Exception:
+        logger.warning(
+            "MVP: LLM analysis unavailable, using deterministic evidence-based fallback",
+            exc_info=True,
+        )
+        return deterministic_mvp(idea, problem, swot, market_opportunity)

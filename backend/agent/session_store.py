@@ -1,49 +1,94 @@
-"""
-In-memory session store for Milestone 3 Conversational Advisor.
+"""Bounded in-memory validation and chat session storage."""
 
-Stores validation pipeline outputs and running chat transcripts keyed by unique sessionId.
-Follows zero-database lightweight state management pattern.
-"""
-
-import logging
+import copy
+import threading
+import time
 import uuid
-from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+_SESSION_TTL_SECONDS = 2 * 60 * 60
+_MAX_SESSIONS = 200
+_MAX_TURNS = 12
+_CHAT_WINDOW_SECONDS = 60
+_MAX_CHAT_REQUESTS_PER_WINDOW = 6
 
-# In-memory session store: dict[session_id, session_data]
-_SESSIONS: Dict[str, Dict[str, Any]] = {}
+_lock = threading.RLock()
+_sessions: dict[str, dict] = {}
 
 
-def create_session(pipeline_output: Dict[str, Any]) -> str:
-    """Create a new validation session and return a unique sessionId."""
-    session_id = f"sess_{uuid.uuid4().hex[:12]}"
-    _SESSIONS[session_id] = {
-        "sessionId": session_id,
-        "idea": pipeline_output.get("idea", ""),
-        "targetCustomer": pipeline_output.get("targetCustomer", ""),
-        "problem": pipeline_output.get("problem", ""),
-        "summary": pipeline_output.get("summary", ""),
-        "opportunityScore": pipeline_output.get("opportunityScore"),
-        "marketOpportunity": pipeline_output.get("marketOpportunity"),
-        "competitors": pipeline_output.get("competitors"),
-        "whiteSpace": pipeline_output.get("whiteSpace"),
-        "swot": pipeline_output.get("swot"),
-        "mvp": pipeline_output.get("mvp"),
-        "gtm": pipeline_output.get("gtm"),
-        "transcript": [],  # List of {"role": "user"|"advisor", "content": "..."}
-    }
-    logger.info("Created session %s", session_id)
+def _prune(now: float) -> None:
+    expired = [
+        session_id
+        for session_id, session in _sessions.items()
+        if now - session["updatedAt"] > _SESSION_TTL_SECONDS
+    ]
+    for session_id in expired:
+        del _sessions[session_id]
+
+    if len(_sessions) > _MAX_SESSIONS:
+        oldest = sorted(_sessions, key=lambda key: _sessions[key]["updatedAt"])
+        for session_id in oldest[: len(_sessions) - _MAX_SESSIONS]:
+            del _sessions[session_id]
+
+
+def create_session(context: dict) -> str:
+    now = time.time()
+    session_id = str(uuid.uuid4())
+    with _lock:
+        _prune(now)
+        _sessions[session_id] = {
+            "context": copy.deepcopy(context),
+            "history": [],
+            "chatRequestTimes": [],
+            "createdAt": now,
+            "updatedAt": now,
+        }
     return session_id
 
 
-def get_session(session_id: str) -> Optional[Dict[str, Any]]:
-    """Retrieve session data by sessionId."""
-    return _SESSIONS.get(session_id)
+def get_session(session_id: str) -> dict | None:
+    now = time.time()
+    with _lock:
+        _prune(now)
+        session = _sessions.get(session_id)
+        if session is None:
+            return None
+        session["updatedAt"] = now
+        return copy.deepcopy(session)
 
 
-def add_chat_turn(session_id: str, role: str, content: str) -> None:
-    """Add a message turn to the session chat transcript."""
-    session = _SESSIONS.get(session_id)
-    if session:
-        session["transcript"].append({"role": role, "content": content})
+def append_turn(session_id: str, message: str, reply: str) -> bool:
+    with _lock:
+        session = _sessions.get(session_id)
+        if session is None:
+            return False
+        session["history"].append({"message": message, "reply": reply})
+        session["history"] = session["history"][-_MAX_TURNS:]
+        session["updatedAt"] = time.time()
+        return True
+
+
+def reserve_chat_request(session_id: str) -> None:
+    now = time.time()
+    with _lock:
+        _prune(now)
+        session = _sessions.get(session_id)
+        if session is None:
+            raise KeyError("Session not found or expired.")
+
+        cutoff = now - _CHAT_WINDOW_SECONDS
+        recent = [
+            timestamp
+            for timestamp in session["chatRequestTimes"]
+            if timestamp >= cutoff
+        ]
+        if len(recent) >= _MAX_CHAT_REQUESTS_PER_WINDOW:
+            raise RuntimeError("Chat rate limit exceeded.")
+
+        recent.append(now)
+        session["chatRequestTimes"] = recent
+        session["updatedAt"] = now
+
+
+def clear_sessions() -> None:
+    with _lock:
+        _sessions.clear()

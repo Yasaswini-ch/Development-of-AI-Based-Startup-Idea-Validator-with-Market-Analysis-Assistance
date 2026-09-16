@@ -39,10 +39,11 @@ export default function App() {
   const [cooldown, setCooldown] = useState(false)
   const [validation, setValidation] = useState(persisted?.validation ?? null)
   const [errorMessage, setErrorMessage] = useState('')
+  const [processingMessage, setProcessingMessage] = useState('')
   const [lastSubmission, setLastSubmission] = useState(persisted?.lastSubmission ?? null)
   const [updatedAt, setUpdatedAt] = useState(persisted?.updatedAt ?? null)
   const loadingStep = useLoadingSteps(isLoading)
-  const sourceCount = useCountUp(validation?.results.length ?? 0)
+  const sourceCount = useCountUp(validation?.results?.length ?? 0)
 
   useEffect(() => {
     try {
@@ -62,6 +63,7 @@ export default function App() {
     setErrorMessage('')
     setValidation(null)
     setLastSubmission(payload)
+    setProcessingMessage('')
 
     try {
       const res = await fetch(`${API_URL}/validate`, {
@@ -70,6 +72,16 @@ export default function App() {
         body: JSON.stringify(payload),
       })
       const data = await res.json()
+
+      if (res.status === 202 && data.status === 'processing') {
+        // Taking longer than the server's threshold - it keeps working in
+        // the background and will email the report; poll the job here too
+        // so the tab updates live if the user stays on the page.
+        setProcessingMessage(data.message || "This is taking longer than usual. We'll email you when it's ready.")
+        setIsLoading(false)
+        pollJob(data.jobId)
+        return
+      }
 
       if (!res.ok) {
         setErrorMessage(data.error || 'Something went wrong. Please try again.')
@@ -85,6 +97,40 @@ export default function App() {
       setCooldown(true)
       setTimeout(() => setCooldown(false), SUBMIT_COOLDOWN_MS)
     }
+  }
+
+  async function pollJob(jobId) {
+    const POLL_INTERVAL_MS = 4000
+    const MAX_POLLS = 45 // ~3 minutes
+
+    for (let attempt = 0; attempt < MAX_POLLS; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
+      try {
+        const res = await fetch(`${API_URL}/validate/status/${jobId}`)
+        const data = await res.json()
+
+        if (data.status === 'complete') {
+          const { status: _status, ...result } = data
+          setValidation(result)
+          setUpdatedAt(new Date())
+          setProcessingMessage('')
+          return
+        }
+
+        if (data.status === 'failed') {
+          setErrorMessage(data.error || 'The analysis failed while running in the background.')
+          setProcessingMessage('')
+          return
+        }
+        // status === 'processing' - keep polling
+      } catch {
+        // A transient network hiccup while polling shouldn't abandon the
+        // job - it's still running server-side and the email will still
+        // arrive; just try again next interval.
+      }
+    }
+
+    setProcessingMessage('Still working on this in the background - check your email for the finished report.')
   }
 
   return (
@@ -124,18 +170,30 @@ export default function App() {
             />
           )}
 
-          {validation && validation.results.length === 0 && <EmptyState />}
+          {processingMessage && !validation && (
+            <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-accent/30 bg-accent/5 p-4 text-sm text-text">
+              <span className="pulse-dot mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+              <span>{processingMessage}</span>
+            </div>
+          )}
+
+          {validation && (validation.results?.length ?? 0) === 0 && <EmptyState />}
         </div>
 
-        {validation && validation.results.length > 0 && (
+        {validation && (
           <>
             <ValidationResults
               summary={validation.summary}
-              results={validation.results}
+              results={validation.results ?? []}
               marketOpportunity={validation.marketOpportunity}
               competitors={validation.competitors}
               confidence={validation.confidence}
               whiteSpace={validation.whiteSpace}
+              swot={validation.swot}
+              mvp={validation.mvp}
+              gtm={validation.gtm}
+              sessionId={validation.sessionId}
+              apiUrl={API_URL}
               errors={validation.errors}
             />
             <p className="mx-auto mt-10 max-w-5xl border-t border-border pt-4 text-center font-mono text-xs uppercase tracking-wider text-muted">

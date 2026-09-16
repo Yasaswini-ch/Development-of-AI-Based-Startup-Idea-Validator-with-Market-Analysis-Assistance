@@ -11,7 +11,9 @@ via NER — no LLM call for competitors, by design, so the shared Groq quota goe
 Market Opportunity instead of being split across two agents. Search runs on Tavily, with
 a free DuckDuckGo/Wikipedia/Hacker News fallback so it still works without a search API
 key; academic/research-paper sources are filtered out since they don't add useful signal
-for a founder. Milestone 1 and Milestone 2 are both complete.
+for a founder. Milestones 1–3 are implemented: live research, market/competitor validation,
+SWOT and risk analysis, MVP recommendations, GTM strategy, and a session-based
+conversational advisor.
 
 ![The five research angles a submitted idea is expanded into](docs/images/five-research-angles.svg)
 
@@ -35,12 +37,14 @@ flowchart TD
     MO --> CD["Competitor Discovery\nagent/competitor_agent.py\n(local spaCy NER, no LLM call)"]
     CD --> OS["Opportunity Score\nagent/opportunity_score.py"]
     OS --> WA["White-space Analysis\nagent/white_space.py"]
-    MO --> LLM["Groq LLM\nqwen3.8-27b (primary)"]
+    WA --> SWOT["SWOT / Risk Agent\nagent/swot_agent.py"]
+    SWOT --> MVP["MVP Agent\nagent/mvp_agent.py"]
+    MVP --> GTM["GTM Agent\nagent/gtm_agent.py"]
+    MO --> LLM["Groq LLM\nqwen3.6-27b (primary)"]
     LLM -.rate limit: switch model.-> LLM2["Groq LLM\ngpt-oss-20b (fallback)"]
 
-    Retrieval --> Response["summary + results +\nmarketOpportunity + competitors +\nconfidence + whiteSpace + errors"]
-    WA --> Response
-    OS --> Response
+    Retrieval --> Response["summary + results +\nmarketOpportunity + competitors +\nerrors"]
+    GTM --> Response
     Response --> Backend
     Backend -->|JSON| Frontend
     Frontend -->|renders results,\nor inline 'unavailable' state| User
@@ -58,13 +62,13 @@ local NER step, so it always returns real (possibly empty) data.
 |--------------|----------------------------------------|
 | Frontend     | React + Tailwind CSS (`frontend/`) |
 | Backend      | FastAPI (`backend/`) — exposes `POST /validate`, with an in-memory response cache |
-| Agent framework | [CrewAI](https://www.crewai.com) — 1 LLM agent left: Market Opportunity (`market_agent.py`). Competitor Discovery (`competitor_agent.py`) was rewritten off CrewAI entirely to a local NER step (see Competitor identification below), and the Web Search summary is a plain template — see Reasoning LLM below |
-| Orchestration | [LangGraph](https://www.langchain.com/langgraph) — `web_search → confidence_indicator → market_opportunity → competitor_discovery → white_space → opportunity_score` (`backend/agent/graph.py`) |
+| Agent framework | [CrewAI](https://www.crewai.com) — bounded reasoning agents for Market Opportunity, SWOT/Risk, MVP recommendations, GTM strategy, and advisor responses. Web Search summaries and Competitor Discovery remain local/deterministic to avoid unnecessary calls |
+| Orchestration | [LangGraph](https://www.langchain.com/langgraph) — main validation pipeline plus a separate conditional chat graph (`backend/agent/graph.py`, `chat_graph.py`) |
 | Search       | Tavily API (primary), with DuckDuckGo + Wikipedia + Hacker News as a zero-cost fallback chain — fetched directly (not LLM-mediated) across 5 search angles, academic sources filtered out (`backend/agent/tools.py`, `retrieval.py`) |
-| Competitor identification | Local NER ([spaCy](https://spacy.io) `en_core_web_sm`), not an LLM call — reads competitor names directly off the already-fetched search results, by deliberate design: zero API cost, zero rate limit, and it frees the shared Groq quota for Market Opportunity. `estimatedPrice`/`featureBreadth` are rough pattern matches from nearby source text when evidence exists, otherwise `"unknown"` |
-| White-space analysis | Local post-processing over customer pain points, competitor density, and source snippets — surfaces evidence-backed opportunity gaps without another LLM call |
-| Reasoning LLM | [Groq](https://console.groq.com) — primary `qwen/qwen3.8-27b` (the original primary, `qwen3.6-27b`, was deprecated and removed by Groq mid-project — the fallback chain now also switches on `model_not_found`, not just rate limits; see `docs/milestone2-verification.md` #7), automatic fallback through two more Groq models (`openai/gpt-oss-20b`, `openai/gpt-oss-120b`) on rate limit or missing model, since Groq rate-limits per-model, not per-account — a genuinely separate quota each time, not just a longer wait on the same one (see `backend/agent/llm.py`). Each model also gets its own confirmed `reasoning_effort` setting to eliminate wasted hidden-reasoning output tokens, the actual cause of most quota-exhaustion failures. A cross-*provider* fallback to Gemini was tested and dropped (it hangs for minutes past its own timeout instead of failing fast). Only the Market Opportunity agent calls this now — the Web Search summary's LLM call was cut entirely, and Competitor Discovery was moved off the LLM path too (see above) |
+| Competitor identification | Local NER ([spaCy](https://spacy.io) `en_core_web_sm`), not an LLM call — reads competitor names directly off the already-fetched search results, by deliberate design: zero API cost, zero rate limit, and it frees the entire shared Groq quota for Market Opportunity instead of splitting it across two agents. `estimatedPrice`/`featureBreadth` are always `"unknown"` as a result — an honest trade, not a bug — the UI hides those badges and the positioning grid when nothing is classified |
+| Reasoning LLM | [Groq](https://console.groq.com) — primary `qwen/qwen3.6-27b` plus two same-provider fallback models. Per-agent output limits, compact upstream artifacts, disabled/low reasoning effort, caching, and deterministic search intent reduce quota pressure |
 | Database     | None yet |
+| Advisor state | Bounded in-memory sessions with a separate LangGraph chat flow; sessions expire and do not survive restarts |
 | Deployment   | [Render](https://render.com) — two services, config in `render.yaml` |
 | Version control | Git / GitHub |
 
@@ -151,9 +155,9 @@ or its output can't be validated, with the failure message in
 state for just that section rather than an error, since the rest of the response is
 still valid. `competitors` has no LLM call to fail this way (it's local NER), so an
 empty `competitors: []` array (not `null`) is the normal "sources didn't name an
-identifiable company" outcome, not a failure. `estimatedPrice`/`featureBreadth` are
-best-effort pattern matches from source text and remain `"unknown"` when the evidence
-doesn't support a bucket.
+identifiable company" outcome, not a failure — `estimatedPrice`/`featureBreadth` will
+also always be `"unknown"` in real responses for the same reason (see Competitor
+identification above), unlike the illustrative example below.
 
 **Error responses** — same shape either way, only the status code and message differ:
 
@@ -168,6 +172,16 @@ doesn't support a bucket.
 The frontend renders `EmptyState` when `results` comes back as an empty array (valid
 request, zero matches) and `ErrorState` with a retry button for any non-200 response.
 
+`POST /validate` also returns `sessionId`, `swot`, `mvp`, and `gtm`. The frontend uses
+the session ID with `POST /chat` (`{ sessionId, message }`) for follow-up questions.
+Chat performs one bounded search only for messages that explicitly require fresh
+information; other turns reuse the stored validation artifacts.
+
+The same `sessionId` also downloads a publication-ready PDF report via
+`GET /validate/{sessionId}/pdf` (ReportLab, `backend/agent/pdf_exporter.py`).
+`POST /export-pdf` accepts a raw validation response body directly, for callers
+that already have the payload without a live session.
+
 ## Project Structure
 
 ```
@@ -177,7 +191,7 @@ request, zero matches) and `ErrorState` with a retry button for any non-200 resp
 │   ├── main.py              # POST /validate route + in-memory response cache
 │   └── agent/
 │       ├── graph.py              # LangGraph pipeline: state + node wiring (Web Search summary is a template here, no LLM call)
-│       ├── market_agent.py        # Market Opportunity Agent (Milestone 2) - the only remaining LLM agent
+│       ├── market_agent.py        # Market Opportunity Agent (Milestone 2)
 │       ├── competitor_agent.py    # Competitor Discovery (Milestone 2) - local spaCy NER, no LLM call
 │       ├── opportunity_score.py   # Opportunity Score post-processing node (Milestone 2 stretch)
 │       ├── output_guard.py        # reasoning-leak stripping used by the Market Opportunity agent
@@ -230,38 +244,6 @@ URL set in `VITE_API_URL`.
 pip install -r requirements.txt
 streamlit run app.py
 ```
-
-## Documentation Index
-
-Comprehensive project documentation is organized into 18 dedicated modules under the [`docs/`](docs/) directory (see [`docs/README.md`](docs/README.md) for the master hub):
-
-| # | Document | Description |
-|---|---|---|
-| **01** | [`docs/01_AFFINITY_EXECUTIVE_OVERVIEW_AND_VISION.md`](docs/01_AFFINITY_EXECUTIVE_OVERVIEW_AND_VISION.md) | **Project Overview** — Executive summary, core value proposition, key stakeholders, and system highlights. |
-| **02** | [`docs/02_AFFINITY_PROBLEM_STATEMENT_AND_CORE_OBJECTIVES.md`](docs/02_AFFINITY_PROBLEM_STATEMENT_AND_CORE_OBJECTIVES.md) | **Problem Statement & Objectives** — Founder validation dilemma, market risks, research questions, and measurable goals. |
-| **03** | [`docs/03_AFFINITY_SOFTWARE_REQUIREMENTS_SPECIFICATION.md`](docs/03_AFFINITY_SOFTWARE_REQUIREMENTS_SPECIFICATION.md) | **Software Requirements Specification (SRS)** — Functional/non-functional requirements, input boundary contracts, and user stories. |
-| **04** | [`docs/04_AFFINITY_SYSTEM_TOPOLOGY_AND_DESIGN.md`](docs/04_AFFINITY_SYSTEM_TOPOLOGY_AND_DESIGN.md) | **System Design & Topology** — Multi-tier architectural topology (Client, API Gateway, Agent Orchestrator, Cloud Inference). |
-| **05** | [`docs/05_AFFINITY_AGENTIC_AI_AND_ML_ENGINE.md`](docs/05_AFFINITY_AGENTIC_AI_AND_ML_ENGINE.md) | **AI / Multi-Agent Architecture** — LangGraph orchestration, Groq LLM failover stack, Tavily search, local spaCy NER, and White-Space synthesis. |
-| **06** | [`docs/06_AFFINITY_DATA_MODELS_AND_STATE_SCHEMAS.md`](docs/06_AFFINITY_DATA_MODELS_AND_STATE_SCHEMAS.md) | **Data Models & Schema Design** — Pydantic contracts, entity schemas, stateless pipeline rationale, and SHA-256 volatile cache. |
-| **07** | [`docs/07_AFFINITY_REST_API_INTERFACE_SPECIFICATION.md`](docs/07_AFFINITY_REST_API_INTERFACE_SPECIFICATION.md) | **API Documentation** — OpenAPI specifications, REST endpoints (`/validate`, `/health`), partial failure contracts, and multi-language code snippets. |
-| **08** | [`docs/08_AFFINITY_LIVE_VERIFICATION_AND_TEST_PROTOCOL.md`](docs/08_AFFINITY_LIVE_VERIFICATION_AND_TEST_PROTOCOL.md) | **Testing & Verification** — 7-industry E2E benchmarks, forced error-state isolation suite, and anti-hallucination verification. |
-| **09** | [`docs/09_AFFINITY_CLOUD_DEPLOYMENT_AND_DEVOPS_RUNBOOKS.md`](docs/09_AFFINITY_CLOUD_DEPLOYMENT_AND_DEVOPS_RUNBOOKS.md) | **Deployment & DevOps** — Render backend/frontend hosting, environment configurations, and 7 operational incident playbooks. |
-| **10** | [`docs/10_AFFINITY_USER_OPERATIONS_AND_DOSSIER_MANUAL.md`](docs/10_AFFINITY_USER_OPERATIONS_AND_DOSSIER_MANUAL.md) | **User Guide & Operations Manual** — Step-by-step user walkthrough, pitch phrasing tips, dossier inspection, and troubleshooting. |
-| **11** | [`docs/11_AFFINITY_FINAL_CAPSTONE_PROJECT_THESIS.md`](docs/11_AFFINITY_FINAL_CAPSTONE_PROJECT_THESIS.md) | **Final Academic Capstone Report** — Capstone methodology, team task divisions, novelty, limitations, and mentor Q&A. |
-| **12** | [`docs/12_AFFINITY_VISUAL_ARCHITECTURE_DIAGRAM_GALLERY.md`](docs/12_AFFINITY_VISUAL_ARCHITECTURE_DIAGRAM_GALLERY.md) | **System Architecture & Diagrams Gallery** — Full suite of GFM-compliant Mermaid diagrams (Topology, Sequence, DFD, Matrix, User Journey). |
-| **13** | [`docs/13_AFFINITY_UNIT_ECONOMICS_COST_AND_ACCURACY_METRICS.md`](docs/13_AFFINITY_UNIT_ECONOMICS_COST_AND_ACCURACY_METRICS.md) | **API Cost, Accuracy & System Metrics** — Quantitative unit economics, Groq token costs, Tavily credits, and latency benchmarks. |
-| **14** | [`docs/14_AFFINITY_COMPETITOR_GRID_AND_POSITIONING_PARSER.md`](docs/14_AFFINITY_COMPETITOR_GRID_AND_POSITIONING_PARSER.md) | **Competitor Positioning & Grid Mapping** — spaCy NER entity discovery, product context qualification (`_has_product_context`), 3x3 grid algorithm. |
-| **15** | [`docs/15_AFFINITY_OPPORTUNITY_SCORE_MATHEMATICAL_MODEL.md`](docs/15_AFFINITY_OPPORTUNITY_SCORE_MATHEMATICAL_MODEL.md) | **Opportunity Score Mathematical Model** — Mathematical derivation ($\text{Score} = \text{Clamp}(50 + S_{\text{mkt}} + S_{\text{growth}} - S_{\text{den}} + S_{\text{gaps}})$, 0-100 bounds). |
-| **16** | [`docs/16_AFFINITY_SEARCH_RETRIEVAL_AND_DOMAIN_FILTER.md`](docs/16_AFFINITY_SEARCH_RETRIEVAL_AND_DOMAIN_FILTER.md) | **Search Retrieval & Domain Filter** — 5-angle query expansion, domain exclusion (`_EXCLUDED_DOMAINS`), zero-cost search fallback chain. |
-| **17** | [`docs/17_AFFINITY_MILESTONE_3_4_TECHNICAL_ROADMAP.md`](docs/17_AFFINITY_MILESTONE_3_4_TECHNICAL_ROADMAP.md) | **Milestone 3 & 4 Technical Roadmap** — Technical spec for PDF export, competitor matrix, user accounts, and webhooks. |
-| **18** | [`docs/18_AFFINITY_ACADEMIC_VIVA_SLIDE_DECK_OUTLINE.md`](docs/18_AFFINITY_ACADEMIC_VIVA_SLIDE_DECK_OUTLINE.md) | **Academic Viva Presentation Outline** — 15-slide presentation deck outline, speaker notes, and capstone defense Q&A. |
-| **19** | [`docs/19_AFFINITY_MILESTONE_3_POSTGRESQL_AUTH_AND_DATA_PERSISTENCE.md`](docs/19_AFFINITY_MILESTONE_3_POSTGRESQL_AUTH_AND_DATA_PERSISTENCE.md) | **Milestone 3 Data Persistence & Auth** — PostgreSQL ER diagram, JWT authentication lifecycle, RBAC rules. |
-| **20** | [`docs/20_AFFINITY_MILESTONE_3_PDF_DOSSIER_EXPORTER_AND_REPORTS.md`](docs/20_AFFINITY_MILESTONE_3_PDF_DOSSIER_EXPORTER_AND_REPORTS.md) | **Milestone 3 PDF Report Exporter** — ReportLab / Playwright compilation pipeline and binary PDF export API. |
-| **21** | [`docs/21_AFFINITY_MILESTONE_3_DEAL_SCREENING_AND_COMPARISON_MATRIX.md`](docs/21_AFFINITY_MILESTONE_3_DEAL_SCREENING_AND_COMPARISON_MATRIX.md) | **Milestone 3 Deal Screening Matrix** — Side-by-side multi-idea candidate comparison matrix API. |
-
-
-
----
 
 ## Branching Strategy
 
