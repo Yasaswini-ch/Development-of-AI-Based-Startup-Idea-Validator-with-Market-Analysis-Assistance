@@ -27,5 +27,7 @@ docs/claude-code-prompts.md
 
 # Agent handoff doc - local reference only, not for the shared repo
 AGENTS.md
+docs/AFFINITY_GEMINI_IMAGE_GENERATION_PROMPTS.md
 
 backend/venv/
+

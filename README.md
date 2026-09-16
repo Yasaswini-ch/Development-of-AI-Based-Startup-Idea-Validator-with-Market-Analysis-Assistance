@@ -233,23 +233,33 @@ streamlit run app.py
 
 ## Documentation Index
 
-Comprehensive project documentation is organized into 13 dedicated modules under the [`docs/`](docs/) directory:
+Comprehensive project documentation is organized into 18 dedicated modules under the [`docs/`](docs/) directory (see [`docs/README.md`](docs/README.md) for the master hub):
 
 | # | Document | Description |
 |---|---|---|
-| **01** | [`docs/01_PROJECT_OVERVIEW.md`](docs/01_PROJECT_OVERVIEW.md) | **Project Overview** — Executive summary, core value proposition, key stakeholders, and system highlights. |
-| **02** | [`docs/02_PROBLEM_STATEMENT_AND_OBJECTIVES.md`](docs/02_PROBLEM_STATEMENT_AND_OBJECTIVES.md) | **Problem Statement & Objectives** — Founder validation dilemma, market risks, research questions, and measurable goals. |
-| **03** | [`docs/03_SRS_REQUIREMENTS.md`](docs/03_SRS_REQUIREMENTS.md) | **Software Requirements Specification (SRS)** — Functional/non-functional requirements, input boundary contracts, and user stories. |
-| **04** | [`docs/04_SYSTEM_DESIGN.md`](docs/04_SYSTEM_DESIGN.md) | **System Design & Topology** — Multi-tier architectural topology (Client, API Gateway, Agent Orchestrator, Cloud Inference). |
-| **05** | [`docs/05_AI_ML_ARCHITECTURE.md`](docs/05_AI_ML_ARCHITECTURE.md) | **AI / Multi-Agent Architecture** — LangGraph orchestration, Groq LLM failover stack, Tavily search, local spaCy NER, and White-Space synthesis. |
-| **06** | [`docs/06_DATABASE_AND_DATA_MODELS.md`](docs/06_DATABASE_AND_DATA_MODELS.md) | **Data Models & Schema Design** — Pydantic contracts, entity schemas, stateless pipeline rationale, and SHA-256 volatile cache. |
-| **07** | [`docs/07_API_DOCUMENTATION.md`](docs/07_API_DOCUMENTATION.md) | **API Documentation** — OpenAPI specifications, REST endpoints (`/validate`, `/health`), partial failure contracts, and multi-language code snippets. |
-| **08** | [`docs/08_TESTING_DOCUMENTATION.md`](docs/08_TESTING_DOCUMENTATION.md) | **Testing & Verification** — 7-industry E2E benchmarks, forced error-state isolation suite, and anti-hallucination verification. |
-| **09** | [`docs/09_DEPLOYMENT_DOCUMENTATION.md`](docs/09_DEPLOYMENT_DOCUMENTATION.md) | **Deployment & DevOps** — Render backend/frontend hosting, environment configurations, and 7 operational incident playbooks. |
-| **10** | [`docs/10_USER_GUIDE.md`](docs/10_USER_GUIDE.md) | **User Guide & Operations Manual** — Step-by-step user walkthrough, pitch phrasing tips, dossier inspection, and troubleshooting. |
-| **11** | [`docs/11_FINAL_PROJECT_REPORT.md`](docs/11_FINAL_PROJECT_REPORT.md) | **Final Academic Capstone Report** — Capstone methodology, team task divisions, novelty, limitations, and mentor Q&A. |
-| **12** | [`docs/12_SYSTEM_ARCHITECTURE_DIAGRAMS.md`](docs/12_SYSTEM_ARCHITECTURE_DIAGRAMS.md) | **System Architecture & Diagrams Gallery** — Full suite of GFM-compliant Mermaid diagrams (Topology, Sequence, DFD, Matrix, User Journey). |
-| **13** | [`docs/13_API_COST_ACCURACY_AND_SYSTEM_METRICS.md`](docs/13_API_COST_ACCURACY_AND_SYSTEM_METRICS.md) | **API Cost, Accuracy & System Metrics** — Quantitative unit economics, Groq token costs, Tavily credits, and latency benchmarks. |
+| **01** | [`docs/01_AFFINITY_EXECUTIVE_OVERVIEW_AND_VISION.md`](docs/01_AFFINITY_EXECUTIVE_OVERVIEW_AND_VISION.md) | **Project Overview** — Executive summary, core value proposition, key stakeholders, and system highlights. |
+| **02** | [`docs/02_AFFINITY_PROBLEM_STATEMENT_AND_CORE_OBJECTIVES.md`](docs/02_AFFINITY_PROBLEM_STATEMENT_AND_CORE_OBJECTIVES.md) | **Problem Statement & Objectives** — Founder validation dilemma, market risks, research questions, and measurable goals. |
+| **03** | [`docs/03_AFFINITY_SOFTWARE_REQUIREMENTS_SPECIFICATION.md`](docs/03_AFFINITY_SOFTWARE_REQUIREMENTS_SPECIFICATION.md) | **Software Requirements Specification (SRS)** — Functional/non-functional requirements, input boundary contracts, and user stories. |
+| **04** | [`docs/04_AFFINITY_SYSTEM_TOPOLOGY_AND_DESIGN.md`](docs/04_AFFINITY_SYSTEM_TOPOLOGY_AND_DESIGN.md) | **System Design & Topology** — Multi-tier architectural topology (Client, API Gateway, Agent Orchestrator, Cloud Inference). |
+| **05** | [`docs/05_AFFINITY_AGENTIC_AI_AND_ML_ENGINE.md`](docs/05_AFFINITY_AGENTIC_AI_AND_ML_ENGINE.md) | **AI / Multi-Agent Architecture** — LangGraph orchestration, Groq LLM failover stack, Tavily search, local spaCy NER, and White-Space synthesis. |
+| **06** | [`docs/06_AFFINITY_DATA_MODELS_AND_STATE_SCHEMAS.md`](docs/06_AFFINITY_DATA_MODELS_AND_STATE_SCHEMAS.md) | **Data Models & Schema Design** — Pydantic contracts, entity schemas, stateless pipeline rationale, and SHA-256 volatile cache. |
+| **07** | [`docs/07_AFFINITY_REST_API_INTERFACE_SPECIFICATION.md`](docs/07_AFFINITY_REST_API_INTERFACE_SPECIFICATION.md) | **API Documentation** — OpenAPI specifications, REST endpoints (`/validate`, `/health`), partial failure contracts, and multi-language code snippets. |
+| **08** | [`docs/08_AFFINITY_LIVE_VERIFICATION_AND_TEST_PROTOCOL.md`](docs/08_AFFINITY_LIVE_VERIFICATION_AND_TEST_PROTOCOL.md) | **Testing & Verification** — 7-industry E2E benchmarks, forced error-state isolation suite, and anti-hallucination verification. |
+| **09** | [`docs/09_AFFINITY_CLOUD_DEPLOYMENT_AND_DEVOPS_RUNBOOKS.md`](docs/09_AFFINITY_CLOUD_DEPLOYMENT_AND_DEVOPS_RUNBOOKS.md) | **Deployment & DevOps** — Render backend/frontend hosting, environment configurations, and 7 operational incident playbooks. |
+| **10** | [`docs/10_AFFINITY_USER_OPERATIONS_AND_DOSSIER_MANUAL.md`](docs/10_AFFINITY_USER_OPERATIONS_AND_DOSSIER_MANUAL.md) | **User Guide & Operations Manual** — Step-by-step user walkthrough, pitch phrasing tips, dossier inspection, and troubleshooting. |
+| **11** | [`docs/11_AFFINITY_FINAL_CAPSTONE_PROJECT_THESIS.md`](docs/11_AFFINITY_FINAL_CAPSTONE_PROJECT_THESIS.md) | **Final Academic Capstone Report** — Capstone methodology, team task divisions, novelty, limitations, and mentor Q&A. |
+| **12** | [`docs/12_AFFINITY_VISUAL_ARCHITECTURE_DIAGRAM_GALLERY.md`](docs/12_AFFINITY_VISUAL_ARCHITECTURE_DIAGRAM_GALLERY.md) | **System Architecture & Diagrams Gallery** — Full suite of GFM-compliant Mermaid diagrams (Topology, Sequence, DFD, Matrix, User Journey). |
+| **13** | [`docs/13_AFFINITY_UNIT_ECONOMICS_COST_AND_ACCURACY_METRICS.md`](docs/13_AFFINITY_UNIT_ECONOMICS_COST_AND_ACCURACY_METRICS.md) | **API Cost, Accuracy & System Metrics** — Quantitative unit economics, Groq token costs, Tavily credits, and latency benchmarks. |
+| **14** | [`docs/14_AFFINITY_COMPETITOR_GRID_AND_POSITIONING_PARSER.md`](docs/14_AFFINITY_COMPETITOR_GRID_AND_POSITIONING_PARSER.md) | **Competitor Positioning & Grid Mapping** — spaCy NER entity discovery, product context qualification (`_has_product_context`), 3x3 grid algorithm. |
+| **15** | [`docs/15_AFFINITY_OPPORTUNITY_SCORE_MATHEMATICAL_MODEL.md`](docs/15_AFFINITY_OPPORTUNITY_SCORE_MATHEMATICAL_MODEL.md) | **Opportunity Score Mathematical Model** — Mathematical derivation ($\text{Score} = \text{Clamp}(50 + S_{\text{mkt}} + S_{\text{growth}} - S_{\text{den}} + S_{\text{gaps}})$, 0-100 bounds). |
+| **16** | [`docs/16_AFFINITY_SEARCH_RETRIEVAL_AND_DOMAIN_FILTER.md`](docs/16_AFFINITY_SEARCH_RETRIEVAL_AND_DOMAIN_FILTER.md) | **Search Retrieval & Domain Filter** — 5-angle query expansion, domain exclusion (`_EXCLUDED_DOMAINS`), zero-cost search fallback chain. |
+| **17** | [`docs/17_AFFINITY_MILESTONE_3_4_TECHNICAL_ROADMAP.md`](docs/17_AFFINITY_MILESTONE_3_4_TECHNICAL_ROADMAP.md) | **Milestone 3 & 4 Technical Roadmap** — Technical spec for PDF export, competitor matrix, user accounts, and webhooks. |
+| **18** | [`docs/18_AFFINITY_ACADEMIC_VIVA_SLIDE_DECK_OUTLINE.md`](docs/18_AFFINITY_ACADEMIC_VIVA_SLIDE_DECK_OUTLINE.md) | **Academic Viva Presentation Outline** — 15-slide presentation deck outline, speaker notes, and capstone defense Q&A. |
+| **19** | [`docs/19_AFFINITY_MILESTONE_3_POSTGRESQL_AUTH_AND_DATA_PERSISTENCE.md`](docs/19_AFFINITY_MILESTONE_3_POSTGRESQL_AUTH_AND_DATA_PERSISTENCE.md) | **Milestone 3 Data Persistence & Auth** — PostgreSQL ER diagram, JWT authentication lifecycle, RBAC rules. |
+| **20** | [`docs/20_AFFINITY_MILESTONE_3_PDF_DOSSIER_EXPORTER_AND_REPORTS.md`](docs/20_AFFINITY_MILESTONE_3_PDF_DOSSIER_EXPORTER_AND_REPORTS.md) | **Milestone 3 PDF Report Exporter** — ReportLab / Playwright compilation pipeline and binary PDF export API. |
+| **21** | [`docs/21_AFFINITY_MILESTONE_3_DEAL_SCREENING_AND_COMPARISON_MATRIX.md`](docs/21_AFFINITY_MILESTONE_3_DEAL_SCREENING_AND_COMPARISON_MATRIX.md) | **Milestone 3 Deal Screening Matrix** — Side-by-side multi-idea candidate comparison matrix API. |
+
+
 
 ---
 

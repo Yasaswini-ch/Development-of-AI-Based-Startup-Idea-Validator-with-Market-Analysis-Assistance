@@ -29,15 +29,15 @@ According to CB Insights, **42% of startups fail due to lack of market need**, w
 ```mermaid
 flowchart TD
     subgraph Matrix["Target Audience Segmentation Matrix"]
-        direction TB
         subgraph HighResearch["High Research Frequency"]
-            P2["Student Entrepreneurs<br/>(Campus Pitch Competitions & Incubators)"]
-            P1["Solo Bootstrappers<br/>(Side Projects & Indie Hackers)"]
+            P2["Student Entrepreneurs\n(Campus Pitch Competitions & Incubators)"]
+            P1["Solo Bootstrappers\n(Side Projects & Indie Hackers)"]
         end
         subgraph LowResearch["Low Research Frequency"]
-            P4["Angel Investors & VC Analysts<br/>(Deal Screening & Due Diligence)"]
-            P3["Enterprise Product Managers<br/>(Feature Roadmaps & Vertical Expansion)"]
+            P4["Angel Investors & VC Analysts\n(Deal Screening & Due Diligence)"]
+            P3["Enterprise Product Managers\n(Feature Roadmaps & Vertical Expansion)"]
         end
+        HighResearch --- LowResearch
     end
 ```
 
@@ -160,10 +160,10 @@ flowchart LR
 
     subgraph Phase2["2. Hybrid Execution Pipeline"]
         direction TB
-        B1["Multi-angle Web Search<br/>(Tavily / DDG Fallback)"] --> B2["Source Agreement Engine<br/>(confidence.py)"]
-        B2 --> B3["Market Opportunity LLM Agent<br/>(market_agent.py)"]
-        B3 --> B4["Competitor Discovery NER<br/>(competitor_agent.py)"]
-        B4 --> B5["White-space & Score Engine<br/>(white_space.py & opportunity_score.py)"]
+        B1["Multi-angle Web Search\n(Tavily / DDG Fallback)"] --> B2["Source Agreement Engine\n(confidence.py)"]
+        B2 --> B3["Market Opportunity LLM Agent\n(market_agent.py)"]
+        B3 --> B4["Competitor Discovery NER\n(competitor_agent.py)"]
+        B4 --> B5["White-space & Score Engine\n(white_space.py & opportunity_score.py)"]
     end
 
     subgraph Phase3["3. Interactive Results Display"]
@@ -173,7 +173,8 @@ flowchart LR
         C3 --> C4["Analyze White-Space Gaps & Sources"]
     end
 
-    Phase1 --> Phase2 --> Phase3
+    A3 --> B1
+    B5 --> C1
 ```
 
 ---
