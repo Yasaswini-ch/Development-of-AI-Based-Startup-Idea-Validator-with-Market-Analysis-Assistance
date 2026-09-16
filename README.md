@@ -233,19 +233,23 @@ streamlit run app.py
 
 ## Documentation Index
 
-Comprehensive project documentation is organized under the [`docs/`](docs/) directory:
+Comprehensive project documentation is organized into 13 dedicated modules under the [`docs/`](docs/) directory:
 
-| Document | Purpose & Scope |
-|---|---|
-| [`docs/architecture.md`](docs/architecture.md) | **System Architecture** — Full data flow, agent pipeline, state graph, and API contracts. |
-| [`docs/prompt-engineering-agent-design.md`](docs/prompt-engineering-agent-design.md) | **Prompt Engineering & Agent Design** — Hybrid LLM/NER rationale, prompt templates, token tuning (`reasoning_effort`), and JSON repair. |
-| [`docs/api-cost-accuracy-performance-metrics.md`](docs/api-cost-accuracy-performance-metrics.md) | **API Metrics & Costs** — Comprehensive cost breakdown, latency benchmarks, accuracy stats, and quota optimizations. |
-| [`docs/security-privacy-ethics.md`](docs/security-privacy-ethics.md) | **Security, Privacy & Ethics** — Zero database storage policy, 30-min volatile cache, search query anonymization, and hallucination safeguards. |
-| [`docs/api-reference.md`](docs/api-reference.md) | **API Reference** — Complete TypeScript schemas, endpoints (`/validate`, `/health`, `/`), partial-failure response contracts, and cURL/Python/JS code samples. |
-| [`docs/product-strategy-and-personas.md`](docs/product-strategy-and-personas.md) | **Product Strategy & Personas** — Target user personas, Jobs-to-be-done (JTBD), value proposition matrix, user journey maps, and strategic roadmap. |
-| [`docs/ops-runbook-troubleshooting.md`](docs/ops-runbook-troubleshooting.md) | **Operations & Troubleshooting Runbook** — Local setup, Render deployment configuration, 7 incident playbooks, and diagnostic commands. |
-| [`docs/milestone2-verification.md`](docs/milestone2-verification.md) | **Verification Log** — Live empirical proof, test logs, error-state isolation checks, and regression verification. |
-| [`docs/milestone2-status.md`](docs/milestone2-status.md) | **Milestone Status** — Feature completion timeline, team task divisions, and milestone deliverables tracking. |
+| # | Document | Description |
+|---|---|---|
+| **01** | [`docs/01_PROJECT_OVERVIEW.md`](docs/01_PROJECT_OVERVIEW.md) | **Project Overview** — Executive summary, core value proposition, key stakeholders, and system highlights. |
+| **02** | [`docs/02_PROBLEM_STATEMENT_AND_OBJECTIVES.md`](docs/02_PROBLEM_STATEMENT_AND_OBJECTIVES.md) | **Problem Statement & Objectives** — Founder validation dilemma, market risks, research questions, and measurable goals. |
+| **03** | [`docs/03_SRS_REQUIREMENTS.md`](docs/03_SRS_REQUIREMENTS.md) | **Software Requirements Specification (SRS)** — Functional/non-functional requirements, input boundary contracts, and user stories. |
+| **04** | [`docs/04_SYSTEM_DESIGN.md`](docs/04_SYSTEM_DESIGN.md) | **System Design & Topology** — Multi-tier architectural topology (Client, API Gateway, Agent Orchestrator, Cloud Inference). |
+| **05** | [`docs/05_AI_ML_ARCHITECTURE.md`](docs/05_AI_ML_ARCHITECTURE.md) | **AI / Multi-Agent Architecture** — LangGraph orchestration, Groq LLM failover stack, Tavily search, local spaCy NER, and White-Space synthesis. |
+| **06** | [`docs/06_DATABASE_AND_DATA_MODELS.md`](docs/06_DATABASE_AND_DATA_MODELS.md) | **Data Models & Schema Design** — Pydantic contracts, entity schemas, stateless pipeline rationale, and SHA-256 volatile cache. |
+| **07** | [`docs/07_API_DOCUMENTATION.md`](docs/07_API_DOCUMENTATION.md) | **API Documentation** — OpenAPI specifications, REST endpoints (`/validate`, `/health`), partial failure contracts, and multi-language code snippets. |
+| **08** | [`docs/08_TESTING_DOCUMENTATION.md`](docs/08_TESTING_DOCUMENTATION.md) | **Testing & Verification** — 7-industry E2E benchmarks, forced error-state isolation suite, and anti-hallucination verification. |
+| **09** | [`docs/09_DEPLOYMENT_DOCUMENTATION.md`](docs/09_DEPLOYMENT_DOCUMENTATION.md) | **Deployment & DevOps** — Render backend/frontend hosting, environment configurations, and 7 operational incident playbooks. |
+| **10** | [`docs/10_USER_GUIDE.md`](docs/10_USER_GUIDE.md) | **User Guide & Operations Manual** — Step-by-step user walkthrough, pitch phrasing tips, dossier inspection, and troubleshooting. |
+| **11** | [`docs/11_FINAL_PROJECT_REPORT.md`](docs/11_FINAL_PROJECT_REPORT.md) | **Final Academic Capstone Report** — Capstone methodology, team task divisions, novelty, limitations, and mentor Q&A. |
+| **12** | [`docs/12_SYSTEM_ARCHITECTURE_DIAGRAMS.md`](docs/12_SYSTEM_ARCHITECTURE_DIAGRAMS.md) | **System Architecture & Diagrams Gallery** — Full suite of GFM-compliant Mermaid diagrams (Topology, Sequence, DFD, Matrix, User Journey). |
+| **13** | [`docs/13_API_COST_ACCURACY_AND_SYSTEM_METRICS.md`](docs/13_API_COST_ACCURACY_AND_SYSTEM_METRICS.md) | **API Cost, Accuracy & System Metrics** — Quantitative unit economics, Groq token costs, Tavily credits, and latency benchmarks. |
 
 ---
 
