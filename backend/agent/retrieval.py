@@ -110,12 +110,25 @@ def _compact_subject(text: str, max_words: int = 10) -> str:
     # continue with "that/which ...". Search engines perform better when the
     # long feature clause is removed from every angle.
     cleaned = re.split(r"\b(?:that|which)\b", cleaned, maxsplit=1, flags=re.IGNORECASE)[0]
-    cleaned = re.sub(
-        r"^(?:an?\s+|the\s+)?(?:ai[- ]powered|artificial intelligence[- ]powered|smart|intelligent)\s+",
-        "",
-        cleaned,
-        flags=re.IGNORECASE,
+    # "AI"/"artificial intelligence" is generic marketing language in almost
+    # every pitch today, not a distinguishing word - and unlike the
+    # "-powered" phrasing this used to require, founders overwhelmingly
+    # phrase it as a bare leading adjective ("AI resume tool", "AI meal
+    # planner"). Confirmed live: without also stripping the bare form, "AI"
+    # itself became every angle's search subject for such ideas, surfacing
+    # generic AI-company results (OpenAI, Google, Claude) instead of
+    # anything about the actual product. Loops so a stacked
+    # "an AI-powered smart resume tool" strips both adjectives, not just one.
+    _leading_adjective = re.compile(
+        r"^(?:an?\s+|the\s+)?"
+        r"(?:ai(?:[- ]powered)?|artificial intelligence(?:[- ]powered)?|smart|intelligent)\s+",
+        re.IGNORECASE,
     )
+    while True:
+        stripped = _leading_adjective.sub("", cleaned)
+        if stripped == cleaned:
+            break
+        cleaned = stripped
     # A leading "a/an/the" is dead weight in a search query regardless of
     # what follows it - strip it unconditionally, not just ahead of an
     # "ai-powered" style adjective.
