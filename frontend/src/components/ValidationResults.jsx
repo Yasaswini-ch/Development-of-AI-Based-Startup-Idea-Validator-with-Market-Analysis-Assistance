@@ -4,8 +4,19 @@ import { IconTrendingUp, IconUsers, IconShield, IconNewspaper, IconGlobe } from 
 import MarketOpportunity from './MarketOpportunity'
 import CompetitorAnalysis from './CompetitorAnalysis'
 import WhiteSpaceAnalysis from './WhiteSpaceAnalysis'
+import SwotAnalysis from './SwotAnalysis'
+import MvpRecommendations from './MvpRecommendations'
+import GtmStrategy from './GtmStrategy'
+import ChatAdvisor from './ChatAdvisor'
 
 const INITIAL_VISIBLE = 3
+const RESEARCH_ANGLES = [
+  'Market size & trends',
+  'Competitors',
+  'Industry news',
+  'Customer demand',
+  'How others solve this',
+]
 
 const ANGLE_ICONS = {
   'market size & trends': IconTrendingUp,
@@ -88,6 +99,11 @@ function AngleGroup({ angle, items }) {
         )}
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {items.length === 0 && (
+          <p className="rounded-xl border border-dashed border-border bg-panel p-4 text-sm text-muted sm:col-span-2 lg:col-span-3">
+            No reliable sources were returned for this research angle.
+          </p>
+        )}
         {visible.map((r, i) => (
           <ResultCard key={r.url || i} r={r} isTop={r.score === topScore} />
         ))}
@@ -101,6 +117,9 @@ const TABS = [
   { key: 'market', label: 'Market Opportunity' },
   { key: 'competitors', label: 'Competitors' },
   { key: 'white-space', label: 'White Space' },
+  { key: 'swot', label: 'SWOT & Risks' },
+  { key: 'mvp', label: 'MVP' },
+  { key: 'gtm', label: 'Go to Market' },
 ]
 
 export default function ValidationResults({
@@ -109,12 +128,17 @@ export default function ValidationResults({
   marketOpportunity,
   competitors,
   whiteSpace,
+  swot,
+  mvp,
+  gtm,
+  sessionId,
+  apiUrl,
   errors,
 }) {
   const [activeTab, setActiveTab] = useState('sources')
 
   const groups = []
-  const order = []
+  const order = [...RESEARCH_ANGLES]
   for (const r of results) {
     const key = r.angle || 'Sources'
     if (!order.includes(key)) order.push(key)
@@ -153,8 +177,9 @@ export default function ValidationResults({
 
       {/* Pill tab switcher, not the classic underline-tabs strip - the
           active tab gets its own raised pill instead of a line underneath. */}
-      <div className="mt-6 inline-flex gap-0.5 rounded-full bg-border p-1">
-        {TABS.map((t) => {
+      <div className="mt-6 max-w-full overflow-x-auto pb-1">
+        <div className="inline-flex min-w-max gap-0.5 rounded-full bg-border p-1">
+          {TABS.map((t) => {
           const active = activeTab === t.key
           const count = t.key === 'sources' ? results.length : t.key === 'competitors' ? competitorCount : null
           return (
@@ -178,15 +203,20 @@ export default function ValidationResults({
               )}
             </button>
           )
-        })}
+          })}
+        </div>
       </div>
 
       <div className="mt-6">
         {activeTab === 'sources' && (
           <div className="space-y-8">
-            {groups.map((g) => (
-              <AngleGroup key={g.angle} angle={g.angle} items={g.items} />
-            ))}
+            {groups.length > 0 ? (
+              groups.map((g) => <AngleGroup key={g.angle} angle={g.angle} items={g.items} />)
+            ) : (
+              <p className="rounded-2xl border border-border bg-panel p-6 text-center text-sm text-muted">
+                No research sources were returned.
+              </p>
+            )}
           </div>
         )}
 
@@ -207,7 +237,27 @@ export default function ValidationResults({
             <WhiteSpaceAnalysis data={whiteSpace} />
           </div>
         )}
+
+        {activeTab === 'swot' && (
+          <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+            <SwotAnalysis data={swot} error={errors?.swot} />
+          </div>
+        )}
+
+        {activeTab === 'mvp' && (
+          <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+            <MvpRecommendations data={mvp} error={errors?.mvp} />
+          </div>
+        )}
+
+        {activeTab === 'gtm' && (
+          <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+            <GtmStrategy data={gtm} error={errors?.gtm} />
+          </div>
+        )}
       </div>
+
+      {sessionId && <ChatAdvisor key={sessionId} sessionId={sessionId} apiUrl={apiUrl} />}
     </div>
   )
 }
