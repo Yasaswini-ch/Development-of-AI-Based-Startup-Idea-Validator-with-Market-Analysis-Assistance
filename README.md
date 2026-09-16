@@ -231,6 +231,24 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+## Documentation Index
+
+Comprehensive project documentation is organized under the [`docs/`](docs/) directory:
+
+| Document | Purpose & Scope |
+|---|---|
+| [`docs/architecture.md`](docs/architecture.md) | **System Architecture** — Full data flow, agent pipeline, state graph, and API contracts. |
+| [`docs/prompt-engineering-agent-design.md`](docs/prompt-engineering-agent-design.md) | **Prompt Engineering & Agent Design** — Hybrid LLM/NER rationale, prompt templates, token tuning (`reasoning_effort`), and JSON repair. |
+| [`docs/api-cost-accuracy-performance-metrics.md`](docs/api-cost-accuracy-performance-metrics.md) | **API Metrics & Costs** — Comprehensive cost breakdown, latency benchmarks, accuracy stats, and quota optimizations. |
+| [`docs/security-privacy-ethics.md`](docs/security-privacy-ethics.md) | **Security, Privacy & Ethics** — Zero database storage policy, 30-min volatile cache, search query anonymization, and hallucination safeguards. |
+| [`docs/api-reference.md`](docs/api-reference.md) | **API Reference** — Complete TypeScript schemas, endpoints (`/validate`, `/health`, `/`), partial-failure response contracts, and cURL/Python/JS code samples. |
+| [`docs/product-strategy-and-personas.md`](docs/product-strategy-and-personas.md) | **Product Strategy & Personas** — Target user personas, Jobs-to-be-done (JTBD), value proposition matrix, user journey maps, and strategic roadmap. |
+| [`docs/ops-runbook-troubleshooting.md`](docs/ops-runbook-troubleshooting.md) | **Operations & Troubleshooting Runbook** — Local setup, Render deployment configuration, 7 incident playbooks, and diagnostic commands. |
+| [`docs/milestone2-verification.md`](docs/milestone2-verification.md) | **Verification Log** — Live empirical proof, test logs, error-state isolation checks, and regression verification. |
+| [`docs/milestone2-status.md`](docs/milestone2-status.md) | **Milestone Status** — Feature completion timeline, team task divisions, and milestone deliverables tracking. |
+
+---
+
 ## Branching Strategy
 
 - **`staging`** — active development branch. All feature work and fixes land here first.
