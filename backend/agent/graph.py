@@ -6,6 +6,7 @@ from langgraph.graph import END, START, StateGraph
 from . import retrieval
 from .competitor_agent import analyze_competitors
 from .market_agent import analyze_market_opportunity
+from .mvp_agent import analyze_mvp_features
 from .opportunity_score import calculate_opportunity_score
 from .swot_agent import analyze_swot_and_risk
 from .white_space import analyze_white_space
@@ -72,6 +73,9 @@ class PipelineState(TypedDict, total=False):
 
     # Milestone 3: SWOT & Risk Analysis
     swot: dict
+
+    # Milestone 3: MVP Feature Recommendations
+    mvp: dict
 
     # Errors
     error: str
@@ -522,6 +526,48 @@ def swot_node(state: PipelineState) -> PipelineState:
 
 
 # --------------------------------------------------
+# MILESTONE 3: MVP FEATURE RECOMMENDATIONS
+# --------------------------------------------------
+
+def mvp_node(state: PipelineState) -> PipelineState:
+    """MVP Feature Recommendation Agent."""
+
+    logger.info("[mvp] START")
+
+    if state.get("error"):
+        logger.warning("[mvp] Skipped because web search failed")
+        return state
+
+    try:
+        mvp_data = analyze_mvp_features(
+            state["idea"],
+            state.get("targetCustomer", ""),
+            state.get("problem", ""),
+            state.get("marketOpportunity"),
+            state.get("whiteSpace"),
+            state.get("competitors"),
+            state.get("results", []),
+        )
+    except Exception as exc:
+        logger.exception("[mvp] FAILED")
+        errors = {
+            **state.get("errors", {}),
+            "mvp": _friendly_error_message(exc),
+        }
+        return {
+            **state,
+            "mvp": None,
+            "errors": errors,
+        }
+
+    logger.info("[mvp] COMPLETE")
+    return {
+        **state,
+        "mvp": mvp_data,
+    }
+
+
+# --------------------------------------------------
 # BUILD LANGGRAPH PIPELINE
 # --------------------------------------------------
 
@@ -539,6 +585,7 @@ def build_pipeline():
 
     # Milestone 3 features
     graph.add_node("swot_analysis", swot_node)
+    graph.add_node("mvp_recommendation", mvp_node)
 
     # Pipeline flow
     graph.add_edge(START, "web_search")
@@ -547,9 +594,10 @@ def build_pipeline():
     graph.add_edge("market_opportunity", "competitor_discovery")
     graph.add_edge("competitor_discovery", "white_space")
     graph.add_edge("white_space", "swot_analysis")
+    graph.add_edge("swot_analysis", "mvp_recommendation")
 
-    # Calculate score after both analyses are available
-    graph.add_edge("swot_analysis", "opportunity_score")
+    # Calculate score after all analyses are available
+    graph.add_edge("mvp_recommendation", "opportunity_score")
     graph.add_edge("opportunity_score", END)
 
     return graph.compile()
