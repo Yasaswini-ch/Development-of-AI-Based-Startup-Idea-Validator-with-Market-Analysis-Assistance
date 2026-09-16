@@ -3,7 +3,6 @@ import useCountUp from '../hooks/useCountUp'
 import { IconTrendingUp, IconUsers, IconShield, IconNewspaper, IconGlobe } from './icons'
 import MarketOpportunity from './MarketOpportunity'
 import CompetitorAnalysis from './CompetitorAnalysis'
-import SourceAgreement from './SourceAgreement'
 import WhiteSpaceAnalysis from './WhiteSpaceAnalysis'
 import SwotAnalysis from './SwotAnalysis'
 import MvpRecommendations from './MvpRecommendations'
@@ -128,7 +127,6 @@ export default function ValidationResults({
   results,
   marketOpportunity,
   competitors,
-  confidence: confidenceProp,
   whiteSpace,
   swot,
   mvp,
@@ -234,7 +232,7 @@ export default function ValidationResults({
           </div>
         )}
 
-        {activeTab === 'whitespace' && (
+        {activeTab === 'white-space' && (
           <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
             <WhiteSpaceAnalysis data={whiteSpace} />
           </div>
