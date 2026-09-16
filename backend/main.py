@@ -10,7 +10,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from agent.chat_agent import advisor_respond
 from agent.graph import pipeline
+from agent.session_store import create_session
 
 
 # --------------------------------------------------
@@ -115,6 +117,11 @@ class ValidateRequest(BaseModel):
     idea: str
     targetCustomer: str = ""
     problem: str = ""
+
+
+class ChatRequest(BaseModel):
+    sessionId: str
+    message: str
 
 
 # --------------------------------------------------
@@ -224,11 +231,12 @@ def validate_idea(payload: ValidateRequest):
             },
         )
 
-    # ----------------------------------------------
-    # Prepare response
-    # ----------------------------------------------
+    # Milestone 3: Create Session ID
+    session_id = create_session(state)
 
     response = {
+        "sessionId": session_id,
+
         "summary": state.get(
             "summary",
             "",
@@ -257,6 +265,11 @@ def validate_idea(payload: ValidateRequest):
         "whiteSpace": state.get(
             "whiteSpace"
         ),
+
+        # Milestone 3 additions
+        "swot": state.get("swot"),
+        "mvp": state.get("mvp"),
+        "gtm": state.get("gtm"),
 
         "errors": state.get(
             "errors",
@@ -289,3 +302,28 @@ def validate_idea(payload: ValidateRequest):
     # ----------------------------------------------
 
     return response
+
+
+# --------------------------------------------------
+# MILESTONE 3: CONVERSATIONAL ADVISOR CHAT
+# --------------------------------------------------
+
+@app.post("/chat")
+def chat_turn(payload: ChatRequest):
+    if not payload.sessionId.strip() or not payload.message.strip():
+        return JSONResponse(
+            status_code=400,
+            content={"error": "sessionId and message are required."},
+        )
+
+    logger.info("Chat request for session %s: %s", payload.sessionId, payload.message[:40])
+
+    res = advisor_respond(payload.sessionId, payload.message)
+
+    if res.get("error"):
+        return JSONResponse(
+            status_code=404,
+            content={"error": res["error"]},
+        )
+
+    return res
