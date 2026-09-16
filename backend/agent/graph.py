@@ -7,6 +7,7 @@ from . import retrieval
 from .competitor_agent import analyze_competitors
 from .market_agent import analyze_market_opportunity
 from .opportunity_score import calculate_opportunity_score
+from .swot_agent import analyze_swot_and_risk
 from .white_space import analyze_white_space
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,9 @@ class PipelineState(TypedDict, total=False):
 
     # Evidence-backed opportunity gaps
     whiteSpace: dict
+
+    # Milestone 3: SWOT & Risk Analysis
+    swot: dict
 
     # Errors
     error: str
@@ -476,6 +480,48 @@ def white_space_node(state: PipelineState) -> PipelineState:
 
 
 # --------------------------------------------------
+# MILESTONE 3: SWOT & RISK ANALYSIS
+# --------------------------------------------------
+
+def swot_node(state: PipelineState) -> PipelineState:
+    """SWOT & Risk Assessment Agent."""
+
+    logger.info("[swot] START")
+
+    if state.get("error"):
+        logger.warning("[swot] Skipped because web search failed")
+        return state
+
+    try:
+        swot_data = analyze_swot_and_risk(
+            state["idea"],
+            state.get("targetCustomer", ""),
+            state.get("problem", ""),
+            state.get("marketOpportunity"),
+            state.get("competitors"),
+            state.get("confidence"),
+            state.get("results", []),
+        )
+    except Exception as exc:
+        logger.exception("[swot] FAILED")
+        errors = {
+            **state.get("errors", {}),
+            "swot": _friendly_error_message(exc),
+        }
+        return {
+            **state,
+            "swot": None,
+            "errors": errors,
+        }
+
+    logger.info("[swot] COMPLETE")
+    return {
+        **state,
+        "swot": swot_data,
+    }
+
+
+# --------------------------------------------------
 # BUILD LANGGRAPH PIPELINE
 # --------------------------------------------------
 
@@ -491,15 +537,19 @@ def build_pipeline():
     graph.add_node("white_space", white_space_node)
     graph.add_node("opportunity_score", opportunity_score_node)
 
+    # Milestone 3 features
+    graph.add_node("swot_analysis", swot_node)
+
     # Pipeline flow
     graph.add_edge(START, "web_search")
     graph.add_edge("web_search", "confidence_indicator")
     graph.add_edge("confidence_indicator", "market_opportunity")
     graph.add_edge("market_opportunity", "competitor_discovery")
     graph.add_edge("competitor_discovery", "white_space")
+    graph.add_edge("white_space", "swot_analysis")
 
     # Calculate score after both analyses are available
-    graph.add_edge("white_space", "opportunity_score")
+    graph.add_edge("swot_analysis", "opportunity_score")
     graph.add_edge("opportunity_score", END)
 
     return graph.compile()
