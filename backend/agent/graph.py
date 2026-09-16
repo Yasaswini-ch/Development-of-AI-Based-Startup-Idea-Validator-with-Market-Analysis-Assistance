@@ -5,11 +5,11 @@ from langgraph.graph import END, START, StateGraph
 
 from . import retrieval
 from .competitor_agent import analyze_competitors
-from .gtm_agent import analyze_gtm_strategy
+from .gtm_agent import analyze_gtm
 from .market_agent import analyze_market_opportunity
-from .mvp_agent import analyze_mvp_features
+from .mvp_agent import analyze_mvp
 from .opportunity_score import calculate_opportunity_score
-from .swot_agent import analyze_swot_and_risk
+from .swot_agent import analyze_swot
 from .white_space import analyze_white_space
 
 logger = logging.getLogger(__name__)
@@ -72,13 +72,9 @@ class PipelineState(TypedDict, total=False):
     # Evidence-backed opportunity gaps
     whiteSpace: dict
 
-    # Milestone 3: SWOT & Risk Analysis
+    # Milestone 3 strategy artifacts
     swot: dict
-
-    # Milestone 3: MVP Feature Recommendations
     mvp: dict
-
-    # Milestone 3: Go-To-Market Strategy
     gtm: dict
 
     # Errors
@@ -364,33 +360,10 @@ def competitor_discovery_node(state: PipelineState) -> PipelineState:
         }
 
 
-def white_space_node(state: PipelineState) -> PipelineState:
-    """M2 presentation feature: evidence-backed white-space analysis.
-
-    This is local post-processing over already-generated market,
-    competitor, and search data. It intentionally does not add another LLM
-    call to the request path.
-    """
-
-    logger.info("[white_space] START")
-
-    if state.get("error"):
-        logger.warning("[white_space] Skipped because web search failed")
-        return state
-
-    white_space = analyze_white_space(
-        state.get("marketOpportunity"),
-        state.get("competitors"),
-        state.get("results", []),
-    )
-    logger.info("[white_space] COMPLETE")
-
-    return {**state, "whiteSpace": white_space}
-
-
-# -------------------------------
-# MILESTONE 2: OPPORTUNITY SCORE
-# -------------------------------
+# --------------------------------------------------
+# SASHI'S MILESTONE 2 FEATURE
+# OPPORTUNITY SCORE
+# --------------------------------------------------
 
 def opportunity_score_node(state: PipelineState) -> PipelineState:
     """
@@ -488,128 +461,75 @@ def white_space_node(state: PipelineState) -> PipelineState:
 
 
 # --------------------------------------------------
-# MILESTONE 3: SWOT & RISK ANALYSIS
+# MILESTONE 3: STRATEGY AGENTS
 # --------------------------------------------------
 
 def swot_node(state: PipelineState) -> PipelineState:
-    """SWOT & Risk Assessment Agent."""
-
     logger.info("[swot] START")
-
     if state.get("error"):
-        logger.warning("[swot] Skipped because web search failed")
         return state
-
     try:
-        swot_data = analyze_swot_and_risk(
+        value = analyze_swot(
             state["idea"],
-            state.get("targetCustomer", ""),
-            state.get("problem", ""),
             state.get("marketOpportunity"),
             state.get("competitors"),
-            state.get("confidence"),
+            state.get("whiteSpace"),
             state.get("results", []),
         )
     except Exception as exc:
         logger.exception("[swot] FAILED")
-        errors = {
-            **state.get("errors", {}),
-            "swot": _friendly_error_message(exc),
-        }
         return {
             **state,
             "swot": None,
-            "errors": errors,
+            "errors": {**state.get("errors", {}), "swot": _friendly_error_message(exc)},
         }
-
     logger.info("[swot] COMPLETE")
-    return {
-        **state,
-        "swot": swot_data,
-    }
+    return {**state, "swot": value}
 
-
-# --------------------------------------------------
-# MILESTONE 3: MVP FEATURE RECOMMENDATIONS
-# --------------------------------------------------
 
 def mvp_node(state: PipelineState) -> PipelineState:
-    """MVP Feature Recommendation Agent."""
-
     logger.info("[mvp] START")
-
     if state.get("error"):
-        logger.warning("[mvp] Skipped because web search failed")
         return state
-
     try:
-        mvp_data = analyze_mvp_features(
+        value = analyze_mvp(
             state["idea"],
-            state.get("targetCustomer", ""),
             state.get("problem", ""),
+            state.get("swot"),
             state.get("marketOpportunity"),
-            state.get("whiteSpace"),
-            state.get("competitors"),
-            state.get("results", []),
         )
     except Exception as exc:
         logger.exception("[mvp] FAILED")
-        errors = {
-            **state.get("errors", {}),
-            "mvp": _friendly_error_message(exc),
-        }
         return {
             **state,
             "mvp": None,
-            "errors": errors,
+            "errors": {**state.get("errors", {}), "mvp": _friendly_error_message(exc)},
         }
-
     logger.info("[mvp] COMPLETE")
-    return {
-        **state,
-        "mvp": mvp_data,
-    }
+    return {**state, "mvp": value}
 
-
-# --------------------------------------------------
-# MILESTONE 3: GTM STRATEGY
-# --------------------------------------------------
 
 def gtm_node(state: PipelineState) -> PipelineState:
-    """Go-To-Market Strategy Agent."""
-
     logger.info("[gtm] START")
-
     if state.get("error"):
-        logger.warning("[gtm] Skipped because web search failed")
         return state
-
     try:
-        gtm_data = analyze_gtm_strategy(
+        value = analyze_gtm(
             state["idea"],
             state.get("targetCustomer", ""),
-            state.get("problem", ""),
             state.get("marketOpportunity"),
             state.get("competitors"),
-            state.get("results", []),
+            state.get("swot"),
         )
     except Exception as exc:
         logger.exception("[gtm] FAILED")
-        errors = {
-            **state.get("errors", {}),
-            "gtm": _friendly_error_message(exc),
-        }
         return {
             **state,
             "gtm": None,
-            "errors": errors,
+            "errors": {**state.get("errors", {}), "gtm": _friendly_error_message(exc)},
         }
-
     logger.info("[gtm] COMPLETE")
-    return {
-        **state,
-        "gtm": gtm_data,
-    }
+    return {**state, "gtm": value}
 
 
 # --------------------------------------------------
@@ -619,33 +539,100 @@ def gtm_node(state: PipelineState) -> PipelineState:
 def build_pipeline():
     graph = StateGraph(PipelineState)
 
-    graph.add_node("web_search", web_search_node)
-    graph.add_node("market_opportunity", market_opportunity_node)
-    graph.add_node("competitor_discovery", competitor_discovery_node)
+    # --------------------------------------------------
+    # NODES
+    # --------------------------------------------------
 
-    # Sashi's Milestone 2 features
-    graph.add_node("confidence_indicator", confidence_node)
-    graph.add_node("white_space", white_space_node)
-    graph.add_node("opportunity_score", opportunity_score_node)
+    graph.add_node(
+        "web_search",
+        web_search_node,
+    )
 
-    # Milestone 3 features
+    # Sashi: Cross-source confidence
+    graph.add_node(
+        "confidence_indicator",
+        confidence_node,
+    )
+
+    graph.add_node(
+        "market_opportunity",
+        market_opportunity_node,
+    )
+
+    graph.add_node(
+        "competitor_discovery",
+        competitor_discovery_node,
+    )
+
+    # Sashi: Opportunity Score
+    graph.add_node(
+        "opportunity_score",
+        opportunity_score_node,
+    )
+
+    graph.add_node(
+        "white_space",
+        white_space_node,
+    )
+
     graph.add_node("swot_analysis", swot_node)
     graph.add_node("mvp_recommendation", mvp_node)
     graph.add_node("gtm_strategy", gtm_node)
 
-    # Pipeline flow
-    graph.add_edge(START, "web_search")
-    graph.add_edge("web_search", "confidence_indicator")
-    graph.add_edge("confidence_indicator", "market_opportunity")
-    graph.add_edge("market_opportunity", "competitor_discovery")
-    graph.add_edge("competitor_discovery", "white_space")
+    # --------------------------------------------------
+    # PIPELINE FLOW
+    # --------------------------------------------------
+
+    # START
+    graph.add_edge(
+        START,
+        "web_search",
+    )
+
+    # Web Search
+    #        ↓
+    # Confidence
+    graph.add_edge(
+        "web_search",
+        "confidence_indicator",
+    )
+
+    # Confidence
+    #        ↓
+    # Market Opportunity
+    graph.add_edge(
+        "confidence_indicator",
+        "market_opportunity",
+    )
+
+    # Market Opportunity
+    #        ↓
+    # Competitor Discovery
+    graph.add_edge(
+        "market_opportunity",
+        "competitor_discovery",
+    )
+
+    # Competitor Discovery
+    #        ↓
+    # Opportunity Score
+    graph.add_edge(
+        "competitor_discovery",
+        "opportunity_score",
+    )
+
+    # Opportunity Score
+    #        ↓
+    # White-space Analysis
+    graph.add_edge(
+        "opportunity_score",
+        "white_space",
+    )
+
     graph.add_edge("white_space", "swot_analysis")
     graph.add_edge("swot_analysis", "mvp_recommendation")
     graph.add_edge("mvp_recommendation", "gtm_strategy")
-
-    # Calculate score after all analyses are available
-    graph.add_edge("gtm_strategy", "opportunity_score")
-    graph.add_edge("opportunity_score", END)
+    graph.add_edge("gtm_strategy", END)
 
     return graph.compile()
 

@@ -23,6 +23,7 @@ import logging
 
 from crewai import Agent, Crew, Process, Task
 
+from .deterministic_fallback import deterministic_market_opportunity
 from .llm import get_llm, kickoff_with_fallback
 from .output_guard import strip_reasoning
 
@@ -71,7 +72,15 @@ def _build_market_crew(idea: str, target_customer: str, problem: str, context: s
             "the given sources. Writes for a founder who needs to act on this, "
             "not a report that just restates what a segment is called."
         ),
-        llm=get_llm(model=model),
+        # Rebalanced to 750 (was 900, briefly tried 250 then 550). Market's
+        # JSON schema (marketSize sentence + trends array + multi-field
+        # segments) is the most verbose of the four agents and was
+        # confirmed live to truncate into invalid JSON at 550, so it keeps
+        # more headroom than mvp/gtm below even though all four still
+        # collectively exceed Groq's ~1000 output-tokens/minute cap on the
+        # primary model - the model-fallback chain (see llm.py) is the
+        # actual safety net for whichever call(s) exceed the shared budget.
+        llm=get_llm(max_tokens=750, model=model),
         verbose=False,
     )
 
@@ -229,36 +238,40 @@ def _is_valid_shape(data: dict) -> bool:
 def analyze_market_opportunity(
     idea: str, target_customer: str, problem: str, results: list
 ) -> dict:
-    """Raises on any failure - a crew error (e.g. Groq rate limit) or output that
-    doesn't parse/validate - rather than silently returning empty trends/segments.
-
-    Unlike an empty competitors list (a valid outcome - see competitor_agent.py),
-    a market opportunity with zero segments isn't a legitimate "nothing to find"
-    result - it means the call failed. Raising here lets the caller
-    (agent/graph.py's market_opportunity_node) catch it and set
-    marketOpportunity=null + errors.marketOpportunity, which is what reaches the
-    frontend's "analysis wasn't available" state instead of a silent, misleading
-    "not enough data" placeholder that looked identical to a real weak result.
+    """Falls back to a deterministic, evidence-based summary (see
+    deterministic_fallback.py) whenever the LLM call itself fails (e.g. no
+    API key configured, every fallback model rate limited) or its output
+    doesn't parse into a valid shape, instead of raising and leaving this
+    section entirely blank. The fallback result carries `"degraded": True`
+    so callers/UI can distinguish it from a full AI-reasoned result - it is
+    never silently indistinguishable from one.
     """
     context = _build_context(results)
 
-    crew_output = kickoff_with_fallback(
-        lambda model: _build_market_crew(idea, target_customer, problem, context, model)
-    )
-    candidate_text = strip_reasoning(crew_output.raw)
+    try:
+        crew_output = kickoff_with_fallback(
+            lambda model: _build_market_crew(idea, target_customer, problem, context, model)
+        )
+        candidate_text = strip_reasoning(crew_output.raw)
 
-    # Search for valid JSON directly rather than rejecting the whole
-    # response for containing extra text first - this model often
-    # rambles through a visible scratchpad but still lands on a
-    # correct, well-shaped JSON object by the end of it.
-    data = _extract_json(candidate_text)
-    if data is None:
-        logger.warning("Market opportunity: no valid JSON found in output: %r", candidate_text)
-        raise ValueError("Market opportunity analysis did not return a valid, parseable result.")
+        # Search for valid JSON directly rather than rejecting the whole
+        # response for containing extra text first - this model often
+        # rambles through a visible scratchpad but still lands on a
+        # correct, well-shaped JSON object by the end of it.
+        data = _extract_json(candidate_text)
+        if data is None:
+            logger.warning("Market opportunity: no valid JSON found in output: %r", candidate_text)
+            raise ValueError("Market opportunity analysis did not return a valid, parseable result.")
 
-    data["trends"] = data["trends"][:_MAX_TRENDS]
-    data["segments"] = data["segments"][:_MAX_SEGMENTS]
-    # Phase 2 stretch feature - filled in by the opportunity_score graph node
-    # after this agent returns, so stub it here for a stable shape.
-    data.setdefault("opportunityScore", 0)
-    return data
+        data["trends"] = data["trends"][:_MAX_TRENDS]
+        data["segments"] = data["segments"][:_MAX_SEGMENTS]
+        # Phase 2 stretch feature - filled in by the opportunity_score graph node
+        # after this agent returns, so stub it here for a stable shape.
+        data.setdefault("opportunityScore", 0)
+        return data
+    except Exception:
+        logger.warning(
+            "Market opportunity: LLM analysis unavailable, using deterministic evidence-based fallback",
+            exc_info=True,
+        )
+        return deterministic_market_opportunity(idea, target_customer, problem, results)

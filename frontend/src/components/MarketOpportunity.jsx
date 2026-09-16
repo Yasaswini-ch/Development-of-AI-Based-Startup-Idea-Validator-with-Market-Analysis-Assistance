@@ -1,5 +1,6 @@
 import { IconTrendingUp, IconUsers, IconAlertTriangle } from './icons'
 import useCountUp from '../hooks/useCountUp'
+import DegradedBanner from './DegradedBanner'
 
 function SegmentCard({ segment }) {
   const { segment: name, painPoints, motivations, buyingBehavior } = segment
@@ -74,13 +75,14 @@ export default function MarketOpportunity({ data, error }) {
     return <UnavailableCard error={error} />
   }
 
-  const { marketSize, trends = [], segments = [], opportunityScore = 0 } = data
+  const { marketSize, trends = [], segments = [], opportunityScore = 0, degraded } = data
   if (!marketSize && trends.length === 0 && segments.length === 0) {
     return <UnavailableCard error="No market data could be extracted from the available sources." />
   }
 
   return (
     <div>
+      {degraded && <DegradedBanner />}
       {marketSize && (
         <div>
           <p className="text-sm text-text leading-relaxed">{marketSize}</p>
