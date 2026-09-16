@@ -20,7 +20,7 @@ The full request cycle involves two external API categories: **search** and **LL
 |---|---|---|---|---|
 | 1 | `web_search` | `agent/retrieval.py` + `agent/tools.py` | Paid (optional) or Free | Tavily (primary); DuckDuckGo / Wikipedia / HN (fallback) |
 | 2 | `confidence_indicator` | `agent/confidence.py` | **Zero** | None — regex over already-fetched text |
-| 3 | `market_opportunity` | `agent/market_agent.py` | **Paid (LLM)** | Groq — `qwen/qwen3.6-27b` (primary), `openai/gpt-oss-20b` / `gpt-oss-120b` (fallback) |
+| 3 | `market_opportunity` | `agent/market_agent.py` | **Paid (LLM)** | Groq — `qwen/qwen3.8-27b` (primary), `openai/gpt-oss-20b` / `gpt-oss-120b` (fallback) |
 | 4 | `competitor_discovery` | `agent/competitor_agent.py` | **Zero** | None — local spaCy `en_core_web_sm` NER |
 | 5 | `white_space` | `agent/white_space.py` | **Zero** | None — deterministic post-processing |
 | 6 | `opportunity_score` | `agent/opportunity_score.py` | **Zero** | None — weighted arithmetic formula |
@@ -77,15 +77,15 @@ Three Groq-hosted models are configured in [`agent/llm.py`](file:///C:/Opensourc
 
 | Role | Model String | `reasoning_effort` | Free Rate Limit | Input Price | Output Price |
 |---|---|---|---|---|---|
-| Primary | `groq/qwen/qwen3.6-27b` | `"none"` | ~1,000 output tokens/min | ~$0.29 / 1M tokens *(Qwen3 32B)* | ~$0.59 / 1M tokens |
-| Fallback 1 | `groq/openai/gpt-oss-20b` | `"low"` | Separate bucket | $0.075 / 1M tokens | $0.30 / 1M tokens |
-| Fallback 2 | `groq/openai/gpt-oss-120b` | `"low"` | Separate bucket | $0.15 / 1M tokens | $0.60 / 1M tokens |
+| Primary | `groq/qwen/qwen3.8-27b` | `"none"` | ~1,000 output tokens/min | ~$0.29 / 1M tokens *(Qwen3 32B)* | ~$0.59 / 1M tokens |
+| Fallback 1 | `groq/openai/gpt-oss-20b` | `"low"` | ~1,000 output tokens/min | ~$0.15 / 1M tokens | ~$0.60 / 1M tokens |
+| Fallback 2 | `groq/openai/gpt-oss-120b` | `"low"` | ~1,000 output tokens/min | ~$0.59 / 1M tokens | ~$1.18 / 1M tokens |
 
 > [!NOTE]
 > Prices are verified against Groq's live pricing as of September 2026 and are subject to change. The project currently runs on **Groq's free tier** (shared team key) — no dollar charges accrue until that quota is exhausted. Groq also offers a **50% discount for batch/async processing** and **50% off cached input tokens**, neither of which this pipeline currently uses.
 
-> [!WARNING]
-> The `reasoning_effort="none"` setting for `qwen3.6-27b` is **critical, not cosmetic**. By default this model reserves a hidden `<think>` scratchpad whose output-token budget alone exceeds Groq's ~1,000 tokens/minute cap, causing "Request too large" failures on every call regardless of input size. Setting it to `"none"` eliminates the scratchpad entirely. The two fallback models reject `"none"` and require `"low"` instead — these values were confirmed by direct API testing, not assumed.
+> [!IMPORTANT]
+> The `reasoning_effort="none"` setting for `qwen3.8-27b` is **critical, not cosmetic**. By default this model reserves a hidden `<think>` scratchpad whose output-token budget alone exceeds Groq's ~1,000 tokens/minute cap, causing "Request too large" failures on every call regardless of input size. Setting it to `"none"` eliminates the scratchpad entirely. The two fallback models reject `"none"` and require `"low"` instead — these values were confirmed by direct API testing, not assumed.
 
 #### 3.2.2 Cost Per Request
 
