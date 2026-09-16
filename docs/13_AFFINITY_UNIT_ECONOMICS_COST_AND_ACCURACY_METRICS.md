@@ -69,15 +69,12 @@ Affinity is engineered for **API frugality**. Out of six pipeline execution node
 End-to-end execution benchmarked over 20 consecutive validation runs (FastAPI backend + Uvicorn on 4-core CPU):
 
 ```mermaid
-gantt
-    title Execution Latency Breakdown (~10.2 Seconds Total)
-    dateFormat  ss
-    axisFormat %S s
-    Multi-Angle Web Search (Tavily / DDG) :active, 00, 04s
-    Source Agreement Metric Calculation   : 04, 04.2s
-    Groq LLM Market Analysis (qwen3.8-27b): 04.2s, 09.5s
-    Local spaCy NER Competitor Extraction : 09.5s, 09.9s
-    White-Space & Opportunity Score Math   : 09.9s, 10.2s
+flowchart LR
+    Search["1. Web Search Retrieval\n(3.8s - 38%)"] --> Conf["2. Source Agreement\n(0.1s - <1%)"]
+    Conf --> LLM["3. Groq LLM Market Agent\n(5.4s - 54%)"]
+    LLM --> NER["4. Local spaCy NER\n(0.4s - 4%)"]
+    NER --> Math["5. White-Space & Score\n(0.3s - 3%)"]
+    Math --> Total["Total Latency: ~10.2s"]
 ```
 
 | Pipeline Step | Execution Type | Latency Range | Share of Total |

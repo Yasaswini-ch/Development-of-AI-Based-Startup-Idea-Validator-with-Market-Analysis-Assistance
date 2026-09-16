@@ -145,15 +145,15 @@ sequenceDiagram
 ```mermaid
 flowchart TD
     subgraph Matrix["Target Audience Matrix"]
-        direction TB
         subgraph HighResearch["High Research Frequency"]
-            P2["Student Entrepreneurs<br/>(Campus Pitch Competitions & Incubators)"]
-            P1["Solo Bootstrappers<br/>(Side Projects & Indie Hackers)"]
+            P2["Student Entrepreneurs\n(Campus Pitch Competitions & Incubators)"]
+            P1["Solo Bootstrappers\n(Side Projects & Indie Hackers)"]
         end
         subgraph LowResearch["Low Research Frequency"]
-            P4["Angel Investors & VC Analysts<br/>(Deal Screening)"]
-            P3["Product Managers<br/>(Feature Roadmaps & Expansion)"]
+            P4["Angel Investors & VC Analysts\n(Deal Screening)"]
+            P3["Product Managers\n(Feature Roadmaps & Expansion)"]
         end
+        HighResearch --- LowResearch
     end
 ```
 
@@ -184,7 +184,8 @@ flowchart LR
         C3 --> C4["Evaluate White-Space Gaps & Sources"]
     end
 
-    InputPhase --> ExecutionPhase --> DisplayPhase
+    A3 --> B1
+    B5 --> C1
 ```
 
 ---
