@@ -11,7 +11,9 @@ via NER — no LLM call for competitors, by design, so the shared Groq quota goe
 Market Opportunity instead of being split across two agents. Search runs on Tavily, with
 a free DuckDuckGo/Wikipedia/Hacker News fallback so it still works without a search API
 key; academic/research-paper sources are filtered out since they don't add useful signal
-for a founder. Milestone 1 and Milestone 2 are both complete.
+for a founder. Milestones 1–3 are implemented: live research, market/competitor validation,
+SWOT and risk analysis, MVP recommendations, GTM strategy, and a session-based
+conversational advisor.
 
 ![The five research angles a submitted idea is expanded into](docs/images/five-research-angles.svg)
 
@@ -35,11 +37,14 @@ flowchart TD
     MO --> CD["Competitor Discovery\nagent/competitor_agent.py\n(local spaCy NER, no LLM call)"]
     CD --> OS["Opportunity Score\nagent/opportunity_score.py"]
     OS --> WA["White-space Analysis\nagent/white_space.py"]
+    WA --> SWOT["SWOT / Risk Agent\nagent/swot_agent.py"]
+    SWOT --> MVP["MVP Agent\nagent/mvp_agent.py"]
+    MVP --> GTM["GTM Agent\nagent/gtm_agent.py"]
     MO --> LLM["Groq LLM\nqwen3.6-27b (primary)"]
     LLM -.rate limit: switch model.-> LLM2["Groq LLM\ngpt-oss-20b (fallback)"]
 
     Retrieval --> Response["summary + results +\nmarketOpportunity + competitors +\nerrors"]
-    WA --> Response
+    GTM --> Response
     Response --> Backend
     Backend -->|JSON| Frontend
     Frontend -->|renders results,\nor inline 'unavailable' state| User
@@ -57,12 +62,13 @@ local NER step, so it always returns real (possibly empty) data.
 |--------------|----------------------------------------|
 | Frontend     | React + Tailwind CSS (`frontend/`) |
 | Backend      | FastAPI (`backend/`) — exposes `POST /validate`, with an in-memory response cache |
-| Agent framework | [CrewAI](https://www.crewai.com) — 1 LLM agent left: Market Opportunity (`market_agent.py`). Competitor Discovery (`competitor_agent.py`) was rewritten off CrewAI entirely to a local NER step (see Competitor identification below), and the Web Search summary is a plain template — see Reasoning LLM below |
-| Orchestration | [LangGraph](https://www.langchain.com/langgraph) — `web_search → confidence → market_opportunity → competitor_discovery → opportunity_score → white_space` (`backend/agent/graph.py`) |
+| Agent framework | [CrewAI](https://www.crewai.com) — bounded reasoning agents for Market Opportunity, SWOT/Risk, MVP recommendations, GTM strategy, and advisor responses. Web Search summaries and Competitor Discovery remain local/deterministic to avoid unnecessary calls |
+| Orchestration | [LangGraph](https://www.langchain.com/langgraph) — main validation pipeline plus a separate conditional chat graph (`backend/agent/graph.py`, `chat_graph.py`) |
 | Search       | Tavily API (primary), with DuckDuckGo + Wikipedia + Hacker News as a zero-cost fallback chain — fetched directly (not LLM-mediated) across 5 search angles, academic sources filtered out (`backend/agent/tools.py`, `retrieval.py`) |
 | Competitor identification | Local NER ([spaCy](https://spacy.io) `en_core_web_sm`), not an LLM call — reads competitor names directly off the already-fetched search results, by deliberate design: zero API cost, zero rate limit, and it frees the entire shared Groq quota for Market Opportunity instead of splitting it across two agents. `estimatedPrice`/`featureBreadth` are always `"unknown"` as a result — an honest trade, not a bug — the UI hides those badges and the positioning grid when nothing is classified |
-| Reasoning LLM | [Groq](https://console.groq.com) — primary `qwen/qwen3.6-27b`, automatic fallback through two more Groq models (`openai/gpt-oss-20b`, `openai/gpt-oss-120b`) on rate limit, since Groq rate-limits per-model, not per-account — a genuinely separate quota each time, not just a longer wait on the same one (see `backend/agent/llm.py`). Each model also gets its own confirmed `reasoning_effort` setting to eliminate wasted hidden-reasoning output tokens, the actual cause of most quota-exhaustion failures. A cross-*provider* fallback to Gemini was tested and dropped (it hangs for minutes past its own timeout instead of failing fast). Only the Market Opportunity agent calls this now — the Web Search summary's LLM call was cut entirely, and Competitor Discovery was moved off the LLM path too (see above) |
+| Reasoning LLM | [Groq](https://console.groq.com) — primary `qwen/qwen3.6-27b` plus two same-provider fallback models. Per-agent output limits, compact upstream artifacts, disabled/low reasoning effort, caching, and deterministic search intent reduce quota pressure |
 | Database     | None yet |
+| Advisor state | Bounded in-memory sessions with a separate LangGraph chat flow; sessions expire and do not survive restarts |
 | Deployment   | [Render](https://render.com) — two services, config in `render.yaml` |
 | Version control | Git / GitHub |
 
@@ -166,6 +172,11 @@ identification above), unlike the illustrative example below.
 The frontend renders `EmptyState` when `results` comes back as an empty array (valid
 request, zero matches) and `ErrorState` with a retry button for any non-200 response.
 
+`POST /validate` also returns `sessionId`, `swot`, `mvp`, and `gtm`. The frontend uses
+the session ID with `POST /chat` (`{ sessionId, message }`) for follow-up questions.
+Chat performs one bounded search only for messages that explicitly require fresh
+information; other turns reuse the stored validation artifacts.
+
 ## Project Structure
 
 ```
@@ -175,7 +186,7 @@ request, zero matches) and `ErrorState` with a retry button for any non-200 resp
 │   ├── main.py              # POST /validate route + in-memory response cache
 │   └── agent/
 │       ├── graph.py              # LangGraph pipeline: state + node wiring (Web Search summary is a template here, no LLM call)
-│       ├── market_agent.py        # Market Opportunity Agent (Milestone 2) - the only remaining LLM agent
+│       ├── market_agent.py        # Market Opportunity Agent (Milestone 2)
 │       ├── competitor_agent.py    # Competitor Discovery (Milestone 2) - local spaCy NER, no LLM call
 │       ├── opportunity_score.py   # Opportunity Score post-processing node (Milestone 2 stretch)
 │       ├── output_guard.py        # reasoning-leak stripping used by the Market Opportunity agent

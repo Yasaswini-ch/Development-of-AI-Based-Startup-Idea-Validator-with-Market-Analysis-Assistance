@@ -5,7 +5,8 @@ for the full API contract and data flow.
 
 Agents are orchestrated by a **LangGraph** state graph (`agent/graph.py`) with 4 nodes
 so far: `web_search` (Milestone 1) → `market_opportunity` → `competitor_discovery` →
-`opportunity_score` → `white_space` (all Milestone 2). Each later node consumes the Web Search step's
+`opportunity_score` → `white_space` → `swot_analysis` → `mvp_recommendation` →
+`gtm_strategy`. Each later node consumes the Web Search step's
 real results as context (no re-searching). Future milestones add more agents the same
 way, as additional graph nodes.
 
@@ -87,7 +88,7 @@ uvicorn main:app --reload --port 8000
   the Web Search summary from a plain template (`_build_summary`) - no LLM call
 - `agent/market_agent.py` — Market Opportunity & Customer Segmentation Agent
   (Milestone 2) — market size/trends + per-segment pain points/motivations/buying
-  behavior. The only remaining LLM-backed agent.
+  behavior.
 - `agent/competitor_agent.py` — Competitor Discovery (Milestone 2) — competitors with
   offering/url/gap/estimated price/feature breadth, identified via **local spaCy NER
   over the search results, no LLM call**
@@ -96,6 +97,15 @@ uvicorn main:app --reload --port 8000
   search-signal fallback if both upstream agents failed
 - `agent/white_space.py` — evidence-backed opportunity-gap analysis that reuses market,
   competitor, and source artifacts without another search or LLM call
+- `agent/swot_agent.py` — bounded SWOT and structured risk analysis
+- `agent/mvp_agent.py` — prioritized MVP features with impact/effort estimates
+- `agent/gtm_agent.py` — positioning, acquisition channels, and early-customer approach
+- `agent/session_store.py` — bounded in-memory validation context and recent chat turns
+- `agent/chat_graph.py` — separate per-message advisor graph with optional scoped search
+- `agent/structured_output.py` — shared compact-context and strict JSON parsing helpers
+
+`POST /chat` accepts `{ "sessionId": "...", "message": "..." }`. Sessions expire,
+are capped in memory, and are not durable across server restarts or multiple instances.
 - `agent/output_guard.py` — `strip_reasoning()`, used by the Market Opportunity agent
   before its own JSON-shape validation
 - `agent/retrieval.py` — expands one idea into 5 search angles, filters out academic

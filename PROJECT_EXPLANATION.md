@@ -5,7 +5,8 @@
 **Affinity** is an AI-based startup idea validator with market analysis assistance.
 A founder enters an idea, target customer, and problem statement. The app returns
 live source evidence, market opportunity analysis, competitor discovery, an
-opportunity score, a source-agreement indicator, and a white-space opportunity view.
+opportunity score, a source-agreement indicator, white-space opportunities, SWOT/risk
+analysis, MVP recommendations, GTM strategy, and a conversational advisor.
 
 ## What Milestone 2 Adds
 
@@ -43,6 +44,19 @@ most and makes the app more reliable during demos.
 5. Competitor Discovery extracts company/product names from competitor-angle sources.
 6. Confidence, Opportunity Score, and White-Space Analysis are computed locally.
 7. The frontend renders sources, market analysis, competitors, and opportunity gaps.
+
+## What Milestone 3 Adds
+
+- SWOT/Risk Agent with bounded strengths, weaknesses, opportunities, threats, and
+  severity/likelihood-rated risks.
+- MVP Recommendation Agent with prioritized impact/effort estimates.
+- GTM Strategy Agent with positioning, focused channels, and an early-customer plan.
+- A separate conversational LangGraph that reuses validation artifacts and runs one
+  scoped search only when a question explicitly needs fresh information.
+
+Later agents receive compact structured outputs rather than the complete raw search
+response. Chat sessions are bounded in memory, rate-limited, and intentionally expire
+when the backend restarts.
 
 ## Deployment
 

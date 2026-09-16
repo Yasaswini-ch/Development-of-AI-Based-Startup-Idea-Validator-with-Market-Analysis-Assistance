@@ -229,7 +229,33 @@ dependency:
 No MCP server is required in the deployed application. The runtime integration stays
 small, explicit, and testable.
 
-### Proposed endpoint
+### Implemented now: long-running-validation email delivery
+
+Before the Milestone 4 report assembler exists, a narrower version of this is already
+wired into `/validate` itself (`backend/agent/email_delivery.py`,
+`backend/agent/job_store.py`):
+
+- `ValidateRequest.email` is optional. Requests without it keep the original fully
+  synchronous behavior, unchanged.
+- When an email is supplied and the pipeline is still running past
+  `VALIDATE_ASYNC_THRESHOLD_SECONDS` (default 25s), `/validate` returns `202` with a
+  `jobId` immediately instead of holding the connection open. The pipeline keeps
+  running in a detached background task (`asyncio.wait`, not `asyncio.wait_for`, so
+  the task isn't cancelled by the timeout).
+- `GET /validate/status/{jobId}` lets the frontend poll for completion even without
+  relying on email deliverability - the in-memory job store mirrors session_store.py's
+  bounded/TTL design.
+- On completion, `send_report_email` sends a plain HTML summary (not yet the full
+  Milestone 4 canonical report object below) via Resend's HTTP API, called directly
+  with `urllib` rather than adding the `resend` SDK as a dependency.
+- No `RESEND_API_KEY` -> `send_report_email` logs a warning and returns `False` rather
+  than raising; a failed/skipped email never fails the underlying validation job.
+
+This is intentionally the smaller, immediate version of the feature described below,
+not a replacement for it - once the Milestone 4 report assembler exists, this path
+should send the canonical report object instead of the current inline HTML summary.
+
+### Proposed endpoint (Milestone 4 - full report, not yet built)
 
 ```http
 POST /reports/{sessionId}/email

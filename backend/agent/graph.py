@@ -5,8 +5,11 @@ from langgraph.graph import END, START, StateGraph
 
 from . import retrieval
 from .competitor_agent import analyze_competitors
+from .gtm_agent import analyze_gtm
 from .market_agent import analyze_market_opportunity
+from .mvp_agent import analyze_mvp
 from .opportunity_score import calculate_opportunity_score
+from .swot_agent import analyze_swot
 from .white_space import analyze_white_space
 
 logger = logging.getLogger(__name__)
@@ -68,6 +71,11 @@ class PipelineState(TypedDict, total=False):
 
     # Evidence-backed opportunity gaps
     whiteSpace: dict
+
+    # Milestone 3 strategy artifacts
+    swot: dict
+    mvp: dict
+    gtm: dict
 
     # Errors
     error: str
@@ -453,6 +461,78 @@ def white_space_node(state: PipelineState) -> PipelineState:
 
 
 # --------------------------------------------------
+# MILESTONE 3: STRATEGY AGENTS
+# --------------------------------------------------
+
+def swot_node(state: PipelineState) -> PipelineState:
+    logger.info("[swot] START")
+    if state.get("error"):
+        return state
+    try:
+        value = analyze_swot(
+            state["idea"],
+            state.get("marketOpportunity"),
+            state.get("competitors"),
+            state.get("whiteSpace"),
+            state.get("results", []),
+        )
+    except Exception as exc:
+        logger.exception("[swot] FAILED")
+        return {
+            **state,
+            "swot": None,
+            "errors": {**state.get("errors", {}), "swot": _friendly_error_message(exc)},
+        }
+    logger.info("[swot] COMPLETE")
+    return {**state, "swot": value}
+
+
+def mvp_node(state: PipelineState) -> PipelineState:
+    logger.info("[mvp] START")
+    if state.get("error"):
+        return state
+    try:
+        value = analyze_mvp(
+            state["idea"],
+            state.get("problem", ""),
+            state.get("swot"),
+            state.get("marketOpportunity"),
+        )
+    except Exception as exc:
+        logger.exception("[mvp] FAILED")
+        return {
+            **state,
+            "mvp": None,
+            "errors": {**state.get("errors", {}), "mvp": _friendly_error_message(exc)},
+        }
+    logger.info("[mvp] COMPLETE")
+    return {**state, "mvp": value}
+
+
+def gtm_node(state: PipelineState) -> PipelineState:
+    logger.info("[gtm] START")
+    if state.get("error"):
+        return state
+    try:
+        value = analyze_gtm(
+            state["idea"],
+            state.get("targetCustomer", ""),
+            state.get("marketOpportunity"),
+            state.get("competitors"),
+            state.get("swot"),
+        )
+    except Exception as exc:
+        logger.exception("[gtm] FAILED")
+        return {
+            **state,
+            "gtm": None,
+            "errors": {**state.get("errors", {}), "gtm": _friendly_error_message(exc)},
+        }
+    logger.info("[gtm] COMPLETE")
+    return {**state, "gtm": value}
+
+
+# --------------------------------------------------
 # BUILD LANGGRAPH PIPELINE
 # --------------------------------------------------
 
@@ -470,7 +550,7 @@ def build_pipeline():
 
     # Sashi: Cross-source confidence
     graph.add_node(
-        "confidence",
+        "confidence_indicator",
         confidence_node,
     )
 
@@ -495,6 +575,10 @@ def build_pipeline():
         white_space_node,
     )
 
+    graph.add_node("swot_analysis", swot_node)
+    graph.add_node("mvp_recommendation", mvp_node)
+    graph.add_node("gtm_strategy", gtm_node)
+
     # --------------------------------------------------
     # PIPELINE FLOW
     # --------------------------------------------------
@@ -510,14 +594,14 @@ def build_pipeline():
     # Confidence
     graph.add_edge(
         "web_search",
-        "confidence",
+        "confidence_indicator",
     )
 
     # Confidence
     #        ↓
     # Market Opportunity
     graph.add_edge(
-        "confidence",
+        "confidence_indicator",
         "market_opportunity",
     )
 
@@ -545,10 +629,10 @@ def build_pipeline():
         "white_space",
     )
 
-    graph.add_edge(
-        "white_space",
-        END,
-    )
+    graph.add_edge("white_space", "swot_analysis")
+    graph.add_edge("swot_analysis", "mvp_recommendation")
+    graph.add_edge("mvp_recommendation", "gtm_strategy")
+    graph.add_edge("gtm_strategy", END)
 
     return graph.compile()
 

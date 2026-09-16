@@ -41,24 +41,25 @@ flowchart TD
     MO --> CD["Competitor Discovery\nagent/competitor_agent.py\n(local spaCy NER, no LLM call)"]
     CD --> OS["Opportunity Score\nagent/opportunity_score.py"]
     OS --> WA["White-space Analysis\nagent/white_space.py"]
+    WA --> SWOT["SWOT / Risk\nagent/swot_agent.py"]
+    SWOT --> MVP["MVP Recommendations\nagent/mvp_agent.py"]
+    MVP --> GTM["GTM Strategy\nagent/gtm_agent.py"]
     MO --> LLM["Groq LLM\nqwen3.6-27b (primary)"]
     LLM -.rate limit: switch model.-> LLM2["Groq LLM\ngpt-oss-20b (fallback)"]
 
     Retrieval --> Response["summary + results +\nmarketOpportunity + competitors +\nerrors"]
-    WA --> Response
+    GTM --> Response
     Response --> Backend
     Backend -->|JSON| Frontend
     Frontend -->|renders results,\nor inline 'unavailable'\nstate per section| User
 ```
 
-`market_opportunity` is the only node that calls the reasoning LLM at all (`web_search`
-and `competitor_discovery` were both cut over to zero-cost, zero-API local logic — see
-§2). It catches its own failure: a Groq rate-limit switches immediately to the next
-model in the fallback chain (see §7), and if every model fails, `marketOpportunity`
-comes back `null` with an `errors.marketOpportunity` message instead of crashing the
-whole request — the other sections still render normally. `competitor_discovery` has
-no LLM call to fail this way; an empty `competitors: []` there is a genuine "none
-found in the sources" outcome, not a failure.
+Web search, confidence, competitor discovery, opportunity scoring, and white-space
+analysis use local or deterministic logic. Market Opportunity and the Milestone 3
+strategy agents use bounded reasoning calls. Each catches its own failure: a Groq
+rate-limit switches immediately to the next model, and an exhausted section returns
+`null` with its own error instead of crashing the request. An empty
+`competitors: []` is a genuine "none found in the sources" outcome, not a failure.
 
 The frontend never talks to the search sources directly — it only ever calls our own
 backend. This gives us one place to shape/validate responses before they reach the UI.
@@ -168,24 +169,24 @@ search results.
   count/relevance (capped at 50, since it's a weaker signal than real agent analysis) —
   see `agent/docs/opportunity-score-edge-cases.md` for the documented edge cases
 
-### Confidence Indicator — not yet built
+### Confidence Indicator
 
-The Milestone 2 plan's third stretch feature (a "3 of 5 sources agree" indicator
-aggregating per-source relevance from `retrieval.py`) has no corresponding code yet —
-no `confidence.py` module, and no `confidence` field in the API contract below. Flagging
-this explicitly since the contract in `docs/milestone2-plan.md` describes it as an
-already-planned field.
-
-**Future extension point (Milestone 3+):** SWOT/Risk, MVP Recommendation, GTM, and
-Report Generation agents each become a new CrewAI crew wrapped in a new LangGraph node,
-wired into the same graph with `add_edge`. LangGraph's state dict carries each stage's
-output forward so later agents can consume earlier agents' results (context passing),
-and partial failures are handled per-node rather than crashing the whole pipeline.
+`agent/confidence.py` calculates evidence agreement from source relevance and topic
+signals without another LLM call.
 
 ### White-space Analysis
 
 The final Milestone 2 node reuses customer pain points, competitor density, and source
 evidence to identify focused opportunity gaps. It performs no search or LLM call.
+
+### Milestone 3 Strategy Agents
+
+SWOT/Risk, MVP Recommendation, and GTM Strategy run sequentially after white-space
+analysis. Each receives a bounded JSON context rather than the complete raw search
+response, validates its plain-JSON output, and records a section-specific error instead
+of failing the request. A separate `chat_turn` LangGraph handles follow-up messages.
+It reuses a bounded in-memory session and performs one scoped search only for messages
+that explicitly request recent or current information.
 
 ## 3. Data Flow
 
@@ -296,9 +297,42 @@ Response 200:
       { "title": string, "why": string, "fit": string, "evidence": string }
     ]
   } | null,
+  "swot": {
+    "strengths": [string],
+    "weaknesses": [string],
+    "opportunities": [string],
+    "threats": [string],
+    "risks": [
+      {
+        "risk": string,
+        "severity": "low" | "medium" | "high" | "unknown",
+        "likelihood": "low" | "medium" | "high" | "unknown"
+      }
+    ]
+  } | null,
+  "mvp": {
+    "features": [
+      {
+        "feature": string,
+        "rationale": string,
+        "impact": "low" | "medium" | "high" | "unknown",
+        "effort": "low" | "medium" | "high" | "unknown"
+      }
+    ]
+  } | null,
+  "gtm": {
+    "positioning": string,
+    "channels": [string],
+    "earlyCustomerApproach": string
+  } | null,
+  "sessionId": string,
   "errors": {
     "marketOpportunity": string | null,
-    "competitors": string | null
+    "competitors": string | null,
+    "whiteSpace": string | null,
+    "swot": string | null,
+    "mvp": string | null,
+    "gtm": string | null
   }
 }
 
@@ -306,6 +340,12 @@ Response 400 / 502:
 {
   "error": string
 }
+```
+
+```
+POST /chat
+Request:  { "sessionId": string, "message": string }
+Response: { "reply": string }
 ```
 
 `marketOpportunity` is `null` (not an object) when its LLM call fails outright (after
@@ -329,10 +369,10 @@ sync on every field.
 | Frontend | React (Vite) + Tailwind CSS | Team wants a premium, polished UI — faster to achieve with component reuse + utility classes than hand-rolled CSS. **Note:** this deviates from the milestone guide's plain HTML/CSS/JS wording; flagging that explicitly since it's a deliberate call. |
 | Backend | FastAPI | Lightweight, async-friendly, minimal boilerplate for a single endpoint, easy to extend with more agents later. |
 | Orchestration | LangGraph | Owns pipeline state and node wiring — each agent is a graph node, so M2-M4 agents are added without restructuring the backend. |
-| Agents | CrewAI | Role/goal-based agent definitions. Only 1 LLM agent left: Market Opportunity, taking real data as context rather than using a tool (tool-calling proved to be the source of the reasoning-leak bug). Both the Web Search step and Competitor Discovery used to be CrewAI agents too, but their LLM calls were cut entirely - see Reasoning LLM below and the Competitor Discovery section in §2. |
+| Agents | CrewAI | Bounded role/goal agents for Market Opportunity, SWOT/Risk, MVP, GTM, and advisor responses. Web Search summaries and Competitor Discovery remain local/deterministic. |
 | Search | Tavily API (primary), DuckDuckGo + Wikipedia + Hacker News (fallback chain) | Tavily gives a real, trained relevance score and reliable results — used whenever `TAVILY_API_KEY` is set. If it's missing or fails, the app falls back to the zero-cost chain (own computed relevance score) instead of erroring out. Tried DuckDuckGo as sole primary first, but its unofficial scraping library proved too flaky (empty or irrelevant results, inconsistent run to run) to trust for a live demo. Academic/research-paper domains are filtered out per mentor guidance — they read as literature review material, not market/competitor signal. |
 | Competitor identification | Local NER (spaCy `en_core_web_sm`), not an LLM call | Reads competitor names directly off the already-fetched search results instead of asking an LLM to identify them - zero API cost, zero rate limit, frees the entire shared Groq quota for Market Opportunity instead of splitting it across two agents. The trade is an honest one: `gap`/`estimatedPrice`/`featureBreadth` can't be genuine reasoning over the idea the way an LLM's would be, so they're generic/`"unknown"` and labeled as such rather than fabricated. See the Competitor Discovery section in §2 for how snippet text is normalized before NER to avoid comparison-table pages producing garbled entities. |
-| Reasoning LLM | Groq (via CrewAI/LiteLLM), three models on the same account — primary + a 2-tier same-provider fallback chain | Primary `groq/qwen/qwen3.6-27b`, fallbacks `groq/openai/gpt-oss-20b` then `groq/openai/gpt-oss-120b`, all configurable via `LLM_MODEL`/`LLM_FALLBACK_MODELS` (comma-separated) + one `GROQ_API_KEY`. Groq rate-limits per model, not per account (confirmed via `GET /openai/v1/models` and a direct latency test on all three) — so on a rate limit, `agent/llm.py`'s `kickoff_with_fallback()` switches to the next model immediately (no wait, it's a separate quota bucket) instead of retrying the same exhausted one; only once every model in the chain has been rate limited does it fall back to waiting out the last one's suggested cooldown (capped at 30s) — see Error Handling Policy. Each model is also given its own confirmed-working `reasoning_effort` value (`agent/llm.py`'s `_REASONING_EFFORT` map) - by default `qwen3.6-27b` reserves an output-token budget for hidden `<think>` reasoning that alone exceeded Groq's ~1000 output-tokens-per-minute cap, the actual cause of most "Request too large" failures; setting `reasoning_effort="none"` (or `"low"` for the gpt-oss fallbacks, which reject `"none"`) eliminates that wasted scratchpad entirely, confirmed directly against the live API. A cross-*provider* fallback to Google Gemini (using the key already in `.env`) was tried and reverted: message-format incompatibilities with our pinned LiteLLM version, then confirmed by direct testing to hang for minutes past its own `timeout` parameter before ever raising — worse than the existing static fallback content, so dropped in favor of the same-provider approach above. Only the Market Opportunity agent calls this now - the Web Search summary's LLM call was cut entirely, and Competitor Discovery was rewritten off the LLM path too (see above), since the deterministic/local alternative was already producing the actual output most of the time at zero quota cost. The model also occasionally leaks raw ReAct-style reasoning text into its answer, so Market Opportunity's output is validated before use. |
+| Reasoning LLM | Groq (via CrewAI/LiteLLM), three models on the same account — primary + a 2-tier same-provider fallback chain | Reasoning agents receive compact structured context and explicit output caps. Model-specific reasoning effort, completed-response caching, deterministic chat search intent, and fallback-model switching reduce quota pressure. |
 | Request caching & submit cooldown | In-memory cache (`backend/main.py`) + a client-side submit cooldown (`frontend/src/App.jsx`) | The cache keys on normalized `idea`/`targetCustomer`/`problem` with a 30-minute TTL, and only caches responses with no `errors` set — a partial-failure response is never cached, so a retry after a transient rate limit isn't stuck replaying the failure. The frontend also disables the submit button for 5 seconds after a submission to reduce accidental duplicate requests against the shared quota. Both are quota-pressure mitigations layered on top of the reasoning_effort fix and the NER rewrite above, not fixes for a fully exhausted team-wide quota by themselves. |
 | Product UI | No framework/provider names shown | Per mentor guidance, the UI doesn't surface "CrewAI," "Groq," "Tavily," etc. anywhere — footer/status text describes capability generically ("Multi-agent Pipeline," "Live Web Search") instead of naming the underlying tech. |
 | Hosting | Render | Already set up for this repo (see `render.yaml`). |
@@ -369,7 +409,7 @@ local vs. deployed).
   Discovery has no LLM output to validate this way - its own filtering (camelCase/
   mention-count heuristics, generic-word denylist, snippet-line normalization - see
   §2) happens before a name is ever kept, not after the fact.
-- LLM rate-limit fallback: Market Opportunity (the only remaining crew) goes through
+- LLM rate-limit fallback: every CrewAI reasoning node goes through
   `agent/llm.py`'s `kickoff_with_fallback()`, which builds and runs the crew against
   the primary Groq model and, on a rate limit, immediately rebuilds it against the
   next model in the fallback chain instead of waiting — a separate quota bucket on the
@@ -400,10 +440,16 @@ local vs. deployed).
 │   ├── main.py         # POST /validate route + in-memory request cache
 │   └── agent/
 │       ├── graph.py            # LangGraph pipeline: state + node wiring; Web Search summary is a template here (Milestone 1), no LLM call
-│       ├── market_agent.py      # Market Opportunity Agent (Milestone 2) - the only remaining LLM agent
+│       ├── market_agent.py      # Market Opportunity Agent (Milestone 2)
 │       ├── competitor_agent.py  # Competitor Discovery (Milestone 2) - local spaCy NER, no LLM call
 │       ├── opportunity_score.py # Opportunity Score post-processing node (Milestone 2 stretch)
 │       ├── white_space.py       # evidence-backed opportunity gaps (no LLM call)
+│       ├── swot_agent.py        # SWOT and structured risk analysis
+│       ├── mvp_agent.py         # bounded MVP feature recommendations
+│       ├── gtm_agent.py         # focused go-to-market strategy
+│       ├── chat_graph.py        # separate advisor graph with optional scoped search
+│       ├── session_store.py     # bounded in-memory validation/chat sessions
+│       ├── structured_output.py # compact contexts and strict JSON extraction
 │       ├── output_guard.py      # reasoning-leak stripping used by the Market Opportunity agent
 │       ├── retrieval.py         # multi-angle query expansion + dedup
 │       ├── tools.py             # Tavily (primary) + DuckDuckGo/Wikipedia/Hacker News fallback
