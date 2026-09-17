@@ -9,6 +9,7 @@ from .gtm_agent import analyze_gtm
 from .market_agent import analyze_market_opportunity
 from .mvp_agent import analyze_mvp
 from .opportunity_score import calculate_opportunity_score
+from .structured_output import compact_sources
 from .swot_agent import analyze_swot
 from .white_space import analyze_white_space
 
@@ -533,6 +534,150 @@ def gtm_node(state: PipelineState) -> PipelineState:
 
 
 # --------------------------------------------------
+# TRACK A: CONFIDENCE DASHBOARD
+# --------------------------------------------------
+#
+# NOTE ON agent/confidence.py: that module's calculate_confidence() is dead
+# code - only ever called from tests and scripts/smoke_test.py, never wired
+# into this pipeline. The live /validate response has always come from
+# confidence_node() above (a different contract: agreeingSources/
+# totalSources/percentage/perAngle). This dashboard extension builds on the
+# live node instead of the orphaned module, so there's exactly one
+# confidence implementation reaching the frontend, not two silently
+# diverging ones. confidence.py should be reconciled/removed separately.
+
+_CLAIM_LIST_KEYS = ("strengths", "weaknesses", "opportunities", "threats")
+
+
+def _collect_claims(state: PipelineState) -> list[dict]:
+    """Gather every claim across the pipeline's evidence-backed sections
+    that carries a "sourceIds" field. Only swot_agent.py emits this shape
+    today (see swot_agent.py's _valid_claim_list) - market/mvp/gtm are
+    expected to add their own "sourceIds" fields the same way as their
+    Track A work lands, and this function picks them up automatically the
+    moment those sections start returning items shaped like
+    {"sourceIds": [...]}, with no change needed here.
+    """
+    claims: list[dict] = []
+
+    swot = state.get("swot") or {}
+    for key in _CLAIM_LIST_KEYS:
+        for item in swot.get(key) or []:
+            if isinstance(item, dict) and "sourceIds" in item:
+                claims.append(item)
+    for risk in swot.get("risks") or []:
+        if isinstance(risk, dict) and "sourceIds" in risk:
+            claims.append(risk)
+
+    for feature in (state.get("mvp") or {}).get("features") or []:
+        if isinstance(feature, dict) and "sourceIds" in feature:
+            claims.append(feature)
+
+    gtm = state.get("gtm") or {}
+    for channel in gtm.get("channels") or []:
+        if isinstance(channel, dict) and "sourceIds" in channel:
+            claims.append(channel)
+
+    return claims
+
+
+def _source_relevance_by_id(results: list) -> dict[str, float]:
+    """Map each "src-N" id back to its relevance score, using the exact same
+    ordering compact_sources() used when the agents built their prompts -
+    so a sourceId a claim cites resolves to the real score of the source it
+    actually came from, not a guess.
+    """
+    sources = compact_sources(results)
+    lookup = {}
+    for index, source in enumerate(sources):
+        score = results[index].get("score") if index < len(results) else None
+        if isinstance(score, (int, float)):
+            lookup[source["sourceId"]] = score
+    return lookup
+
+
+def _confidence_dashboard(state: PipelineState) -> dict:
+    """Extend the existing evidence-agreement indicator (confidence_node,
+    computed early from raw search results) with the claim-level dashboard
+    from docs/unique-features-plan.md §5.2: source coverage, average
+    relevance, cross-source agreement, source recency, and a direct-
+    evidence-vs-inferred ratio. Computed without another LLM call, same as
+    the rest of this pipeline's deterministic post-processing steps.
+    """
+    claims = _collect_claims(state)
+    total_claims = len(claims)
+
+    cited_ids: set[str] = set()
+    claims_with_source = 0
+    claims_with_multiple = 0
+    for claim in claims:
+        source_ids = claim.get("sourceIds") or []
+        if source_ids:
+            claims_with_source += 1
+            cited_ids.update(source_ids)
+        if len(source_ids) >= 2:
+            claims_with_multiple += 1
+
+    def _pct(numerator: int, denominator: int) -> int:
+        return round((numerator / denominator) * 100) if denominator else 0
+
+    relevance_by_id = _source_relevance_by_id(state.get("results", []))
+    cited_scores = [relevance_by_id[sid] for sid in cited_ids if sid in relevance_by_id]
+    average_relevance = round(sum(cited_scores) / len(cited_scores), 2) if cited_scores else None
+
+    return {
+        "sourceCoverage": {
+            "claimsWithSource": claims_with_source,
+            "totalClaims": total_claims,
+            "percentage": _pct(claims_with_source, total_claims),
+        },
+        "averageRelevance": average_relevance,
+        "crossSourceAgreement": {
+            "claimsWithMultipleSources": claims_with_multiple,
+            "totalClaims": total_claims,
+            "percentage": _pct(claims_with_multiple, total_claims),
+        },
+        "directEvidenceRatio": {
+            "direct": claims_with_source,
+            "inferred": total_claims - claims_with_source,
+            "percentage": _pct(claims_with_source, total_claims),
+        },
+        # retrieval.py/tools.py don't currently capture a source's publish
+        # date (confirmed: no provider path sets one - see tools.py), so
+        # this is left honestly unavailable rather than invented. Add a
+        # "publishedAt" field upstream to make this real.
+        "sourceRecency": "not available - source publish dates are not currently captured",
+    }
+
+
+def confidence_dashboard_node(state: PipelineState) -> PipelineState:
+    """Runs once every strategy agent has had a chance to produce
+    sourceIds-bearing claims, merging the dashboard into the same
+    "confidence" key confidence_node already populated - additive, never
+    replacing the existing agreeingSources/percentage/perAngle fields the
+    frontend may already read.
+    """
+    logger.info("[confidence_dashboard] START")
+
+    if state.get("error"):
+        logger.warning("[confidence_dashboard] Skipped because web search failed")
+        return state
+
+    try:
+        dashboard = _confidence_dashboard(state)
+    except Exception:
+        logger.exception("[confidence_dashboard] FAILED")
+        return state
+
+    confidence = {**(state.get("confidence") or {}), **dashboard}
+    logger.info(
+        "[confidence_dashboard] COMPLETE - source coverage %s%%",
+        dashboard["sourceCoverage"]["percentage"],
+    )
+    return {**state, "confidence": confidence}
+
+
+# --------------------------------------------------
 # BUILD LANGGRAPH PIPELINE
 # --------------------------------------------------
 
@@ -578,6 +723,11 @@ def build_pipeline():
     graph.add_node("swot_analysis", swot_node)
     graph.add_node("mvp_recommendation", mvp_node)
     graph.add_node("gtm_strategy", gtm_node)
+
+    # Track A: confidence dashboard (source coverage, cross-source
+    # agreement, direct-evidence ratio) - runs last so it can see every
+    # strategy agent's sourceIds-bearing claims.
+    graph.add_node("confidence_dashboard", confidence_dashboard_node)
 
     # --------------------------------------------------
     # PIPELINE FLOW
@@ -632,7 +782,8 @@ def build_pipeline():
     graph.add_edge("white_space", "swot_analysis")
     graph.add_edge("swot_analysis", "mvp_recommendation")
     graph.add_edge("mvp_recommendation", "gtm_strategy")
-    graph.add_edge("gtm_strategy", END)
+    graph.add_edge("gtm_strategy", "confidence_dashboard")
+    graph.add_edge("confidence_dashboard", END)
 
     return graph.compile()
 
