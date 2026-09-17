@@ -13,7 +13,7 @@ import main
 from agent import retrieval
 from agent.chat_graph import interpret_node, run_chat_turn
 from agent.chat_graph import ChatRateLimitError
-from agent.graph import gtm_node, mvp_node, swot_node
+from agent.graph import confidence_dashboard_node, gtm_node, mvp_node, swot_node
 from agent.graph import pipeline
 from agent.gtm_agent import analyze_gtm
 from agent.mvp_agent import analyze_mvp
@@ -38,13 +38,47 @@ class MilestoneThreeTests(unittest.TestCase):
     def test_swot_contract(self, kickoff):
         kickoff.return_value = SimpleNamespace(
             raw=(
-                '{"strengths":["Focused niche"],"weaknesses":["Limited proof"],'
-                '"opportunities":["Growing demand"],"threats":["Established rivals"],'
-                '"risks":[{"risk":"Low adoption","severity":"high","likelihood":"medium"}]}'
+                '{"strengths":[{"text":"Focused niche","sourceIds":["src-1"]}],'
+                '"weaknesses":[{"text":"Limited proof","sourceIds":[]}],'
+                '"opportunities":[{"text":"Growing demand","sourceIds":["src-1"]}],'
+                '"threats":[{"text":"Established rivals","sourceIds":[]}],'
+                '"risks":[{"risk":"Low adoption","severity":"high","likelihood":"medium","sourceIds":["src-1"]}]}'
             )
         )
-        result = analyze_swot("Idea", {}, {}, {}, [])
+        result = analyze_swot(
+            "Idea",
+            {},
+            {},
+            {},
+            [{"title": "Source", "url": "https://example.com", "snippet": "Evidence"}],
+        )
         self.assertEqual(result["risks"][0]["severity"], "high")
+        self.assertEqual(result["strengths"][0]["text"], "Focused niche")
+        self.assertEqual(result["strengths"][0]["sourceIds"], ["src-1"])
+
+    @patch("agent.swot_agent.kickoff_with_fallback")
+    def test_swot_drops_hallucinated_source_ids(self, kickoff):
+        """A sourceId the model invents that isn't in the sources it was
+        actually given must never reach the caller - see
+        swot_agent._sanitize_source_ids.
+        """
+        kickoff.return_value = SimpleNamespace(
+            raw=(
+                '{"strengths":[{"text":"Focused niche","sourceIds":["src-1","src-99"]}],'
+                '"weaknesses":[{"text":"Limited proof","sourceIds":[]}],'
+                '"opportunities":[{"text":"Growing demand","sourceIds":[]}],'
+                '"threats":[{"text":"Established rivals","sourceIds":[]}],'
+                '"risks":[]}'
+            )
+        )
+        result = analyze_swot(
+            "Idea",
+            {},
+            {},
+            {},
+            [{"title": "Source", "url": "https://example.com", "snippet": "Evidence"}],
+        )
+        self.assertEqual(result["strengths"][0]["sourceIds"], ["src-1"])
 
     @patch("agent.mvp_agent.kickoff_with_fallback")
     @patch("agent.gtm_agent.kickoff_with_fallback")
@@ -76,6 +110,43 @@ class MilestoneThreeTests(unittest.TestCase):
                 self.assertIsNone(result[key])
                 self.assertIn(key, result["errors"])
                 self.assertNotIn("error", result)
+
+    def test_confidence_dashboard_computes_source_coverage_and_relevance(self):
+        state = {
+            "results": [
+                {"title": "Source A", "url": "https://example.com/a", "score": 0.8},
+                {"title": "Source B", "url": "https://example.com/b", "score": 0.4},
+            ],
+            "swot": {
+                "strengths": [{"text": "Focused niche", "sourceIds": ["src-1"]}],
+                "weaknesses": [{"text": "Limited proof", "sourceIds": []}],
+                "opportunities": [{"text": "Growing demand", "sourceIds": ["src-1", "src-2"]}],
+                "threats": [{"text": "Established rivals", "sourceIds": []}],
+                "risks": [{"risk": "Low adoption", "severity": "high", "likelihood": "medium", "sourceIds": ["src-2"]}],
+            },
+            "mvp": None,
+            "gtm": None,
+            "errors": {},
+        }
+
+        result = confidence_dashboard_node(state)
+        confidence = result["confidence"]
+
+        # 3 of 5 claims cite at least one source: strengths, opportunities, risks.
+        self.assertEqual(confidence["sourceCoverage"], {"claimsWithSource": 3, "totalClaims": 5, "percentage": 60})
+        # Only "opportunities" cites 2+ sources.
+        self.assertEqual(
+            confidence["crossSourceAgreement"],
+            {"claimsWithMultipleSources": 1, "totalClaims": 5, "percentage": 20},
+        )
+        self.assertEqual(confidence["directEvidenceRatio"], {"direct": 3, "inferred": 2, "percentage": 60})
+        # Cited sources are src-1 (score 0.8) and src-2 (score 0.4) -> mean 0.6.
+        self.assertAlmostEqual(confidence["averageRelevance"], 0.6)
+
+    def test_confidence_dashboard_skipped_on_pipeline_error(self):
+        state = {"error": "search failed", "confidence": None}
+        result = confidence_dashboard_node(state)
+        self.assertIsNone(result["confidence"])
 
     def test_session_and_chat_history(self):
         session_id = create_session({"idea": "Idea"})
