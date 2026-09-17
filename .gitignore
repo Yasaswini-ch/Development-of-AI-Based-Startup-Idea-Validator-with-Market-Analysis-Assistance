@@ -4,6 +4,9 @@ __pycache__/
 .venv/
 *.log
 
+# Local SQLite dev database (DATABASE_URL falls back to this if unset)
+backend/*.db
+
 # Node / frontend
 node_modules/
 frontend/dist/

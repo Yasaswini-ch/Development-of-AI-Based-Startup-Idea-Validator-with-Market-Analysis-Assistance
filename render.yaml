@@ -1,3 +1,9 @@
+databases:
+  - name: startup-validator-db
+    plan: free
+    databaseName: affinity
+    user: affinity
+
 services:
   - type: web
     name: startup-validator-backend
@@ -16,6 +22,10 @@ services:
         sync: false
       - key: FRONTEND_ORIGIN
         value: https://startup-validator-frontend-5qcr.onrender.com
+      - key: DATABASE_URL
+        fromDatabase:
+          name: startup-validator-db
+          property: connectionString
 
   - type: web
     name: startup-validator-frontend

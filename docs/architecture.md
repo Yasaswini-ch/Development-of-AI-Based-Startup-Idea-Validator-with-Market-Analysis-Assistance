@@ -416,7 +416,7 @@ local vs. deployed).
 ├── frontend/          # React + Tailwind app (Anu Kumari)
 │   └── ...
 ├── backend/           # FastAPI app + agent pipeline
-│   ├── main.py         # POST /validate route + in-memory request cache
+│   ├── main.py         # POST /validate route + database-backed request cache
 │   └── agent/
 │       ├── graph.py            # LangGraph pipeline: state + node wiring; Web Search summary is a template here (Milestone 1), no LLM call
 │       ├── market_agent.py      # Market Opportunity Agent (Milestone 2) - the only remaining LLM agent

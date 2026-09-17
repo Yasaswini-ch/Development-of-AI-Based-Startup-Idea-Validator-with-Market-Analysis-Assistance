@@ -41,7 +41,8 @@ def _fake_state(**overrides):
 
 class AsyncValidationTests(unittest.TestCase):
     def setUp(self):
-        main._cache.clear()
+        main._clear_cache()
+        main._clear_rate_limits()
         job_store.clear_jobs()
         self.client = TestClient(main.app)
 
@@ -124,6 +125,30 @@ class AsyncValidationTests(unittest.TestCase):
     def test_unknown_job_returns_404(self):
         response = self.client.get("/validate/status/does-not-exist")
         self.assertEqual(response.status_code, 404)
+
+    @patch("main.pipeline.invoke", return_value=_fake_state())
+    def test_validate_rate_limit_returns_429(self, _invoke):
+        with patch("main._VALIDATE_RATE_LIMIT", 2):
+            first = self.client.post("/validate", json={"idea": "Idea one"})
+            second = self.client.post("/validate", json={"idea": "Idea two"})
+            third = self.client.post("/validate", json={"idea": "Idea three"})
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(third.status_code, 429)
+        self.assertIn("Too many validation requests", third.json()["error"])
+
+    def test_export_pdf_rejects_malformed_shape(self):
+        # marketOpportunity must be an object, not a bare string - this
+        # should fail Pydantic validation (422) before ever reaching
+        # generate_dossier_pdf/ReportLab.
+        response = self.client.post("/export-pdf", json={"idea": "Idea", "marketOpportunity": "not an object"})
+        self.assertEqual(response.status_code, 422)
+
+    def test_export_pdf_accepts_a_real_validate_response_shape(self):
+        response = self.client.post("/export-pdf", json=_fake_state())
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-type"], "application/pdf")
 
 
 class JobStoreTests(unittest.TestCase):
