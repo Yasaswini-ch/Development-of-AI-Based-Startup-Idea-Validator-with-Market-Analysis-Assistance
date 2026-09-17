@@ -140,8 +140,14 @@ def generate_dossier_pdf(dossier_data: Dict[str, Any]) -> bytes:
     swot = dossier_data.get("swot") or {}
     if swot:
         story.append(Paragraph("4. SWOT & Risk Matrix", section_heading))
-        strengths = ", ".join(swot.get("strengths") or ["N/A"])
-        weaknesses = ", ".join(swot.get("weaknesses") or ["N/A"])
+        # strengths/weaknesses items are {"text", "sourceIds"} objects (see
+        # docs/unique-features-plan.md §5.1) - str() covers any
+        # older/plain-string shape too.
+        def _texts(items):
+            return [item.get("text", "") if isinstance(item, dict) else str(item) for item in items]
+
+        strengths = ", ".join(_texts(swot.get("strengths") or []) or ["N/A"])
+        weaknesses = ", ".join(_texts(swot.get("weaknesses") or []) or ["N/A"])
         story.append(Paragraph(f"<b>Core Strengths:</b> {strengths}", body_style))
         story.append(Paragraph(f"<b>Identified Weaknesses:</b> {weaknesses}", body_style))
 

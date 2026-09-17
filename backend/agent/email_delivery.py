@@ -67,7 +67,11 @@ def _build_report_html(idea: str, response: dict) -> str:
 
     swot = response.get("swot")
     if swot and swot.get("strengths"):
-        items = "".join(f'<li style="font-family:sans-serif;font-size:14px;">{_escape(s)}</li>' for s in swot["strengths"])
+        # strengths items are {"text", "sourceIds"} objects (see
+        # docs/unique-features-plan.md §5.1) - str() covers any
+        # older/plain-string shape too.
+        strength_texts = [s.get("text", "") if isinstance(s, dict) else str(s) for s in swot["strengths"]]
+        items = "".join(f'<li style="font-family:sans-serif;font-size:14px;">{_escape(s)}</li>' for s in strength_texts)
         parts.append(_section("Strengths", f"<ul>{items}</ul>"))
 
     errors = response.get("errors") or {}

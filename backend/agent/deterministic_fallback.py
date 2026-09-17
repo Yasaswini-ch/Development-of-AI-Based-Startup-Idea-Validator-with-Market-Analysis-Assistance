@@ -113,6 +113,27 @@ def deterministic_market_opportunity(idea: str, target_customer: str, problem: s
     }
 
 
+def _claim(text: str, source_ids: list[str] | None = None) -> dict:
+    """Build one SWOT claim in the {"text", "sourceIds"} shape shared with
+    swot_agent.py's real LLM output (docs/unique-features-plan.md §5.1/§3).
+    """
+    return {"text": text, "sourceIds": source_ids or []}
+
+
+def _source_id_for_url(url: str, results: list) -> list[str]:
+    """Best-effort match: if this fallback-derived claim traces back to one
+    of the raw results at a known list position, cite the same "src-N" id
+    compact_sources() would assign it (same order, same 1-based index) -
+    otherwise an empty list, never a guessed id.
+    """
+    if not url:
+        return []
+    for index, result in enumerate(results, start=1):
+        if result.get("url") == url:
+            return [f"src-{index}"]
+    return []
+
+
 def deterministic_swot(
     idea: str,
     market_opportunity: dict | None,
@@ -123,7 +144,10 @@ def deterministic_swot(
     """Same contract as swot_agent.analyze_swot's real output. Opportunities
     reuse White-Space's own triangulated gaps (already deterministic);
     threats reuse Competitor Discovery's real, NER-identified names - both
-    already computed upstream in the mesh, not re-derived here.
+    already computed upstream in the mesh, not re-derived here. sourceIds
+    are only attached where a claim traces back to a specific result (a
+    named competitor's url); everything else gets an empty sourceIds list
+    rather than a guessed citation.
     """
     ws_opportunities = (white_space or {}).get("opportunities") or []
     opportunities = []
@@ -131,24 +155,29 @@ def deterministic_swot(
         title = (opp.get("title") or "").strip()
         why = (opp.get("why") or "").strip()
         if title:
-            opportunities.append(f"{title} - {why}" if why else title)
+            opportunities.append(_claim(f"{title} - {why}" if why else title))
     if not opportunities:
-        opportunities = ["No specific opportunity gaps were identified from the available evidence."]
+        opportunities = [_claim("No specific opportunity gaps were identified from the available evidence.")]
 
     named_competitors = (competitors or {}).get("competitors") or []
     if named_competitors:
         threats = [
-            f"Established competitor {c.get('name', 'unnamed')} already offers {c.get('offering') or 'a similar product'}."
+            _claim(
+                f"Established competitor {c.get('name', 'unnamed')} already offers {c.get('offering') or 'a similar product'}.",
+                _source_id_for_url(c.get("url", ""), results),
+            )
             for c in named_competitors[:4]
         ]
     else:
-        threats = ["No named competitors were identified in the available sources, so competitive threat level is unclear."]
+        threats = [_claim("No named competitors were identified in the available sources, so competitive threat level is unclear.")]
 
     subject = _compact_subject(idea, max_words=8) or "this idea"
-    strengths = [f"Directly built around a stated, specific problem: {subject}."]
+    strengths = [_claim(f"Directly built around a stated, specific problem: {subject}.")]
     weaknesses = [
-        "This is an automated fallback summary - deeper, idea-specific "
-        "weaknesses require full AI reasoning, which is temporarily unavailable."
+        _claim(
+            "This is an automated fallback summary - deeper, idea-specific "
+            "weaknesses require full AI reasoning, which is temporarily unavailable."
+        )
     ]
 
     risks = [
@@ -159,6 +188,7 @@ def deterministic_swot(
             ),
             "severity": "unknown",
             "likelihood": "unknown",
+            "sourceIds": [],
         }
     ]
     if len(named_competitors) >= 2:
@@ -167,6 +197,7 @@ def deterministic_swot(
                 "risk": "Multiple existing competitors were found in the available sources, which may raise customer acquisition costs.",
                 "severity": "medium",
                 "likelihood": "medium",
+                "sourceIds": [],
             }
         )
 
@@ -189,9 +220,14 @@ def deterministic_mvp(idea: str, problem: str, swot: dict | None, market_opportu
     opportunities = (swot or {}).get("opportunities") or []
     features = []
     for opp in opportunities[:4]:
+        # swot_agent.py's opportunities are {"text", "sourceIds"} objects
+        # (see docs/unique-features-plan.md §5.1), not bare strings - fall
+        # back to str() for any older/plain-string shape so this never
+        # crashes on a stale cached result.
+        opp_text = opp.get("text", "") if isinstance(opp, dict) else str(opp)
         features.append(
             {
-                "feature": f"Address: {opp[:80]}",
+                "feature": f"Address: {opp_text[:80]}",
                 "rationale": (
                     "Derived directly from an identified market opportunity or "
                     "evidence gap; AI-prioritized rationale is temporarily unavailable."
