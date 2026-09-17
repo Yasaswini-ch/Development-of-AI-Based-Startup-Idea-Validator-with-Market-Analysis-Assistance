@@ -5,13 +5,17 @@ import sys
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
 
-from agent.confidence import calculate_confidence
+from agent.graph import confidence_node
 from agent.opportunity_score import calculate_opportunity_score
 from agent.white_space import analyze_white_space
 
 
 class Milestone2Tests(unittest.TestCase):
     def test_confidence_counts_angle_agreement(self):
+        # agent/confidence.py (a separate, never-wired-in implementation of
+        # this same idea) was removed - graph.py's confidence_node is the
+        # only one that has ever been reachable from /validate, so it's the
+        # one under test here.
         results = [
             {
                 "angle": "Market size & trends",
@@ -23,7 +27,7 @@ class Milestone2Tests(unittest.TestCase):
                 "angle": "Market size & trends",
                 "title": "Category overview",
                 "snippet": "A static overview.",
-                "score": 0.7,
+                "score": 0.4,
             },
             {
                 "angle": "Competitors",
@@ -33,10 +37,20 @@ class Milestone2Tests(unittest.TestCase):
             },
         ]
 
-        confidence = calculate_confidence(results)
+        confidence = confidence_node({"results": results, "errors": {}})["confidence"]
 
-        self.assertEqual(confidence["marketGrowth"], {"agree": 1, "total": 2})
-        self.assertEqual(confidence["competitivePressure"], {"agree": 1, "total": 1})
+        self.assertEqual(confidence["perAngle"]["Market size & trends"], {
+            "agreeingSources": 1,
+            "totalSources": 2,
+            "percentage": 50,
+            "label": "1/2 sources agree",
+        })
+        self.assertEqual(confidence["perAngle"]["Competitors"], {
+            "agreeingSources": 1,
+            "totalSources": 1,
+            "percentage": 100,
+            "label": "1/1 sources agree",
+        })
 
     def test_opportunity_score_uses_grounded_market_and_competition_signal(self):
         score = calculate_opportunity_score(
