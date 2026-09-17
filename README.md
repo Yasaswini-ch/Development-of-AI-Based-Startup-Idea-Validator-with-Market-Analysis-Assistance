@@ -61,14 +61,14 @@ local NER step, so it always returns real (possibly empty) data.
 | Layer        | Tech                                  |
 |--------------|----------------------------------------|
 | Frontend     | React + Tailwind CSS (`frontend/`) |
-| Backend      | FastAPI (`backend/`) — exposes `POST /validate`, with an in-memory response cache |
+| Backend      | FastAPI (`backend/`) — exposes `POST /validate`, with a database-backed response cache |
 | Agent framework | [CrewAI](https://www.crewai.com) — bounded reasoning agents for Market Opportunity, SWOT/Risk, MVP recommendations, GTM strategy, and advisor responses. Web Search summaries and Competitor Discovery remain local/deterministic to avoid unnecessary calls |
 | Orchestration | [LangGraph](https://www.langchain.com/langgraph) — main validation pipeline plus a separate conditional chat graph (`backend/agent/graph.py`, `chat_graph.py`) |
 | Search       | Tavily API (primary), with DuckDuckGo + Wikipedia + Hacker News as a zero-cost fallback chain — fetched directly (not LLM-mediated) across 5 search angles, academic sources filtered out (`backend/agent/tools.py`, `retrieval.py`) |
 | Competitor identification | Local NER ([spaCy](https://spacy.io) `en_core_web_sm`), not an LLM call — reads competitor names directly off the already-fetched search results, by deliberate design: zero API cost, zero rate limit, and it frees the entire shared Groq quota for Market Opportunity instead of splitting it across two agents. `estimatedPrice`/`featureBreadth` are always `"unknown"` as a result — an honest trade, not a bug — the UI hides those badges and the positioning grid when nothing is classified |
 | Reasoning LLM | [Groq](https://console.groq.com) — primary `qwen/qwen3.6-27b` plus two same-provider fallback models. Per-agent output limits, compact upstream artifacts, disabled/low reasoning effort, caching, and deterministic search intent reduce quota pressure |
-| Database     | None yet |
-| Advisor state | Bounded in-memory sessions with a separate LangGraph chat flow; sessions expire and do not survive restarts |
+| Database     | Postgres in production (SQLite locally/in tests) via SQLAlchemy — `backend/agent/db.py`. Set `DATABASE_URL`; unset falls back to a local `affinity.db` SQLite file |
+| Advisor state | Bounded sessions with a separate LangGraph chat flow, stored in the same database (`backend/agent/session_store.py`); sessions still expire on a TTL, but now survive a restart and are shared across every backend instance |
 | Deployment   | [Render](https://render.com) — two services, config in `render.yaml` |
 | Version control | Git / GitHub |
 
@@ -188,7 +188,7 @@ that already have the payload without a live session.
 .
 ├── frontend/            # React + Tailwind app (idea submission UI)
 ├── backend/             # FastAPI app + CrewAI/LangGraph agent pipeline
-│   ├── main.py              # POST /validate route + in-memory response cache
+│   ├── main.py              # POST /validate route + database-backed response cache
 │   └── agent/
 │       ├── graph.py              # LangGraph pipeline: state + node wiring (Web Search summary is a template here, no LLM call)
 │       ├── market_agent.py        # Market Opportunity Agent (Milestone 2)

@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-import asyncio
+from fastapi.testclient import TestClient
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
@@ -25,7 +25,8 @@ from agent.swot_agent import analyze_swot
 class MilestoneThreeTests(unittest.TestCase):
     def setUp(self):
         clear_sessions()
-        main._cache.clear()
+        main._clear_cache()
+        main._clear_rate_limits()
 
     def test_structured_parser_ignores_braces_inside_strings(self):
         value = extract_json_object(
@@ -225,7 +226,11 @@ class MilestoneThreeTests(unittest.TestCase):
             "gtm": {"positioning": "Position"},
             "errors": {},
         }
-        response = asyncio.run(main.validate_idea(main.ValidateRequest(idea="Idea")))
+        # validate_idea now takes a Request (for per-IP rate limiting), so a
+        # real HTTP call via TestClient exercises it more faithfully than
+        # calling the handler function directly with a hand-built Request.
+        with TestClient(main.app) as client:
+            response = client.post("/validate", json={"idea": "Idea"}).json()
         self.assertIn("sessionId", response)
         self.assertEqual(response["gtm"]["positioning"], "Position")
 
