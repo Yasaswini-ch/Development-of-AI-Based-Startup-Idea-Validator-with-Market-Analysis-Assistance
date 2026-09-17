@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -681,6 +682,23 @@ def confidence_dashboard_node(state: PipelineState) -> PipelineState:
 # BUILD LANGGRAPH PIPELINE
 # --------------------------------------------------
 
+def _timed(node_name: str, fn):
+    """Wrap a node so its wall-clock time is logged without touching every
+    node function's own body - this is the per-node latency data Track F's
+    optimization pass needs and previously had no way to measure (only
+    START/COMPLETE markers existed, with no duration between them).
+    """
+
+    def wrapper(state: PipelineState) -> PipelineState:
+        start = time.time()
+        result = fn(state)
+        elapsed_ms = round((time.time() - start) * 1000)
+        logger.info("[%s] elapsed_ms=%d", node_name, elapsed_ms)
+        return result
+
+    return wrapper
+
+
 def build_pipeline():
     graph = StateGraph(PipelineState)
 
@@ -690,44 +708,44 @@ def build_pipeline():
 
     graph.add_node(
         "web_search",
-        web_search_node,
+        _timed("web_search", web_search_node),
     )
 
     # Sashi: Cross-source confidence
     graph.add_node(
         "confidence_indicator",
-        confidence_node,
+        _timed("confidence_indicator", confidence_node),
     )
 
     graph.add_node(
         "market_opportunity",
-        market_opportunity_node,
+        _timed("market_opportunity", market_opportunity_node),
     )
 
     graph.add_node(
         "competitor_discovery",
-        competitor_discovery_node,
+        _timed("competitor_discovery", competitor_discovery_node),
     )
 
     # Sashi: Opportunity Score
     graph.add_node(
         "opportunity_score",
-        opportunity_score_node,
+        _timed("opportunity_score", opportunity_score_node),
     )
 
     graph.add_node(
         "white_space",
-        white_space_node,
+        _timed("white_space", white_space_node),
     )
 
-    graph.add_node("swot_analysis", swot_node)
-    graph.add_node("mvp_recommendation", mvp_node)
-    graph.add_node("gtm_strategy", gtm_node)
+    graph.add_node("swot_analysis", _timed("swot_analysis", swot_node))
+    graph.add_node("mvp_recommendation", _timed("mvp_recommendation", mvp_node))
+    graph.add_node("gtm_strategy", _timed("gtm_strategy", gtm_node))
 
     # Track A: confidence dashboard (source coverage, cross-source
     # agreement, direct-evidence ratio) - runs last so it can see every
     # strategy agent's sourceIds-bearing claims.
-    graph.add_node("confidence_dashboard", confidence_dashboard_node)
+    graph.add_node("confidence_dashboard", _timed("confidence_dashboard", confidence_dashboard_node))
 
     # --------------------------------------------------
     # PIPELINE FLOW

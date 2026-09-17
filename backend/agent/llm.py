@@ -122,6 +122,29 @@ def _retry_after_seconds(exc: Exception) -> float | None:
     return float(match.group(1)) if match else None
 
 
+def _kickoff_with_metrics(model: str, build_crew):
+    """Runs one crew.kickoff() call and logs latency + token usage - the
+    real numbers Track F's optimization pass needs to tune prompt/limit
+    budgets from, which nothing previously captured (only success/failure
+    was logged, never how long a call took or how many tokens it used).
+    """
+    start = time.time()
+    output = build_crew(model).kickoff()
+    elapsed_ms = round((time.time() - start) * 1000)
+    usage = getattr(output, "token_usage", None)
+    if usage is not None:
+        logger.info(
+            "llm_call model=%s elapsed_ms=%d prompt_tokens=%s completion_tokens=%s total_tokens=%s",
+            model, elapsed_ms,
+            getattr(usage, "prompt_tokens", None),
+            getattr(usage, "completion_tokens", None),
+            getattr(usage, "total_tokens", None),
+        )
+    else:
+        logger.info("llm_call model=%s elapsed_ms=%d", model, elapsed_ms)
+    return output
+
+
 def kickoff_with_fallback(build_crew):
     """Run a CrewAI crew built against the primary model; on a rate limit,
     switch to the next model in FALLBACK_MODELS immediately (no wait - each
@@ -153,7 +176,7 @@ def kickoff_with_fallback(build_crew):
     last_exc = None
     for i, model in enumerate(models):
         try:
-            return build_crew(model).kickoff()
+            return _kickoff_with_metrics(model, build_crew)
         except Exception as exc:
             last_exc = exc
             # model_not_found switches immediately too (see
@@ -189,5 +212,5 @@ def kickoff_with_fallback(build_crew):
             wait = min(wait, _MAX_RETRY_WAIT_SECONDS) + 0.5
             logger.warning("All models rate limited, waiting %.1fs before one final retry", wait)
             time.sleep(wait)
-            return build_crew(model).kickoff()
+            return _kickoff_with_metrics(model, build_crew)
     raise last_exc

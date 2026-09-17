@@ -11,7 +11,7 @@ import sys
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
 
-from agent.confidence import calculate_confidence
+from agent.graph import confidence_node
 from agent.opportunity_score import calculate_opportunity_score
 from agent.white_space import analyze_white_space
 
@@ -44,11 +44,11 @@ def main() -> None:
     }
     competitors = {"competitors": [{"name": "ExampleCo"}]}
 
-    confidence = calculate_confidence(results)
+    confidence = confidence_node({"results": results, "errors": {}})["confidence"]
     score = calculate_opportunity_score(market, competitors, results)
     white_space = analyze_white_space(market, competitors, results)
 
-    assert confidence["marketGrowth"]["total"] == 1
+    assert confidence["totalSources"] == 2
     assert score > 0
     assert white_space["opportunities"]
     print("Milestone 2 smoke test passed.")
