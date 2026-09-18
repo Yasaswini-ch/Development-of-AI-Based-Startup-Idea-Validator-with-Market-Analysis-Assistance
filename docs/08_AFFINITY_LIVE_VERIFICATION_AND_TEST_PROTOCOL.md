@@ -63,19 +63,27 @@ All verification runs were executed against the live application (FastAPI backen
 
 ---
 
-## 5. Automated Regression Test Suite (`test_model_swap_fixes.py`)
+## 5. Automated Test Suite
 
-Automated regression tests in `backend/tests/test_model_swap_fixes.py` verify fallback switching and JSON parsing:
+> **Correction:** an earlier draft of this section named a file
+> (`backend/tests/test_model_swap_fixes.py`) and specific test functions/pass-rate
+> ("16/16 passing") that don't exist — that file isn't in the repo (only a stale
+> compiled `.pyc` remains, meaning it was deleted or renamed at some point without this
+> doc being updated). The real coverage for escape-repair and model-fallback behavior
+> lives in `backend/tests/test_milestone3.py` and `backend/agent/llm.py`'s own
+> docstrings, under different test names than what was previously listed here.
 
-```python
-def test_repair_invalid_escapes():
-    raw = '{"marketSize": "It doesn\'t fail", "trends": ["trend1"]}'
-    repaired = _repair_invalid_escapes(raw)
-    parsed = json.loads(repaired)
-    assert parsed["marketSize"] == "It doesn't fail"
+Run the real suite from `backend/`:
 
-def test_model_not_found_fallback():
-    assert _is_model_not_found_error(Exception("model_not_found")) is True
+```bash
+python -m unittest discover -s tests
 ```
 
-- **Test Pass Rate:** **16 / 16 passing** (`100%`).
+As of this writing: **51 tests passing** across `test_milestone2.py`,
+`test_milestone3.py`, `test_async_email.py`, `test_report_assembler.py`, and
+`test_integration.py` (unit, contract, async, and concurrency tests; the one
+real-provider test in `test_integration.py` only runs when `GROQ_API_KEY` is set).
+Escape-repair behavior specifically is covered by
+`test_milestone3.py::test_structured_parser_repairs_invalid_escape_sequences`;
+model-fallback switching is exercised through `agent/llm.py`'s
+`kickoff_with_fallback()` in the mocked LLM tests across the same file.

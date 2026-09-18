@@ -39,7 +39,7 @@ flowchart TD
 ### Architectural Novelty
 1. **Hybrid Task Scoping:** Eliminates the anti-pattern of multi-LLM chains by reserving LLM calls strictly for open-ended market reasoning while handling entity discovery with local spaCy NER.
 2. **Deterministic Anti-Hallucination Constraints:** Strict negative prompts force the LLM to output *"TAM/SAM figures are not clear from the provided sources"* when web snippets lack financial metrics.
-3. **Stateless Privacy Guarantee:** Operates with zero persistent database storage, relying on volatile memory and SHA-256 keyed 30-minute ephemeral caching.
+3. **Bounded-Retention Privacy Guarantee:** True of Milestones 1-2 (zero persistent storage, pure in-memory caching). Milestone 4 added a database-backed store (Postgres/SQLite, `agent/db.py` - see doc 19) for sessions/jobs/cache; there is still no user-account system or authentication, and every row is still bounded by a TTL and auto-expires, but this is no longer purely in-memory.
 
 ---
 

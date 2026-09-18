@@ -65,8 +65,8 @@ This document specifies the formal Functional and Non-Functional Software Requir
 - **NFR-03 (Token Optimization):** The primary Groq LLM model (`qwen3.8-27b`) shall use `reasoning_effort="none"` to keep output token consumption under free-tier per-minute caps.
 
 ### 4.2 Privacy & Security (NFR-04 to NFR-06)
-- **NFR-04 (Zero Database Retention):** The system shall store **zero user data** in persistent databases or disk stores. All data exists only in volatile memory.
-- **NFR-05 (Ephemeral Caching):** Identical request responses shall be cached in volatile memory for **30 minutes** using SHA-256 hash keys.
+- **NFR-04 (Bounded Retention, superseded):** This originally required zero persistent storage (Milestones 1-2's in-memory-only design). Milestone 4 introduced a database-backed store (`backend/agent/db.py`, Postgres/SQLite) for sessions, jobs, and cache, with no user accounts and no authentication - every session is still bounded by a TTL and a max-row-count limit (auto-expires), but the "all data exists only in volatile memory" claim is no longer accurate. See doc 19 for the corrected persistence design.
+- **NFR-05 (Ephemeral Caching):** Identical request responses are cached (database-backed as of Milestone 4, was in-memory in Milestones 1-2) for **30 minutes** using SHA-256 hash keys.
 - **NFR-06 (Client Session Isolation):** Client state shall use browser `sessionStorage` (purged on tab close) rather than `localStorage`.
 
 ### 4.3 Availability & Reliability (NFR-07 to NFR-08)

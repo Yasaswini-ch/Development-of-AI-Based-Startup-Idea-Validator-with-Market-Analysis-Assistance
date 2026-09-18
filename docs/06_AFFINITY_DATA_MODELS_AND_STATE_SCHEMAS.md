@@ -16,10 +16,24 @@
 
 ## 1. Data Persistence Policy & Rationale
 
-Affinity operates under a **Zero Persistent Database Policy**:
-- **No SQL / NoSQL Storage:** Submitted startup ideas, target demographics, and generated reports are stored strictly in volatile RAM.
-- **Privacy Assurance:** Unreleased startup concepts are never logged to a disk-backed database or shared with external model trainers.
-- **Stateless Pipeline:** Every validation request executes through an isolated LangGraph state dictionary (`PipelineState`) that is garbage-collected upon completion.
+> **Correction:** this section originally described a "Zero Persistent Database
+> Policy" (true of Milestones 1-2's in-memory-only design). Milestone 4 added a real
+> database layer - see below.
+
+- **Database-backed as of Milestone 4:** `backend/agent/db.py` (SQLAlchemy) persists
+  validation sessions, background jobs, and the response cache to Postgres in
+  production (SQLite locally/in tests) - see doc 19 for the full design. There is
+  still no user-account system and no authentication: every session/job/cache row is
+  bounded by a TTL and a max-row-count limit and auto-expires, but rows do live on
+  disk between requests and across a restart, which "volatile RAM" and "stateless
+  pipeline" both explicitly (and, as of Milestone 4, incorrectly) denied.
+- **Privacy note that remains true:** submitted ideas are never used for model
+  training and are never shared with a third party beyond what's needed to call the
+  configured search/LLM/email providers.
+- **Still stateless per LangGraph invocation:** each `pipeline.invoke()` call still
+  runs through an isolated `PipelineState` dict that's discarded after the response is
+  shaped - what changed is that the *shaped response* now also gets written to a
+  session row, not that the pipeline itself gained cross-request state.
 
 ---
 
@@ -32,12 +46,16 @@ class ValidateRequest(BaseModel):
     idea: str
     targetCustomer: str = ""
     problem: str = ""
+    email: str = ""   # optional - triggers the async/email path if the pipeline runs long
 ```
 
 ### Validation Invariants
-- `idea`: String, required. Whitespace trimmed. Must contain at least 3 non-whitespace characters.
+- `idea`: String, required. Whitespace trimmed and must be non-empty (`if not payload.idea.strip()`) -
+  there is no minimum-length-3 rule; a single non-whitespace character passes.
 - `targetCustomer`: String, optional. Default empty string.
 - `problem`: String, optional. Default empty string.
+- `email`: String, optional. Validated as a real email address if non-empty
+  (`is_valid_email()`); invalid values are rejected with a 422 before the pipeline runs.
 
 ---
 

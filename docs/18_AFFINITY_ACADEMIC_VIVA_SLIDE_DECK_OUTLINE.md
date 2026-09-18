@@ -85,16 +85,17 @@
 
 ---
 
-## Slide 10: Opportunity Score Mathematical Model
-- **Formula:** $\text{Score} = \text{Clamp}(50 + S_{\text{market}} + S_{\text{growth}} - S_{\text{density}} + S_{\text{gaps}}, 0, 100)$
-- **Determinism:** Non-LLM mathematical formula ensures stable, reproducible scoring.
+## Slide 10: Opportunity Score Formula
+- **Formula:** `Score = clamp(marketSizeScore[0-40] + growthScore[0-30] + competitionScore[0-30], 0, 100)` — purely additive, no subtraction, no white-space term (see doc 15 for the corrected, source-verified breakdown).
+- **Determinism:** Non-LLM keyword/count-based formula ensures stable, reproducible scoring.
 
 ---
 
 ## Slide 11: Information Security & Data Privacy
-- **Stateless:** Zero persistent database storage.
-- **Caching:** Volatile in-memory cache (30-min TTL) keyed by SHA-256 hash.
+- **Bounded retention, not zero:** Milestone 4 added a database-backed store (Postgres/SQLite) for sessions/jobs/cache - superseding the earlier "zero persistent storage" claim. No user accounts, no authentication; every row still auto-expires on a TTL + max-count limit.
+- **Caching:** Database-backed cache (30-min TTL) keyed by SHA-256 hash - was in-memory in Milestones 1-2.
 - **Client:** Browser `sessionStorage` purges data on tab close.
+- **New in Milestone 4:** per-IP rate limiting and request-id tracing on every endpoint.
 
 ---
 
