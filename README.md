@@ -270,6 +270,23 @@ dashboard to match.
 
 The legacy Streamlit prototype (`app.py`) is no longer deployed by this config.
 
+### Scaling out
+
+Before the database migration (see `backend/agent/db.py`), sessions/jobs/cache lived only
+in each backend instance's own memory, so running more than one instance meant a request
+could land on an instance that had never seen that session — scaling out would have
+silently broken chat/PDF export/status polling. That's no longer the blocker: with state
+shared in Postgres, adding more instances on Render's Scaling tab is safe from a
+correctness standpoint.
+
+What running multiple instances does *not* fix on its own: the Groq API quota
+(`backend/agent/llm.py`'s model-fallback chain) is shared account-wide, not per-instance —
+more backend instances means more concurrent requests hitting the same quota sooner, not
+more total LLM throughput. `DB_POOL_SIZE`/`DB_POOL_MAX_OVERFLOW` (env vars, default 5/5)
+control how many Postgres connections each instance opens; keep
+`instances × (pool_size + max_overflow)` comfortably under the database plan's max
+connection count.
+
 ## Contributing
 
 1. Create a branch off `staging`.
