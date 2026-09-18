@@ -18,14 +18,13 @@ plain JSON in its answer, which we parse and validate ourselves, with a
 safe fallback if parsing fails or no valid JSON can be found at all.
 """
 
-import json
 import logging
 
 from crewai import Agent, Crew, Process, Task
 
 from .deterministic_fallback import deterministic_market_opportunity
 from .llm import get_llm, kickoff_with_fallback
-from .output_guard import strip_reasoning
+from .structured_output import extract_json_object
 
 logger = logging.getLogger(__name__)
 
@@ -135,85 +134,6 @@ def _build_market_crew(idea: str, target_customer: str, problem: str, context: s
     return Crew(agents=[analyst], tasks=[task], process=Process.sequential, verbose=False)
 
 
-_JSON_LEGAL_ESCAPES = set('"\\/bfnrtu')
-
-
-def _repair_invalid_escapes(text: str) -> str:
-    """Repair invalid escape sequences some models emit inside JSON strings.
-
-    Found live on Sept 15, 2026 with groq/qwen/qwen3.8-27b (the replacement
-    for the deprecated qwen3.6-27b): inside JSON string values it wrote
-    apostrophes with a backslash (don't as don\\'t), which is not a valid
-    JSON escape - json.loads rejects the entire object, and a genuinely
-    good, fully grounded analysis was thrown away by the shape gate purely
-    on that artifact. JSON only allows the escapes \\" \\\\ \\/ \\b \\f \\n
-    \\r \\t and \\uXXXX, so a backslash before any other character is the
-    model's own escaping slip rather than real JSON - rewriting those pairs
-    to the bare character is a pure repair, never a content change.
-    Already-valid escapes (including an escaped backslash) are preserved
-    untouched.
-    """
-    out = []
-    i = 0
-    while i < len(text):
-        ch = text[i]
-        if ch == "\\" and i + 1 < len(text):
-            nxt = text[i + 1]
-            if nxt in _JSON_LEGAL_ESCAPES:
-                out.append(ch)
-            # An invalid escape (e.g. a backslash before an apostrophe) drops
-            # the backslash and keeps the character either way.
-            out.append(nxt)
-            i += 2
-            continue
-        out.append(ch)
-        i += 1
-    return "".join(out)
-
-
-def _find_balanced_objects(text: str) -> list[str]:
-    """Find every top-level {...} substring via brace counting, not just
-    first-'{'-to-last-'}' (which breaks if the model wraps its real answer
-    in explanatory text containing its own braces, e.g. a markdown code
-    fence example). Returns them in the order they appear.
-    """
-    objects = []
-    depth = 0
-    start = None
-    for i, ch in enumerate(text):
-        if ch == "{":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == "}":
-            if depth > 0:
-                depth -= 1
-                if depth == 0 and start is not None:
-                    objects.append(text[start : i + 1])
-    return objects
-
-
-def _extract_json(text: str) -> dict | None:
-    """Try every balanced {...} substring, last-to-first, and return the
-    first one that's both valid JSON and has the right shape. This
-    recovers the real answer even when the model buries it in a rambling
-    scratchpad, as long as it does eventually produce valid JSON somewhere.
-
-    Each candidate gets two parse attempts: as-is, then after
-    _repair_invalid_escapes - so a correct answer carrying a stray invalid
-    escape still lands instead of being discarded wholesale.
-    """
-    for candidate in reversed(_find_balanced_objects(text)):
-        for attempt_text in (candidate, _repair_invalid_escapes(candidate)):
-            try:
-                data = json.loads(attempt_text)
-            except (json.JSONDecodeError, ValueError):
-                continue
-            if isinstance(data, dict) and _is_valid_shape(data):
-                return data
-    return None
-
-
 def _is_valid_segment(item) -> bool:
     if not isinstance(item, dict):
         return False
@@ -252,15 +172,14 @@ def analyze_market_opportunity(
         crew_output = kickoff_with_fallback(
             lambda model: _build_market_crew(idea, target_customer, problem, context, model)
         )
-        candidate_text = strip_reasoning(crew_output.raw)
 
         # Search for valid JSON directly rather than rejecting the whole
         # response for containing extra text first - this model often
         # rambles through a visible scratchpad but still lands on a
         # correct, well-shaped JSON object by the end of it.
-        data = _extract_json(candidate_text)
+        data = extract_json_object(crew_output.raw, _is_valid_shape)
         if data is None:
-            logger.warning("Market opportunity: no valid JSON found in output: %r", candidate_text)
+            logger.warning("Market opportunity: no valid JSON found in output: %r", crew_output.raw)
             raise ValueError("Market opportunity analysis did not return a valid, parseable result.")
 
         data["trends"] = data["trends"][:_MAX_TRENDS]
