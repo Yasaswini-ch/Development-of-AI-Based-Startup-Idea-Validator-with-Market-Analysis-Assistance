@@ -74,7 +74,30 @@ def get_engine() -> Engine:
         url = url.replace("postgresql://", "postgresql+psycopg://", 1)
 
     connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
-    _engine = create_engine(url, connect_args=connect_args, pool_pre_ping=True)
+
+    # Pool sizing only applies to Postgres - SQLite (local dev/tests) uses
+    # SQLAlchemy's own SingletonThreadPool/NullPool automatically and
+    # ignores these. Configurable via env vars rather than hardcoded so the
+    # same code works whether this runs as one instance or several: each
+    # instance opens its own pool, so pool_size should be set with
+    # (instances x pool_size) comfortably under the database plan's max
+    # connection count, not against a single instance in isolation.
+    # pool_pre_ping avoids handing out a connection Render's Postgres has
+    # since dropped for being idle; pool_recycle proactively retires
+    # connections before that happens. pool_timeout makes exhaustion fail
+    # fast with a clear error instead of a hung request.
+    pool_kwargs = (
+        {
+            "pool_size": int(os.environ.get("DB_POOL_SIZE", "5")),
+            "max_overflow": int(os.environ.get("DB_POOL_MAX_OVERFLOW", "5")),
+            "pool_timeout": int(os.environ.get("DB_POOL_TIMEOUT_SECONDS", "10")),
+            "pool_recycle": int(os.environ.get("DB_POOL_RECYCLE_SECONDS", "1800")),
+        }
+        if not url.startswith("sqlite")
+        else {}
+    )
+
+    _engine = create_engine(url, connect_args=connect_args, pool_pre_ping=True, **pool_kwargs)
     metadata.create_all(_engine)
     return _engine
 
