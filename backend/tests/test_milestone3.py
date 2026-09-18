@@ -35,6 +35,28 @@ class MilestoneThreeTests(unittest.TestCase):
         )
         self.assertEqual(value, {"value": "a {quoted} value"})
 
+    def test_structured_parser_repairs_invalid_escape_sequences(self):
+        # Some models write an apostrophe as \' inside a JSON string, which
+        # json.loads rejects outright (\' is not a legal JSON escape). This
+        # is the actual live failure that market_agent.py's now-removed
+        # duplicate _extract_json/_repair_invalid_escapes existed to fix -
+        # shared here in structured_output.py so every agent gets the same
+        # repair instead of only the one that happened to hit it first.
+        value = extract_json_object(
+            r'{"marketSize": "don\'t know", "trends": [], "segments": []}',
+            lambda item: item.get("marketSize") == "don't know",
+        )
+        self.assertEqual(value["marketSize"], "don't know")
+
+    def test_structured_parser_picks_last_valid_candidate_over_a_rambling_scratchpad(self):
+        text = (
+            'Let me think... {"marketSize": "draft, ignore this"} '
+            'Actually, here is my final answer: '
+            '{"marketSize": "The market is growing.", "trends": ["Rising demand"], "segments": []}'
+        )
+        value = extract_json_object(text, lambda item: "trends" in item)
+        self.assertEqual(value["marketSize"], "The market is growing.")
+
     @patch("agent.swot_agent.kickoff_with_fallback")
     def test_swot_contract(self, kickoff):
         kickoff.return_value = SimpleNamespace(
