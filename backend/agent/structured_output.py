@@ -23,6 +23,9 @@ def compact_sources(results: list, limit: int = 6, snippet_chars: int = 220) -> 
                 "snippet": str(result.get("snippet", ""))[:snippet_chars],
                 "url": str(result.get("url", "")),
                 "angle": str(result.get("angle", "")),
+                # None (not a guessed date) when the search provider this
+                # result came from doesn't expose one - see tools.py.
+                "publishedAt": result.get("publishedAt"),
             }
         )
     return sources

@@ -159,7 +159,7 @@ curl -X POST https://startup-validator-backend-pruu.onrender.com/validate \
     "averageRelevance": 0.74,
     "crossSourceAgreement": { "claimsWithMultipleSources": 2, "totalClaims": 9, "percentage": 22 },
     "directEvidenceRatio": { "direct": 6, "inferred": 3, "percentage": 67 },
-    "sourceRecency": "not available - source publish dates are not currently captured"
+    "sourceRecency": { "sourcesWithKnownDate": 4, "totalSources": 10, "medianAgeDays": 42.5 }
   },
   "marketOpportunity": {
     "marketSize": "The global market was valued at $2.1 billion in 2024 and is growing at 12% annually.",
