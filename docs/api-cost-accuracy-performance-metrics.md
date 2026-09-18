@@ -19,7 +19,7 @@ The full request cycle involves two external API categories: **search** and **LL
 | # | LangGraph Node | Module | Cost Class | API Used |
 |---|---|---|---|---|
 | 1 | `web_search` | `agent/retrieval.py` + `agent/tools.py` | Paid (optional) or Free | Tavily (primary); DuckDuckGo / Wikipedia / HN (fallback) |
-| 2 | `confidence_indicator` | `agent/confidence.py` | **Zero** | None — regex over already-fetched text |
+| 2 | `confidence_indicator` | `agent/graph.py` (`confidence_node`) | **Zero** | None — source-count/relevance aggregation over already-fetched text |
 | 3 | `market_opportunity` | `agent/market_agent.py` | **Paid (LLM)** | Groq — `qwen/qwen3.8-27b` (primary), `openai/gpt-oss-20b` / `gpt-oss-120b` (fallback) |
 | 4 | `competitor_discovery` | `agent/competitor_agent.py` | **Zero** | None — local spaCy `en_core_web_sm` NER |
 | 5 | `white_space` | `agent/white_space.py` | **Zero** | None — deterministic post-processing |
@@ -402,7 +402,7 @@ All figures in this document are derived directly from the source code as of com
 | [`backend/agent/tools.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/tools.py) | Tavily integration, free fallback chain, relevance scoring formula |
 | [`backend/agent/market_agent.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/market_agent.py) | Context window bounds, output validation logic |
 | [`backend/agent/competitor_agent.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/competitor_agent.py) | NER filters, mention-count thresholds, price/breadth heuristics |
-| [`backend/agent/confidence.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/confidence.py) | Confidence regex patterns, output shape |
+| [`backend/agent/graph.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/graph.py) | `confidence_node`'s aggregation logic and output shape (the module actually wired into `/validate` - a separately-built `agent/confidence.py` was never reachable and has since been removed) |
 | [`backend/agent/opportunity_score.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/opportunity_score.py) | Score weights, signal thresholds, fallback cap |
 | [`backend/main.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/main.py) | Cache TTL, cache key normalization, partial-failure response shape |
 | [`docs/milestone2-verification.md`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/docs/milestone2-verification.md) | Live test results used in §4.2.2 accuracy table |

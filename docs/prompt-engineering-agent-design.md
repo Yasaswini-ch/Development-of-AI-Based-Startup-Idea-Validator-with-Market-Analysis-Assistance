@@ -22,11 +22,13 @@ Affinity solves this through strict **task-to-tool scoping**:
 | Pipeline Stage | Module | Architecture Class | Execution Engine | API Cost |
 |---|---|---|---|---|
 | **1. Search Retrieval** | [`agent/retrieval.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/retrieval.py) | Direct Tool Search | Tavily API (Primary) / DDG + Wikipedia + HN (Fallback) | $0.00 to $0.008 |
-| **2. Confidence Indicator** | [`agent/confidence.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/confidence.py) | Deterministic Regex | Python Regular Expressions | **$0.00** |
-| **3. Market Opportunity** | [`agent/market_agent.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/market_agent.py) | **Single LLM Agent** | Groq (`qwen/qwen3.8-27b` primary) | Free-tier / Paid |
+| **2. Confidence Indicator** | [`agent/graph.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/graph.py) (`confidence_node`) | Deterministic Heuristic | Source-count/relevance aggregation | **$0.00** |
+| **3. Market Opportunity** | [`agent/market_agent.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/market_agent.py) | LLM Agent | Groq (`qwen/qwen3.8-27b` primary) | Free-tier / Paid |
 | **4. Competitor Discovery** | [`agent/competitor_agent.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/competitor_agent.py) | Local NLP Engine | spaCy `en_core_web_sm` NER | **$0.00** |
 | **5. White-space Analysis** | [`agent/white_space.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/white_space.py) | Algorithmic Synthesis | Deterministic Python heuristics | **$0.00** |
 | **6. Opportunity Score** | [`agent/opportunity_score.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/opportunity_score.py) | Mathematical Model | Weighted scoring formula | **$0.00** |
+| **7. SWOT / MVP / GTM** | `agent/swot_agent.py`, `mvp_agent.py`, `gtm_agent.py` | LLM Agents | Groq (same fallback chain) | Free-tier / Paid |
+| **8. Confidence Dashboard** | [`agent/graph.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/graph.py) (`confidence_dashboard_node`) | Deterministic Heuristic | Source coverage/recency aggregation over prior agents' output | **$0.00** |
 
 ---
 
@@ -153,22 +155,31 @@ Rather than relying on LLMs, competitor discovery processes retrieved search tex
 
 ---
 
-### 5.2 Confidence Indicator Engine (`agent/confidence.py`)
-Calculates cross-source consensus using regular expressions without LLM calls:
+### 5.2 Confidence Indicator + Confidence Dashboard (`agent/graph.py`)
+
+> **Correction:** earlier drafts of this document (and several others in this suite)
+> described a separate `agent/confidence.py` module using regex signal-word matching.
+> That module was written independently, was **never actually wired into the live
+> pipeline**, and has since been removed. The implementation below is the one that has
+> always been reachable from `/validate`.
+
+`confidence_node` (runs right after `web_search`) calculates cross-source agreement
+without any LLM call or regex matching — it groups results by research angle and counts
+how many already have a relevance score at or above a fixed threshold (`0.5`):
 
 ```python
-_GROWTH_PATTERNS = [
-    r"\bcagr\b", r"\bgrowing\b", r"\bgrowth\b", r"\bexpanding\b",
-    r"\bforecast\b", r"\bmarket size\b", r"\bvaluation\b"
-]
-
-_COMPETITION_PATTERNS = [
-    r"\bcompetitor\b", r"\balternative\b", r"\bversus\b",
-    r"\bmarket share\b", r"\brival\b", r"\bcompete\b"
-]
+agreeing_sources = sum(1 for item in scored_items if item.get("score", 0) >= 0.5)
+percentage = round((agreeing_sources / scored_total) * 100)
 ```
 
-Counts matching documents across `"Market size & trends"` and `"Competitors"` search angles to produce metrics like `{"marketGrowth": {"agree": 4, "total": 5}}`.
+producing `{"agreeingSources": 4, "totalSources": 5, "percentage": 80, "perAngle": {...}}`.
+
+`confidence_dashboard_node` (Milestone 4, Track A — runs *last*, after every strategy
+agent) extends the same `confidence` object with `sourceCoverage`, `averageRelevance`,
+`crossSourceAgreement`, `directEvidenceRatio`, and `sourceRecency` — all computed from
+`sourceIds` already attached to SWOT claims (and automatically from MVP/GTM/Market once
+those agents add the same field) and from each result's `publishedAt`, with zero
+additional LLM calls.
 
 ---
 

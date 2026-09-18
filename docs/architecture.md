@@ -1,28 +1,27 @@
-# System Architecture — Milestone 1 & 2
+# System Architecture — Milestones 1–4
 
-Owner: Yasaswini · Status: Milestone 1 & 2 complete (updated Sep 6, 2026)
+Owner: Yasaswini · Status: Milestones 1–3 complete, Milestone 4 in progress (updated Sep 19, 2026)
 
 ## 1. System Overview
 
-The system has four pieces:
+The system has five pieces:
 
-1. **Frontend** — React + Tailwind app. Renders the idea submission form and displays
-   validation results.
-2. **Backend API** — a small FastAPI service exposing `POST /validate`. Receives the
-   submitted idea, runs it through the agent pipeline, and returns a shaped response.
+1. **Frontend** — React + Tailwind app. Renders the idea submission form, results,
+   chat advisor, and report export controls.
+2. **Backend API** — a FastAPI service exposing `POST /validate`, `POST /chat`,
+   PDF/report export routes, and job-status polling. Rate-limited per IP and
+   request-traced (see §7).
 3. **Web Search step** (Milestone 1) — a Python module that searches the web (Tavily
    when configured, otherwise DuckDuckGo/Wikipedia/Hacker News as a free fallback) for
    market/competitor information related to the submitted idea, then builds a summary
    directly from those results via a plain template - no LLM call (see §7).
-4. **Market Opportunity Agent & Competitor Discovery step** (Milestone 2) — run after
-   the Web Search step, consuming its real results (context passing). Market
-   Opportunity is an LLM agent producing structured market analysis; Competitor
-   Discovery is a **local, non-LLM** step (spaCy NER over the same results, see §2) —
-   a deliberate design choice, not a fallback, made to keep the shared Groq quota free
-   for the one agent that actually needs open-ended reasoning.
-5. **Opportunity Score node** (Milestone 2 stretch) — a post-processing step that
-   combines the Market Opportunity and Competitor Discovery outputs (falling back to
-   raw search-result signal if both upstream agents failed) into a single 0–100 score.
+4. **Market/Competitor/Strategy agents** (Milestones 2–3) — Market Opportunity and the
+   SWOT/MVP/GTM agents are CrewAI crews reasoning over upstream context; Competitor
+   Discovery and White-space analysis are local, non-LLM steps (see §2).
+5. **Database layer** (Milestone 4) — Postgres in production, SQLite locally
+   (`backend/agent/db.py`), backing validation sessions, background jobs, and the
+   response cache. Replaces what used to be process-local dicts that didn't survive a
+   restart or work across more than one backend instance.
 
 Flow at a glance:
 
@@ -36,30 +35,37 @@ flowchart TD
     Retrieval --> Tavily["Tavily API\n(primary)"]
     Retrieval -.fallback.-> Free["DuckDuckGo + Wikipedia\n+ Hacker News\n(zero-cost)"]
 
-    Pipeline --> WS["Web Search Summary\n(template, no LLM call)"]
-    WS --> MO["Market Opportunity Agent\nagent/market_agent.py"]
+    Retrieval --> Confidence["Confidence Indicator\n(per-angle source agreement)"]
+    Confidence --> MO["Market Opportunity Agent\nagent/market_agent.py"]
     MO --> CD["Competitor Discovery\nagent/competitor_agent.py\n(local spaCy NER, no LLM call)"]
     CD --> OS["Opportunity Score\nagent/opportunity_score.py"]
-    OS --> WA["White-space Analysis\nagent/white_space.py"]
-    MO --> LLM["Groq LLM\nqwen3.8-27b (primary)"]
-    LLM -.rate limit: switch model.-> LLM2["Groq LLM\ngpt-oss-20b (fallback)"]
+    OS --> WS["White-space Analysis\nagent/white_space.py\n(deterministic, no LLM call)"]
+    WS --> SWOT["SWOT / Risk Agent\nagent/swot_agent.py\n(sourceIds per claim)"]
+    SWOT --> MVP["MVP Agent\nagent/mvp_agent.py"]
+    MVP --> GTM["GTM Agent\nagent/gtm_agent.py"]
+    GTM --> ConfDash["Confidence Dashboard\nsource coverage, relevance,\ncross-source agreement, recency"]
 
-    Retrieval --> Response["summary + results +\nmarketOpportunity + competitors +\nconfidence + whiteSpace + errors"]
-    WA --> Response
-    OS --> Response
+    MO --> LLM["Groq LLM\nqwen3.8-27b (primary)"]
+    LLM -.rate limit: switch model.-> LLM2["Groq LLM\ngpt-oss-20b / gpt-oss-120b (fallback)"]
+
+    ConfDash --> Response["summary + results + confidence +\nmarketOpportunity + competitors +\nswot + mvp + gtm + errors"]
     Response --> Backend
-    Backend -->|JSON| Frontend
+    Backend -->|JSON + sessionId| Frontend
     Frontend -->|renders results,\nor inline 'unavailable'\nstate per section| User
+
+    Backend -.session/job/cache.-> DB[("Postgres\n(SQLite locally)\nagent/db.py")]
+    Frontend -->|POST /chat| ChatGraph["Chat turn graph\nagent/chat_graph.py"]
+    ChatGraph --> DB
 ```
 
-`market_opportunity` is the only node that calls the reasoning LLM at all (`web_search`
-and `competitor_discovery` were both cut over to zero-cost, zero-API local logic — see
-§2). It catches its own failure: a Groq rate-limit switches immediately to the next
-model in the fallback chain (see §7), and if every model fails, `marketOpportunity`
-comes back `null` with an `errors.marketOpportunity` message instead of crashing the
-whole request — the other sections still render normally. `competitor_discovery` has
-no LLM call to fail this way; an empty `competitors: []` there is a genuine "none
-found in the sources" outcome, not a failure.
+`market_opportunity`, `swot_analysis`, `mvp_recommendation`, and `gtm_strategy` are the
+nodes that call the reasoning LLM. Each catches its own failure: a Groq rate-limit
+switches immediately to the next model in the fallback chain (see §7), and if every
+model fails, that node's output comes back as a real deterministic-fallback result
+(`"degraded": true`, see `agent/deterministic_fallback.py`) with the failure noted in
+`errors.<section>` — never a hard crash, never a silently blank section.
+`competitor_discovery` and `white_space` have no LLM call to fail this way; an empty
+`competitors: []` there is a genuine "none found in the sources" outcome, not a failure.
 
 The frontend never talks to the search sources directly — it only ever calls our own
 backend. This gives us one place to shape/validate responses before they reach the UI.
@@ -67,24 +73,22 @@ backend. This gives us one place to shape/validate responses before they reach t
 ## 2. Agent Breakdown
 
 The pipeline is orchestrated by a **LangGraph** `StateGraph`; not every node is an LLM
-agent. Market Opportunity is a **CrewAI** crew (agent + task, no tools). Competitor
-Discovery used to be a CrewAI crew too, but was rewritten to a pure local step (spaCy
-NER, no LLM call at all — see below) once it became clear that task didn't need
-open-ended reasoning, just reliably reading company names off a page, and every LLM
-call it made was one the Market Opportunity agent might need instead from the same
-shared Groq quota. New Milestone 3+ agents are still added as new graph nodes without
-restructuring the backend either way — a node just isn't required to wrap a crew.
+agent. Market Opportunity, SWOT/Risk, MVP, and GTM are each a **CrewAI** crew (agent +
+task, no tools). Competitor Discovery and White-space are pure local steps (spaCy NER
+and deterministic post-processing respectively) — a deliberate design choice, not a
+fallback, made to keep the shared Groq quota free for the agents that actually need
+open-ended reasoning.
 
-Market Opportunity doesn't use CrewAI's `output_pydantic`/function-calling for
-structured output — that proved unreliable with our tested Groq model (repeated
-"tool_use_failed" errors, then silent fallback to garbage text). Instead its task asks
-for plain JSON in its answer, which we parse ourselves via balanced-brace scanning
-(finds a valid JSON object even if the model rambles through a scratchpad first) and
-validate against a strict shape before trusting it — falling back to a safe default
-otherwise. See `agent/output_guard.py`'s `strip_reasoning()`, used by the Market
-Opportunity agent before its own JSON-shape validation. Competitor Discovery has no
-LLM output to strip or validate this way — its output is deterministic given the same
-search results.
+None of the LLM-backed agents use CrewAI's `output_pydantic`/function-calling for
+structured output — that proved unreliable with our tested Groq models (repeated
+"tool_use_failed" errors, then silent fallback to garbage text). Instead each task asks
+for plain JSON in its answer, which is parsed via a **shared** balanced-brace scanner
+with invalid-escape repair (`agent/structured_output.py`'s `extract_json_object` —
+originally duplicated per-agent, consolidated into one implementation so a parsing
+bugfix reaches every agent at once) and validated against a strict shape before being
+trusted — falling back to `agent/deterministic_fallback.py`'s evidence-based summary
+otherwise. See `agent/output_guard.py`'s `strip_reasoning()`, used before JSON-shape
+validation on every LLM-backed agent.
 
 ### Web Search Step (Milestone 1)
 
@@ -96,16 +100,14 @@ search results.
   not useful signal for a founder), dedupes by URL, and ranks the rest — all directly
   in code. The summary is then built from those same results by a plain template
   (`graph.py`'s `_build_summary`), not generated by an LLM.
-  This used to be a CrewAI crew that asked an LLM to paraphrase the results into a
-  short summary, but that call was cut entirely: it was rejected by the reasoning-leak
-  quality gate often enough that the deterministic template was already producing the
-  actual summary most of the time, so making it the only path removes an LLM call
-  (roughly a third of the pipeline's Groq usage) for no loss in what users actually saw.
 - **LangGraph node**: `web_search`
 - **Output**: `{ summary, results[] }` where `results` is
-  `{ title, snippet, url, query, score }[]` — `query` is which search angle surfaced
-  that result, `score` is a computed relevance score (word-overlap between the query
-  and the result's text, since these free sources don't provide their own ranking)
+  `{ title, snippet, url, query, angle, score, publishedAt }[]` — `query` is which
+  search angle surfaced that result, `score` is a computed relevance score (word-overlap
+  between the query and the result's text for the free providers; Tavily's own trained
+  score otherwise), `publishedAt` is an ISO-8601 date when the provider exposes one
+  (Tavily sometimes, Hacker News's Algolia API reliably) or `null` when it genuinely
+  doesn't (DuckDuckGo's text search, Wikipedia's search API — see `agent/tools.py`)
 
 ![The five research angles a submitted idea is expanded into](images/five-research-angles.svg)
 
@@ -114,96 +116,132 @@ search results.
 - **Input**: the Web Search step's real results (context passing — no re-searching)
 - **CrewAI role**: "Market Opportunity & Customer Segmentation Analyst" — no tools,
   reasons only over the search results given to it
-- **LangGraph node**: `market_opportunity` — runs after `web_search`
+- **LangGraph node**: `market_opportunity` — runs after `confidence_indicator`
 - **Output**: `{ marketSize, trends[], segments[], opportunityScore }` where each
   `segments[]` entry is `{ segment, painPoints, motivations, buyingBehavior }` — all
-  four fields required per segment (not just a segment label), per the Milestone 2
-  guide's requirement to surface pain points, motivations, and buying behavior, not
-  just customer types. `opportunityScore` is a Milestone-2-stretch stub (`0` for now).
+  four fields required per segment (not just a segment label). `opportunityScore` is
+  filled in by the `opportunity_score` node below.
 
 ### Competitor Discovery (Milestone 2) — local NER, not an LLM agent
 
 - **Input**: the Web Search step's real results (same context-passing pattern)
 - **Not a CrewAI agent, no LLM call, no API dependency** — by explicit decision, not
-  as a fallback. Every LLM call on the shared Groq key is a call the Market
-  Opportunity agent might need instead, and this task (recognizing which capitalized
-  phrases in real search snippets are company names) doesn't need open-ended
-  reasoning — it needs to reliably read names off a page, which local Named Entity
-  Recognition (spaCy's `en_core_web_sm`) does well for zero API cost, zero rate
-  limit, and zero latency variance.
-- **LangGraph node**: `competitor_discovery` — runs after `market_opportunity`, last
-  in the current chain (kept in the same position even though it no longer depends on
-  Market Opportunity's output, to minimize churn in the graph wiring)
-- **How it works** (`agent/competitor_agent.py`): runs spaCy NER over the
-  "Competitors"-angle search results, keeping an `ORG` entity only if it's camelCase
-  (a strong, count-independent signal — `HelloFresh`, `QuickBooks`) or mentioned 2+
-  times across those results, after filtering out generic/listicle words (`"best"`,
-  `"bank"`, `"ratings"`, etc.) and near-duplicate substrings. A scraped snippet's
-  embedded newlines are given their own sentence boundary (joined with `". "`, not a
-  plain space) before parsing — comparison-table/listicle pages (a "best budgeting
-  apps" roundup) scrape into one fact per line, and naively squashing those into a
-  single line let spaCy merge unrelated adjacent lines into one garbled entity,
-  which both produced garbage and lost the real competitors buried in it. A
-  camelCase-segment-repeat check catches a related merge artifact (`"CostCost"`).
+  as a fallback. Local Named Entity Recognition (spaCy's `en_core_web_sm`) reads
+  company names off real search snippets for zero API cost, zero rate limit, and zero
+  latency variance, freeing the entire shared Groq quota for the agents that need it.
+- **LangGraph node**: `competitor_discovery` — runs after `market_opportunity`
 - **Output**: `{ competitors[] }` where each entry is
   `{ name, offering, url, gap, estimatedPrice, featureBreadth }` — `url` is copied
-  from the actual source it was found in (not invented), `offering` is that source's
-  snippet (normalized to a single line), `gap` is an honest generic disclosure rather
-  than a genuine comparative judgment (NER can't reason about the startup idea the
-  way an LLM's `gap` field used to). `estimatedPrice`/`featureBreadth` are rough,
-  local pattern matches from the competitor's nearby source text when a price or
-  feature signal is present; otherwise they stay `"unknown"` rather than guessing.
-  The frontend hides unsupported badges and only places competitors in the positioning
-  grid when both fields have evidence. An empty `competitors: []` is a genuine "the sources
-  didn't name an identifiable company" outcome, not a failure — see §4.
+  from the actual source it was found in (not invented). `estimatedPrice`/
+  `featureBreadth` are rough local pattern matches from nearby source text, or
+  `"unknown"` rather than guessing when there's no signal. An empty `competitors: []`
+  is a genuine "the sources didn't name an identifiable company" outcome, not a
+  failure — see §4.
 
 ### Opportunity Score (Milestone 2 stretch)
 
 - **Input**: the Market Opportunity and Competitor Discovery outputs, plus the raw
   search results as a grounded fallback signal
 - **Not a CrewAI agent** — a plain post-processing function
-  (`agent/opportunity_score.py`), run as the last LangGraph node (`opportunity_score`),
-  since it's a deterministic weighted formula over data the two agents already
-  produced, not something that needs its own LLM call
+  (`agent/opportunity_score.py`), run as the `opportunity_score` LangGraph node
 - **Output**: a single `opportunityScore` (0–100) written into `marketOpportunity`. If
   both upstream agents failed, it falls back to a signal computed from raw search-result
-  count/relevance (capped at 50, since it's a weaker signal than real agent analysis) —
-  see `agent/docs/opportunity-score-edge-cases.md` for the documented edge cases
+  count/relevance (capped at 50, since it's a weaker signal than real agent analysis).
 
-### Confidence Indicator
+### Confidence Indicator + Confidence Dashboard
 
-The Milestone 2 stretch confidence feature is implemented as `agent/confidence.py`
-and the `confidence_indicator` graph node. It counts how many already-fetched
-sources use market-growth language or competitive-pressure language per research
-angle. It is deliberately local regex-based post-processing, not an LLM call, so it
-adds a useful "source agreement" badge without adding quota pressure.
+Two related but distinct nodes, both local and deterministic (no LLM call):
+
+- **`confidence_indicator`** (Milestone 2 stretch) — runs early, right after
+  `web_search`. Counts how many already-fetched sources have a relevance score above
+  threshold, per research angle (`agreeingSources`/`totalSources`/`percentage`/
+  `perAngle`). This is the only implementation of this idea that has ever been wired
+  into the live pipeline — an earlier, separately-built `agent/confidence.py` module
+  with a *different* contract (`marketGrowth`/`competitivePressure`, regex-based
+  signal-word matching) was written independently, never actually reached from
+  `/validate`, and was removed once that divergence was found - if you see it
+  referenced elsewhere in `docs/`, that reference predates the removal.
+- **`confidence_dashboard`** (Milestone 4, Track A) — runs *last*, after every
+  strategy agent, extending the same `confidence` object with: `sourceCoverage` (%
+  of claims citing at least one source), `averageRelevance` (mean relevance of
+  actually-cited sources), `crossSourceAgreement` (% of claims backed by 2+
+  independent sources), `directEvidenceRatio` (direct vs. inferred claim counts), and
+  `sourceRecency` (`sourcesWithKnownDate`/`totalSources`/`medianAgeDays`, computed from
+  each result's `publishedAt` where a provider exposes one). It reads `sourceIds` off
+  whatever sections already have them (currently SWOT; automatically extends to
+  MVP/GTM/Market the moment those agents add the same field, no code change needed
+  here when that lands).
 
 ### White-Space Analysis
 
 The white-space feature is implemented as `agent/white_space.py` and the
 `white_space` graph node. It combines customer pain points from Market Opportunity,
 competitor density from Competitor Discovery, and retrieved source snippets into
-founder-readable opportunity gaps. Like Confidence and Opportunity Score, this is a
-local post-processing node rather than another LLM agent.
+founder-readable opportunity gaps. Like the confidence nodes, this is a local
+post-processing node rather than another LLM agent.
 
-**Future extension point (Milestone 3+):** SWOT/Risk, MVP Recommendation, GTM, and
-Report Generation agents each become a new CrewAI crew wrapped in a new LangGraph node,
-wired into the same graph with `add_edge`. LangGraph's state dict carries each stage's
-output forward so later agents can consume earlier agents' results (context passing),
-and partial failures are handled per-node rather than crashing the whole pipeline.
+### SWOT & Risk Agent (Milestone 3)
 
-### White-space Analysis
+- **Input**: the idea, Market Opportunity, Competitor Discovery, White-space, and raw
+  results (for source citation)
+- **CrewAI role**: "SWOT and Risk Analyst"
+- **LangGraph node**: `swot_analysis`
+- **Output**: `{ strengths[], weaknesses[], opportunities[], threats[], risks[] }`
+  where every strength/weakness/opportunity/threat is `{ text, sourceIds[] }` (not a
+  bare string) and every risk is `{ risk, severity, likelihood, sourceIds[] }`.
+  `sourceIds` reference the `src-N` ids `agent/structured_output.py`'s
+  `compact_sources()` assigns to the results passed into the agent's context; a
+  `sourceId` the model invents that isn't in that list is dropped before it reaches a
+  caller (`agent/swot_agent.py`'s `_sanitize_source_ids`), never trusted silently.
 
-The final Milestone 2 node reuses customer pain points, competitor density, and source
-evidence to identify focused opportunity gaps. It performs no search or LLM call.
+### MVP Feature Recommendation Agent (Milestone 3)
+
+- **Input**: the idea, problem, SWOT output, and Market Opportunity segments
+- **CrewAI role**: "MVP Feature Recommendation Analyst"
+- **LangGraph node**: `mvp_recommendation` — runs after `swot_analysis`
+- **Output**: `{ features[] }` where each entry is
+  `{ feature, rationale, impact, effort }` (`impact`/`effort` in `low|medium|high|unknown`)
+
+### GTM Strategy Agent (Milestone 3)
+
+- **Input**: the idea, target customer, Market Opportunity, Competitor Discovery, and
+  SWOT output
+- **CrewAI role**: "positioning + acquisition-channel strategist"
+- **LangGraph node**: `gtm_strategy` — runs after `mvp_recommendation`, last strategy
+  node before the confidence dashboard
+- **Output**: `{ positioning, channels[], earlyCustomerApproach }`
+
+### Conversational Advisor (Milestone 3)
+
+A **separate** LangGraph graph (`agent/chat_graph.py`), not a node on the main
+pipeline — the main pipeline runs once per `/validate` request, but a conversation is
+many turns. `interpret` (one LLM call) decides whether a message needs a fresh, scoped
+search (`agent/retrieval.collect_scoped`); `respond` (one LLM call) answers using the
+full session context. Session state — the validated pipeline output plus the running
+chat transcript — lives in the same database as everything else (`agent/session_store.py`),
+with a per-session rate limit on top of the per-IP one at the HTTP layer (§7).
+
+### Report Assembler + Export (Milestone 4, Track D)
+
+`agent/report_assembler.py`'s `assemble_report()` compiles the canonical report object
+(`reportId`, `sessionId`, `ideaSummary`, every agent artifact, `opportunityScore`,
+`confidence`, `sectionErrors`, `degradedSections`, `generatedAt`) from a session's
+already-computed context — it never re-derives analysis or calls an LLM/search
+provider. `contradictions`/`experiments`/`actionPlan` (Tracks B/C, built separately)
+default to empty and populate automatically once those land in session context.
+`GET /reports/{sessionId}` returns it directly; `POST /reports/{sessionId}/email`
+generates a PDF from it (`agent/pdf_exporter.py`, via a small shape-adapter rather than
+changing that module's two existing call sites) and sends it through Resend with a
+plain-text + HTML body (`agent/email_delivery.py`).
 
 ## 3. Data Flow
 
 1. User fills in idea / target customer / problem and submits the form
 2. Frontend sends `POST /validate` with the form data
-3. Backend validates input (idea field required, non-empty)
-   - If invalid → return `400` with `{ error: "..." }`, frontend shows inline field error
-4. Backend calls the Search Agent, which expands the idea into several search angles
+3. Backend rate-limits by IP, then validates input (idea field required, non-empty)
+   - Rate limited → `429` with `{ error: "..." }`
+   - Invalid → `400` with `{ error: "..." }`, frontend shows inline field error
+4. Backend calls the Search step, which expands the idea into several search angles
    and queries Tavily per angle (falling back to DuckDuckGo/Wikipedia/Hacker News per
    angle if Tavily isn't configured or fails)
    - If every source fails for every angle → backend returns `502` with
@@ -212,25 +250,20 @@ evidence to identify focused opportunity gaps. It performs no search or LLM call
    - If search returns zero results → backend returns `200` with `{ summary: "...",
      results: [] }`, frontend shows an `EmptyState` ("no market data found for this
      idea")
-5. The Market Opportunity Agent runs next, reasoning over the same real results —
-   never re-searches, never runs at all if the web search step itself failed entirely
-   (see node code: `if state.get("error"): return state`). If its own LLM call fails
-   (after one rate-limit retry — see §7), `marketOpportunity` comes back `null` and
-   `errors.marketOpportunity` is set; the pipeline still continues.
-6. Competitor Discovery runs next — local NER, no LLM call, so it has nothing to rate-
-   limit or fail on for this reason; it always returns `{ competitors: [...] }`
-   (possibly empty), independent of whether the Market Opportunity node succeeded
-7. The White-Space node combines market pain points, competitor density, and source
-   snippets into opportunity gaps without another LLM call.
-8. The Opportunity Score node runs last, combining whatever the two agents above
-   actually produced (or falling back to raw search signal if both failed)
-9. Backend shapes the combined response into the shared contract and returns `200`
-   (a `200` even with one or both of `marketOpportunity`/`competitors` `null` — only a
-   failure in step 4, the web search step itself, returns a non-200)
-10. Frontend renders the summary, market opportunity, competitor analysis (including the
-   price/feature-breadth positioning grid), white-space analysis, and grouped result cards — any section whose
-   value is `null` renders its own inline "this analysis wasn't available" message
-   instead of an error or a blank gap
+5. Confidence Indicator, Market Opportunity, Competitor Discovery, Opportunity Score,
+   White-space, SWOT, MVP, GTM, and the Confidence Dashboard run in sequence, each
+   consuming earlier nodes' real output (context passing, never re-searching). Any
+   LLM-backed node's own failure sets that section to its deterministic-fallback result
+   and populates `errors.<section>` — the pipeline never crashes because one section's
+   LLM call failed.
+6. Backend shapes the combined response into the shared contract, creates/persists a
+   session (database-backed — survives a restart, shared across instances), and
+   returns `200` with a `sessionId`
+7. Frontend renders every section; any section whose value is degraded/`null` renders
+   its own inline "this analysis wasn't available" message instead of an error or a
+   blank gap
+8. Optionally: the frontend calls `POST /chat` with the `sessionId` for follow-up
+   questions, or `GET /reports/{sessionId}` / the PDF/email routes to export the report
 
 ```mermaid
 sequenceDiagram
@@ -239,10 +272,13 @@ sequenceDiagram
     participant B as Backend - /validate
     participant S as Search - Tavily or fallback
     participant L as Groq LLM
+    participant D as Database
 
     U->>F: Fill form, submit
     F->>B: POST /validate
-    alt idea is empty
+    alt rate limited
+        B-->>F: 429 (error)
+    else idea is empty
         B-->>F: 400 (error)
         F-->>U: inline field error
     else idea provided
@@ -253,10 +289,11 @@ sequenceDiagram
             F-->>U: ErrorState + Try again
         else results returned (possibly empty)
             S-->>B: results list
-            B->>L: summarize grounded in results
-            L-->>B: summary text
-            B-->>F: 200 (summary, results)
-            F-->>U: EmptyState (0 results) or grouped result cards
+            B->>L: run strategy agents grounded in results
+            L-->>B: structured outputs (or deterministic fallback per section)
+            B->>D: persist session
+            B-->>F: 200 (summary, results, ..., sessionId)
+            F-->>U: EmptyState (0 results) or full results view
         end
     end
 ```
@@ -271,15 +308,25 @@ Request:
 {
   "idea": string,            // required, non-empty
   "targetCustomer": string,  // optional
-  "problem": string          // optional
+  "problem": string,         // optional
+  "email": string            // optional - triggers the async/email path if the pipeline runs long
 }
 
 Response 200:
 {
   "summary": string,
+  "sessionId": string,
   "results": [
-    { "title": string, "snippet": string, "url": string, "query": string, "angle": string, "score": number }
+    { "title": string, "snippet": string, "url": string, "query": string, "angle": string, "score": number, "publishedAt": string | null }
   ],
+  "confidence": {
+    "agreeingSources": number, "totalSources": number, "percentage": number, "perAngle": {...},
+    "sourceCoverage": { "claimsWithSource": number, "totalClaims": number, "percentage": number },
+    "averageRelevance": number | null,
+    "crossSourceAgreement": { "claimsWithMultipleSources": number, "totalClaims": number, "percentage": number },
+    "directEvidenceRatio": { "direct": number, "inferred": number, "percentage": number },
+    "sourceRecency": { "sourcesWithKnownDate": number, "totalSources": number, "medianAgeDays": number | null }
+  },
   "marketOpportunity": {
     "marketSize": string,
     "trends": [string],
@@ -287,84 +334,85 @@ Response 200:
       { "segment": string, "painPoints": string, "motivations": string, "buyingBehavior": string }
     ],
     "opportunityScore": number   // 0-100, computed by agent/opportunity_score.py
-  } | null,   // null if the market_opportunity node failed (see errors.marketOpportunity)
+  } | null,
   "competitors": {
     "competitors": [
-      {
-        "name": string,
-        "offering": string,
-        "url": string,
-        "gap": string,
+      { "name": string, "offering": string, "url": string, "gap": string,
         "estimatedPrice": "low" | "mid" | "high" | "unknown",
-        "featureBreadth": "narrow" | "moderate" | "broad" | "unknown"
-      }
+        "featureBreadth": "narrow" | "moderate" | "broad" | "unknown" }
     ]
-  } | null,   // null only on an unexpected exception (see errors.competitors) - no LLM
-              // call here to rate-limit or fail, so this is rare in practice
-  "confidence": {
-    "marketGrowth": {"agree": number, "total": number},
-    "competitivePressure": {"agree": number, "total": number}
   },
   "whiteSpace": {
-    "summary": string,
-    "competitionNote": string,
-    "opportunities": [
-      { "title": string, "why": string, "fit": string, "evidence": string }
-    ]
+    "summary": string, "competitionNote": string,
+    "opportunities": [{ "title": string, "why": string, "fit": string, "evidence": string }]
   } | null,
-  "errors": {
-    "marketOpportunity": string | null,
-    "competitors": string | null
-  }
+  "swot": {
+    "strengths": [{ "text": string, "sourceIds": [string] }],
+    "weaknesses": [{ "text": string, "sourceIds": [string] }],
+    "opportunities": [{ "text": string, "sourceIds": [string] }],
+    "threats": [{ "text": string, "sourceIds": [string] }],
+    "risks": [{ "risk": string, "severity": string, "likelihood": string, "sourceIds": [string] }]
+  } | null,
+  "mvp": { "features": [{ "feature": string, "rationale": string, "impact": string, "effort": string }] } | null,
+  "gtm": { "positioning": string, "channels": [string], "earlyCustomerApproach": string } | null,
+  "errors": { "<sectionName>": string | null }
 }
 
-Response 400 / 502:
-{
-  "error": string
-}
+Response 202 (only when `email` was supplied and the pipeline is still running):
+{ "status": "processing", "jobId": string, "message": string }
+
+Response 400 / 429 / 502:
+{ "error": string }
 ```
 
-`marketOpportunity` is `null` (not an object) when its LLM call fails outright (after
-the whole model fallback chain in §7 is exhausted) or its output can't be validated —
-`errors.marketOpportunity` carries the failure message in that case. `competitors` has
-no LLM call to fail this way, so it's `null` only on an unexpected exception in the NER
-step itself. The frontend shows an inline "this analysis wasn't available" state for that
-section rather than an error or a blank gap, since the summary + real search results
-are still valid and shown regardless. A `competitors: { competitors: [] }` (empty
-array, not `null`) is a different, valid outcome — the node ran successfully and
-genuinely found no competitors in the sources; the frontend distinguishes the two.
+```
+GET  /validate/status/{jobId}     -> { status: "processing" } | { status: "failed", error } | { status: "complete", ...response }
+POST /chat                        -> { sessionId, message } in, { reply } out
+GET  /validate/{sessionId}/pdf    -> application/pdf
+POST /export-pdf                  -> validated response-shaped body in, application/pdf out
+GET  /reports/{sessionId}         -> canonical report object (see §2, Report Assembler)
+POST /reports/{sessionId}/email   -> { recipient } in, { status: "queued", deliveryId } out
+```
 
-This contract is locked for Milestone 1/2 — Sashi (competitor agent), Yalene
-(orchestration), and Anu Kumari (frontend) should build against this without needing to
-sync on every field.
+Every response carries an `X-Request-ID` header (§7). An LLM-backed section is `null`
+only if its deterministic fallback path was itself bypassed (rare in practice — a real
+response usually contains at least the fallback shape, labeled `"degraded": true`,
+with the failure noted in `errors.<section>`). `competitors` has no LLM call to fail
+this way, so an empty `competitors: []` (not `null`) is a genuine "no identifiable
+company in the sources" outcome, not a failure.
 
 ## 5. Tech Stack Decisions
 
 | Layer | Choice | Why |
 |---|---|---|
-| Frontend | React (Vite) + Tailwind CSS | Team wants a premium, polished UI — faster to achieve with component reuse + utility classes than hand-rolled CSS. **Note:** this deviates from the milestone guide's plain HTML/CSS/JS wording; flagging that explicitly since it's a deliberate call. |
-| Backend | FastAPI | Lightweight, async-friendly, minimal boilerplate for a single endpoint, easy to extend with more agents later. |
-| Orchestration | LangGraph | Owns pipeline state and node wiring — each agent is a graph node, so M2-M4 agents are added without restructuring the backend. |
-| Agents | CrewAI | Role/goal-based agent definitions. Only 1 LLM agent left: Market Opportunity, taking real data as context rather than using a tool (tool-calling proved to be the source of the reasoning-leak bug). Both the Web Search step and Competitor Discovery used to be CrewAI agents too, but their LLM calls were cut entirely - see Reasoning LLM below and the Competitor Discovery section in §2. |
-| Search | Tavily API (primary), DuckDuckGo + Wikipedia + Hacker News (fallback chain) | Tavily gives a real, trained relevance score and reliable results — used whenever `TAVILY_API_KEY` is set. If it's missing or fails, the app falls back to the zero-cost chain (own computed relevance score) instead of erroring out. Tried DuckDuckGo as sole primary first, but its unofficial scraping library proved too flaky (empty or irrelevant results, inconsistent run to run) to trust for a live demo. Academic/research-paper domains are filtered out per mentor guidance — they read as literature review material, not market/competitor signal. |
-| Competitor identification | Local NER (spaCy `en_core_web_sm`), not an LLM call | Reads competitor names directly off the already-fetched search results instead of asking an LLM to identify them - zero API cost, zero rate limit, frees the shared Groq quota for Market Opportunity. The trade is honest: `gap` is a generic disclosure, while `estimatedPrice`/`featureBreadth` are rough pattern matches from nearby source text and remain `"unknown"` when unsupported. See the Competitor Discovery section in §2 for how snippet text is normalized before NER to avoid comparison-table pages producing garbled entities. |
-| Reasoning LLM | Groq (via CrewAI/LiteLLM), three models on the same account — primary + a 2-tier same-provider fallback chain | Primary `groq/qwen/qwen3.8-27b` (updated Sept 15, 2026 — Groq deprecated and removed the previous primary `qwen3.6-27b` entirely; see `docs/milestone2-verification.md` check #7), fallbacks `groq/openai/gpt-oss-20b` then `groq/openai/gpt-oss-120b`, all configurable via `LLM_MODEL`/`LLM_FALLBACK_MODELS` (comma-separated) + one `GROQ_API_KEY`. Groq rate-limits per model, not per account (confirmed via `GET /openai/v1/models` and a direct latency test on all three) — so on a rate limit *or* a `model_not_found` response, `agent/llm.py`'s `kickoff_with_fallback()` switches to the next model immediately (no wait; a missing model is at least as switch-worthy as an exhausted one) instead of retrying the same broken/exhausted one; only once every model in the chain has failed does it fall back to waiting out the last rate limit's suggested cooldown (capped at 30s) — see Error Handling Policy. Each model is also given its own confirmed-working `reasoning_effort` value (`agent/llm.py`'s `_REASONING_EFFORT` map) - by default the old `qwen3.6-27b` reserved an output-token budget for hidden `<think>` reasoning that alone exceeded Groq's ~1000 output-tokens-per-minute cap, the actual cause of most "Request too large" failures; setting `reasoning_effort="none"` (the current qwen primary accepts it, confirmed live; the gpt-oss fallbacks require `"low"`) eliminates that wasted scratchpad entirely, confirmed directly against the live API. A cross-*provider* fallback to Google Gemini (using the key already in `.env`) was tried and reverted: message-format incompatibilities with our pinned LiteLLM version, then confirmed by direct testing to hang for minutes past its own `timeout` parameter before ever raising — worse than the existing static fallback content, so dropped in favor of the same-provider approach above. Only the Market Opportunity agent calls this now - the Web Search summary's LLM call was cut entirely, and Competitor Discovery was rewritten off the LLM path too (see above), since the deterministic/local alternative was already producing the actual output most of the time at zero quota cost. The model also occasionally leaks raw ReAct-style reasoning text into its answer, so Market Opportunity's output is validated before use. |
-| Request caching & submit cooldown | In-memory cache (`backend/main.py`) + a client-side submit cooldown (`frontend/src/App.jsx`) | The cache keys on normalized `idea`/`targetCustomer`/`problem` with a 30-minute TTL, and only caches responses with no `errors` set — a partial-failure response is never cached, so a retry after a transient rate limit isn't stuck replaying the failure. The frontend also disables the submit button for 5 seconds after a submission to reduce accidental duplicate requests against the shared quota. Both are quota-pressure mitigations layered on top of the reasoning_effort fix and the NER rewrite above, not fixes for a fully exhausted team-wide quota by themselves. |
-| Product UI | No framework/provider names shown | Per mentor guidance, the UI doesn't surface "CrewAI," "Groq," "Tavily," etc. anywhere — footer/status text describes capability generically ("Multi-agent Pipeline," "Live Web Search") instead of naming the underlying tech. |
-| Hosting | Render | Already set up for this repo (see `render.yaml`). |
+| Frontend | React (Vite) + Tailwind CSS | Premium, polished UI, faster to achieve with component reuse + utility classes than hand-rolled CSS. |
+| Backend | FastAPI | Lightweight, async-friendly, minimal boilerplate, easy to extend with more agents/endpoints. |
+| Orchestration | LangGraph | Owns pipeline state and node wiring — each agent is a graph node; a separate chat graph handles the multi-turn advisor. |
+| Agents | CrewAI | Role/goal-based agent definitions for Market Opportunity, SWOT/Risk, MVP, GTM, and the advisor. Web Search summaries, Competitor Discovery, White-space, and both confidence nodes are local/deterministic instead — see §2. |
+| Search | Tavily API (primary), DuckDuckGo + Wikipedia + Hacker News (fallback chain) | Tavily gives a real, trained relevance score and reliable results. If it's missing or fails, the app falls back to the zero-cost chain (own computed relevance score) instead of erroring out. Academic/research-paper domains are filtered out — literature review material, not market/competitor signal. |
+| Competitor identification | Local NER (spaCy `en_core_web_sm`), not an LLM call | Reads competitor names directly off already-fetched search results — zero API cost, zero rate limit, frees the shared Groq quota. |
+| Reasoning LLM | Groq (via CrewAI/LiteLLM), three models on the same account — primary + a 2-tier same-provider fallback chain | Primary `groq/qwen/qwen3.8-27b`, fallbacks `groq/openai/gpt-oss-20b` then `groq/openai/gpt-oss-120b`. On a rate limit or `model_not_found`, `agent/llm.py`'s `kickoff_with_fallback()` switches models immediately instead of retrying the exhausted one. Every call's latency and token usage is logged. |
+| Database | Postgres in production, SQLite locally/in tests (SQLAlchemy, `agent/db.py`) | Sessions, background jobs, and the response cache used to be process-local dicts — didn't survive a restart, didn't work across more than one backend instance. Connection pool size/timeout/recycle are configurable via `DB_POOL_*` env vars for running multiple instances. |
+| API hardening | Per-IP sliding-window rate limiting + request-id tracing (`backend/main.py`) | `/validate`, `/chat`, PDF export, and report endpoints are all rate-limited; every request gets a short id logged with method/path/status/duration and echoed back as `X-Request-ID`. |
+| Report export | ReportLab PDF (`agent/pdf_exporter.py`) + Resend email (`agent/email_delivery.py`) | The canonical report (Track D) is exported as a PDF attachment with a plain-text + HTML body; email delivery only ever reads an already-assembled report, never reruns retrieval or any agent. |
+| Product UI | No framework/provider names shown | Footer/status text describes capability generically ("Multi-agent Pipeline," "Live Web Search") instead of naming the underlying tech. |
+| Hosting | Render | Two web services + a managed Postgres database, config in `render.yaml`. |
 
 ## 6. Deployment Topology
 
-Two Render web services:
+A Render Blueprint with three resources (`render.yaml`):
 
-- **`startup-validator-frontend`** — serves the built React app (static site or Node
-  web service)
+- **`startup-validator-frontend`** — serves the built React app (static site)
 - **`startup-validator-backend`** — runs the FastAPI service; holds `GROQ_API_KEY`
-  (required) and `TAVILY_API_KEY` (optional — falls back to free search if unset) as
-  Render environment variables (never committed to the repo)
+  (required) and `TAVILY_API_KEY` (optional) as manually-set Render environment
+  variables (never committed), plus `DATABASE_URL` wired automatically from the
+  database resource below
+- **`startup-validator-db`** — a managed Postgres instance, provisioned from
+  `render.yaml`'s `databases:` block
 
 Frontend reads the backend's URL via `VITE_API_URL` (env var, set per environment —
-local vs. deployed).
+local vs. deployed). See the README's Deployment/Scaling-out sections for the
+Blueprint-sync caveat and multi-instance guidance.
 
 ## 7. Error Handling Policy
 
@@ -374,64 +422,73 @@ local vs. deployed).
   renders a specific `ErrorState` or `EmptyState` component with a human-readable message
 - Timeouts: each search source call uses a short timeout (5s) so one slow/unreachable
   source doesn't hang the whole request — the pipeline just moves to the next fallback
-- Web Search summary: built by a plain template over the retrieved results (see §2) -
-  no LLM call, so there's nothing to quality-gate here anymore. The M2 agents below are
-  now the only place a reasoning-leak check matters.
-- Market Opportunity validates its JSON shape after balanced-brace extraction: if it
-  parses to valid JSON with every required field of the right type, it's used
-  regardless of any scratchpad rambling around it (past `strip_reasoning()` - see
-  `agent/output_guard.py`); otherwise the node fails and reports through
-  `errors.marketOpportunity` rather than trusting malformed output. Competitor
-  Discovery has no LLM output to validate this way - its own filtering (camelCase/
-  mention-count heuristics, generic-word denylist, snippet-line normalization - see
-  §2) happens before a name is ever kept, not after the fact.
-- LLM rate-limit fallback: Market Opportunity (the only remaining crew) goes through
-  `agent/llm.py`'s `kickoff_with_fallback()`, which builds and runs the crew against
-  the primary Groq model and, on a rate limit *or* a `model_not_found` response (a
-  deprecated/renamed model — hit for real when Groq removed `qwen3.6-27b`, see
-  verification log #7), immediately rebuilds it against the
-  next model in the fallback chain instead of waiting — a separate quota bucket on the
-  same account (see Tech Stack Decisions). Only once every model in the chain has failed
-  does it wait out the last *rate limit's* suggested cooldown (capped at 30s) for
-  one final try; a missing model never waits, since no cooldown fixes it. Any other
-  exception, or a failure after every model and the
-  final retry, is re-raised immediately and handled by that node's own try/except (see
-  below) — it does not retry indefinitely and does not fall back to a different LLM
-  *provider* (see Tech Stack Decisions for why)
-- Node-level partial-failure isolation: `market_opportunity_node` catches its own
-  exceptions. A failure sets `marketOpportunity` to `null` and populates
-  `errors.marketOpportunity`, but does not prevent `competitor_discovery_node` (which
-  has nothing shared to fail on - no LLM call) or the rest of the response from
-  succeeding — only a failure in the `web_search` node itself (no results to reason
-  over at all) short-circuits the whole pipeline to a `502`
-- Request caching (`backend/main.py`) and a frontend submit cooldown further reduce
-  quota pressure by cutting down on redundant/accidental-duplicate calls - see Tech
-  Stack Decisions above for details. Neither one is a correctness mechanism; both are
-  purely about not wasting the shared Groq quota on repeat requests.
+- Every LLM-backed agent validates its JSON shape after balanced-brace extraction +
+  invalid-escape repair (`agent/structured_output.py`'s shared `extract_json_object`):
+  if it parses to valid JSON with every required field of the right type, it's used
+  regardless of any scratchpad rambling around it; otherwise the node falls back to
+  `agent/deterministic_fallback.py`'s evidence-based summary and reports through
+  `errors.<section>` rather than trusting malformed output.
+- LLM rate-limit fallback: every LLM-backed agent goes through `agent/llm.py`'s
+  `kickoff_with_fallback()`, which builds and runs the crew against the primary Groq
+  model and, on a rate limit or a `model_not_found` response, immediately rebuilds it
+  against the next model in the fallback chain instead of waiting. Only once every
+  model in the chain has failed does it wait out the last rate limit's suggested
+  cooldown (capped at 30s) for one final try. Every call's latency and token usage
+  (`prompt_tokens`/`completion_tokens`/`total_tokens`) is logged.
+- Node-level partial-failure isolation: each strategy node catches its own exceptions.
+  A failure sets that section to its deterministic-fallback result and populates
+  `errors.<section>`, but never prevents the rest of the response from succeeding —
+  only a failure in the `web_search` node itself (no results to reason over at all)
+  short-circuits the whole pipeline to a `502`
+- Rate limiting: a per-IP sliding-window limiter sits in front of `/validate`, `/chat`
+  (on top of its existing per-session cap), and every PDF/report endpoint — returns
+  `429` rather than letting one caller exhaust the shared Groq quota or database
+  connections for everyone else.
+- Request tracing: every request gets a short id (`X-Request-ID` response header),
+  logged with method/path/status/duration, so a single request's log lines can be
+  correlated with what the caller actually saw.
+- Request caching (`backend/main.py`, database-backed) and a frontend submit cooldown
+  further reduce quota pressure by cutting down on redundant/accidental-duplicate
+  calls. Neither one is a correctness mechanism; both are purely about not wasting the
+  shared Groq quota on repeat requests.
 
 ## 8. Repo Structure
 
 ```
 .
-├── frontend/          # React + Tailwind app (Anu Kumari)
+├── frontend/          # React + Tailwind app
 │   └── ...
 ├── backend/           # FastAPI app + agent pipeline
-│   ├── main.py         # POST /validate route + database-backed request cache
+│   ├── main.py                       # /validate, /chat, PDF/report export routes; rate limiting; request tracing
 │   └── agent/
-│       ├── graph.py            # LangGraph pipeline: state + node wiring; Web Search summary is a template here (Milestone 1), no LLM call
-│       ├── market_agent.py      # Market Opportunity Agent (Milestone 2) - the only remaining LLM agent
-│       ├── competitor_agent.py  # Competitor Discovery (Milestone 2) - local spaCy NER, no LLM call
-│       ├── opportunity_score.py # Opportunity Score post-processing node (Milestone 2 stretch)
-│       ├── white_space.py       # evidence-backed opportunity gaps (no LLM call)
-│       ├── output_guard.py      # reasoning-leak stripping used by the Market Opportunity agent
-│       ├── retrieval.py         # multi-angle query expansion + dedup
-│       ├── tools.py             # Tavily (primary) + DuckDuckGo/Wikipedia/Hacker News fallback
-│       └── llm.py               # reasoning LLM selection (incl. per-model reasoning_effort) + same-provider fallback on rate limit or model_not_found (kickoff_with_fallback)
+│       ├── graph.py                  # LangGraph pipeline: state + node wiring, incl. the confidence dashboard node
+│       ├── chat_graph.py             # Separate LangGraph chat flow for the conversational advisor
+│       ├── market_agent.py           # Market Opportunity Agent
+│       ├── competitor_agent.py       # Competitor Discovery - local spaCy NER, no LLM call
+│       ├── swot_agent.py             # SWOT & Risk Agent - sourceIds per claim
+│       ├── mvp_agent.py              # MVP Feature Recommendation Agent
+│       ├── gtm_agent.py              # Go-To-Market Strategy Agent
+│       ├── opportunity_score.py      # Opportunity Score post-processing node
+│       ├── white_space.py            # White-space/opportunity-gap analysis - deterministic, no LLM call
+│       ├── deterministic_fallback.py # Non-LLM fallback content for every LLM-backed agent
+│       ├── output_guard.py           # Reasoning-leak stripping used by the LLM-backed agents
+│       ├── structured_output.py      # Shared JSON-extraction/repair + compact_sources (sourceId/publishedAt)
+│       ├── report_assembler.py       # Canonical report object (Track D)
+│       ├── retrieval.py              # 5-angle query expansion, dedup, academic-source filter
+│       ├── tools.py                  # Tavily (primary) + DuckDuckGo/Wikipedia/Hacker News fallback
+│       ├── llm.py                    # LLM provider/model selection + rate-limit fallback + latency/token logging
+│       ├── db.py                     # SQLAlchemy engine (Postgres/SQLite) backing sessions/jobs/cache
+│       ├── session_store.py          # Validation + chat sessions (database-backed)
+│       ├── job_store.py              # Background validation jobs for the async/email path (database-backed)
+│       ├── pdf_exporter.py           # ReportLab PDF dossier generation
+│       └── email_delivery.py         # Resend-based report email delivery
+│   └── tests/                        # Unit, contract, async, and integration/concurrency tests
 ├── docs/
 │   ├── architecture.md        # this file
 │   ├── milestone1-plan.md
 │   └── frontend-spec.md
-├── render.yaml         # updated for two services (Yalene)
+├── .github/workflows/ci.yml   # backend tests + frontend lint/build on push/PR
+├── render.yaml         # backend + frontend services, managed Postgres database
 └── README.md
 ```
 

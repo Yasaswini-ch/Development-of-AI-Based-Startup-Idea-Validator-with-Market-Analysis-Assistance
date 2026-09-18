@@ -32,11 +32,17 @@ Affinity is engineered for **API frugality**. Out of six pipeline execution node
 | # | Pipeline Node | Implementation Module | Cost Class | Execution Engine | API Cost per Call |
 |---|---|---|---|---|---|
 | **1** | `web_search` | `agent/retrieval.py` + `agent/tools.py` | Search API | Tavily API (Primary) / DDG (Fallback) | $0.00 (Free) / $0.008 (Paid) |
-| **2** | `confidence_indicator` | `agent/confidence.py` | Local NLP | Python Regular Expressions | **$0.00** |
+| **2** | `confidence_indicator` | `agent/graph.py` (`confidence_node`) | Local heuristic | Source-count/relevance aggregation | **$0.00** |
 | **3** | `market_opportunity` | `agent/market_agent.py` | Cloud LLM | Groq `qwen/qwen3.8-27b` | **~$0.00067** |
 | **4** | `competitor_discovery` | `agent/competitor_agent.py` | Local NLP | spaCy `en_core_web_sm` NER | **$0.00** |
-| **5** | `white_space` | `agent/white_space.py` | Synthesis | Deterministic Heuristics | **$0.00** |
-| **6** | `opportunity_score` | `agent/opportunity_score.py` | Math Model | Weighted Arithmetic Formula | **$0.00** |
+| **5** | `opportunity_score` | `agent/opportunity_score.py` | Math Model | Weighted Arithmetic Formula | **$0.00** |
+| **6** | `white_space` | `agent/white_space.py` | Synthesis | Deterministic Heuristics | **$0.00** |
+| **7** | `swot`/`mvp`/`gtm` | `agent/swot_agent.py`, `mvp_agent.py`, `gtm_agent.py` | Cloud LLM | Groq (same fallback chain) | **~$0.0007 each** |
+| **8** | `confidence_dashboard` | `agent/graph.py` (`confidence_dashboard_node`) | Local heuristic | Source coverage/recency aggregation | **$0.00** |
+
+> Note: an earlier, separately-built `agent/confidence.py` module was never wired into
+> the live pipeline and has since been removed - row 2 above reflects the
+> implementation that has always actually run.
 
 ---
 
