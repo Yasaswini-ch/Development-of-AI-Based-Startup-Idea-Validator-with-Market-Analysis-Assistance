@@ -46,6 +46,18 @@ def _market_size_score(market_size: str) -> int:
     return 0
 
 
+def _trend_text(trend) -> str:
+    """A trend is either a plain string (older cached results) or a
+    {"text", "sourceIds"} claim object (current market_agent.py contract,
+    matching swot_agent.py's shape) - extract the text to score either way,
+    instead of scoring str(trend) which would also work by accident on the
+    dict's repr but isn't something to rely on.
+    """
+    if isinstance(trend, dict):
+        return str(trend.get("text", ""))
+    return str(trend)
+
+
 def _growth_score(trends: list) -> int:
     """Score market momentum from the number and quality of trends."""
     if not trends:
@@ -65,7 +77,7 @@ def _growth_score(trends: list) -> int:
     positive_count = sum(
         1
         for trend in trends
-        if any(signal in str(trend).lower() for signal in positive_signals)
+        if any(signal in _trend_text(trend).lower() for signal in positive_signals)
     )
 
     if positive_count >= 3:

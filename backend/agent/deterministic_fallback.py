@@ -76,10 +76,23 @@ def _market_size_sentence(results: list) -> str:
     return f"{_DEGRADED_NOTE} Based on the sources gathered, {'; '.join(parts)}."
 
 
-def _market_trends(results: list) -> list[str]:
+def _market_trends(results: list) -> list[dict]:
+    """Same {"text", "sourceIds"} claim shape as market_agent.py's real
+    LLM output (matching swot_agent.py's established contract) - each trend
+    cites the sourceId of the result its title came from, via the same
+    src-N numbering compact_sources() would assign (matched by url, see
+    _source_id_for_url above), or an empty list if no url match is found.
+    """
     relevant = [r for r in results if r.get("angle") in ("Market size & trends", "Industry news")]
-    titles = _dedupe_preserve_order([r.get("title", "") for r in relevant if r.get("title")])
-    return titles[:4]
+    seen = set()
+    trends = []
+    for r in relevant:
+        title = (r.get("title") or "").strip()
+        key = title.lower()
+        if title and key not in seen:
+            seen.add(key)
+            trends.append({"text": title, "sourceIds": _source_id_for_url(r.get("url", ""), results)})
+    return trends[:4]
 
 
 def _market_segments(target_customer: str, problem: str, idea: str) -> list[dict]:
@@ -95,6 +108,7 @@ def _market_segments(target_customer: str, problem: str, idea: str) -> list[dict
                 "so detailed motivations aren't inferred for this run."
             ),
             "buyingBehavior": "Not clear from the sources.",
+            "sourceIds": [],
         }
     ]
 
@@ -102,7 +116,9 @@ def _market_segments(target_customer: str, problem: str, idea: str) -> list[dict
 def deterministic_market_opportunity(idea: str, target_customer: str, problem: str, results: list) -> dict:
     """Same contract as market_agent.analyze_market_opportunity's real
     output (marketSize/trends/segments/opportunityScore), built from
-    pattern-matched evidence instead of LLM reasoning.
+    pattern-matched evidence instead of LLM reasoning. trends and segments
+    carry the same {"text"/"segment", ..., "sourceIds"} shape as the real
+    LLM path (Milestone 4 / Track A) - see _market_trends/_market_segments.
     """
     return {
         "marketSize": _market_size_sentence(results),
