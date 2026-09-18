@@ -52,7 +52,7 @@ Affinity delivers an objective, evidence-backed feasibility report in **~10 seco
 | **Evidence Grounding** | Poor (hallucinates metrics) | Verified | **100% Grounded in Live Web Snippets** |
 | **Competitor Extraction** | Outdated memory lookup | Manual vendor lists | **Local spaCy NER over live search data** |
 | **Positioning** | Unstructured text | Hand-drawn matrices | **Automated 3x3 Price vs. Feature Grid** |
-| **Privacy & Security** | Data used for model training | Confidential NDA | **Zero database storage, 30-min volatile cache** |
+| **Privacy & Security** | Data used for model training | Confidential NDA | **No auth/user accounts; sessions auto-expire on a TTL** (true as of Milestone 1-2's in-memory design; Milestone 4 added a database-backed store — see doc 19) |
 
 ---
 

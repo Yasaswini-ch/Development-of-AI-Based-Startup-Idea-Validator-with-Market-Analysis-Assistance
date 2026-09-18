@@ -1,124 +1,117 @@
-# 15. Market Opportunity Score Mathematical Formulation
-**Project:** Affinity — AI-Based Startup Idea Validator with Market Analysis Assistance  
-**Document Version:** 2.0 · September 2026  
-**Status:** Verified & Operational  
+# 15. Opportunity Score Formula
+
+**Document Version:** 3.0 (corrected — see note below)
+**Status:** Verified & Operational
 
 ---
 
-## 📑 Document Table of Contents
-- [1. Executive Summary & Scoring Objectives](#1-executive-summary--scoring-objectives)
-- [2. Mathematical Formulation](#2-mathematical-formulation)
-- [3. Variable Definitions & Weighting Criteria](#3-variable-definitions--weighting-criteria)
-- [4. Edge Case Handling & Fallback Behavior](#4-edge-case-handling--fallback-behavior)
-- [5. Code Implementation (`opportunity_score.py`)](#5-code-implementation-opportunity_scorepy)
+> **Correction from earlier drafts of this document:** a previous version described a
+> `Base=50 + market + growth − density + gaps` formula with a "White-Space Gap
+> Component," specific weight tables (+15/+10/+5, CAGR thresholds, a
+> "Blue Ocean"/"High Saturation" competitor-count scale), and a code listing that
+> doesn't match the real module at all. None of that formula or code exists.
+> `backend/agent/opportunity_score.py` has no `Base=50`, no subtraction term, and no
+> white-space component whatsoever. This version documents the real, additive-only
+> formula.
 
----
+## 1. Executive Summary
 
-## 1. Executive Summary & Scoring Objectives
+The **Opportunity Score** is a **0–100 integer**, computed deterministically in
+`backend/agent/opportunity_score.py` — no LLM call, no `Base` constant, no subtraction.
+It's a straight sum of three independent components, each already individually capped,
+then clamped to `[0, 100]` (the clamp is a safety net; the components can't actually
+exceed 100 on their own since they sum to at most 100).
 
-The **Opportunity Score** is a consolidated **0–100 integer metric** representing the overall market viability and strategic potential of a submitted startup concept.
+## 2. The Real Formula
 
-Unlike black-box LLM ratings, Affinity's Opportunity Score is calculated using a **deterministic mathematical formulation** in [`backend/agent/opportunity_score.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/opportunity_score.py). It combines:
-1. Market Size ($S_{\text{market}}$)
-2. Growth Trends & CAGR ($S_{\text{growth}}$)
-3. Competitor Density ($S_{\text{density}}$)
-4. White-Space Feature Gaps ($S_{\text{gaps}}$)
+```
+OpportunityScore = clamp(marketSizeScore + growthScore + competitionScore, 0, 100)
+```
 
----
+Three components, weighted **40 / 30 / 30**:
 
-## 2. Mathematical Formulation
+### 2.1 Market Size Score (max 40)
 
-$$\text{OpportunityScore} = \text{Clamp}\left( \text{Base} + S_{\text{market}} + S_{\text{growth}} - S_{\text{density}} + S_{\text{gaps}}, \, 0, \, 100 \right)$$
+Keyword-matched against `marketOpportunity.marketSize` (case-insensitive substring
+match, not a regex, not a parsed dollar figure):
 
-Where:
-$$\text{Clamp}(x, a, b) = \max(a, \min(x, b))$$
-$$\text{Base} = 50$$
+| Signal found | Score |
+|---|---|
+| "billion", "large", "global", "rapidly growing", "high growth" | **40** |
+| "million", "growing", "regional", "expanding" | 25 |
+| any non-empty text not containing "not enough" | 15 |
+| empty / no market size text | 0 |
 
----
+### 2.2 Growth Score (max 30)
 
-## 3. Variable Definitions & Weighting Criteria
+Counts how many entries in `marketOpportunity.trends[]` contain a positive-growth
+keyword ("growth", "growing", "increase", "rising", "demand", "adoption", "expanding",
+"surge"):
 
-### 3.1 Market Size Component ($S_{\text{market}}$)
-Evaluates the absolute financial size of the addressable market:
+| Positive-signal trend count | Score |
+|---|---|
+| ≥ 3 | **30** |
+| 2 | 22 |
+| 1 | 12 |
+| 0 (but trends list is non-empty) | 6 |
+| trends list is empty | 0 |
 
-$$S_{\text{market}} = \begin{cases} 
-+15 & \text{if market size text contains explicit TAM/SAM } > \$1\text{B} \\
-+10 & \text{if market size text indicates a multi-million market } (\$100\text{M} - \$999\text{M}) \\
-+5 & \text{if positive market size indicated without explicit figures} \\
-0 & \text{if market size is unclear or unstated}
-\end{cases}$$
+### 2.3 Competition Score (max 30)
 
-### 3.2 Growth Trends Component ($S_{\text{growth}}$)
-Evaluates market growth rates and adoption velocity:
+Purely a function of `len(competitors.competitors)` — fewer named competitors scores
+higher:
 
-$$S_{\text{growth}} = \begin{cases} 
-+15 & \text{if CAGR } > 10\% \text{ or } \ge 3 \text{ positive growth trends identified} \\
-+10 & \text{if 1 to 2 positive market trends identified} \\
-0 & \text{if market growth is neutral or unstated} \\
--10 & \text{if declining market trends detected}
-\end{cases}$$
+| Competitor count | Score |
+|---|---|
+| 0 | **30** |
+| 1 | 24 |
+| 2 | 18 |
+| 3 | 12 |
+| 4+ | 6 |
 
-### 3.3 Competitor Density Penalty ($S_{\text{density}}$)
-Penalizes market saturation based on extracted competitor entities:
+There is no CAGR parsing, no dollar-amount parsing, and no white-space component in
+this score at all — `agent/white_space.py`'s output is never read by
+`opportunity_score.py`.
 
-$$S_{\text{density}} = \begin{cases} 
-+15 & \text{if competitors } > 5 \text{ (High Saturation)} \\
-+5 & \text{if competitors } \in [2, 5] \text{ (Moderate Saturation)} \\
-0 & \text{if competitors } \le 1 \text{ (Low Saturation / Blue Ocean)}
-\end{cases}$$
+## 3. Fallback Behavior (real, not the table from the earlier draft)
 
-### 3.4 White-Space Gap Component ($S_{\text{gaps}}$)
-Rewards identified unaddressed customer pain points:
+If **both** `marketOpportunity` and `competitors` come back with no trends, no
+segments, and no competitors at all (`_has_no_grounded_data()` — almost certainly a
+Groq rate limit or rejected LLM output, not a genuinely empty market), the function
+does **not** run the three components above at all — an empty competitor list would
+otherwise score a misleadingly perfect 30/30 ("no competition!") on a run that produced
+no real data. Instead it falls back to `_search_fallback_score()`, computed from the
+raw web search results (which don't depend on the LLM at all):
 
-$$S_{\text{gaps}} = \begin{cases} 
-+15 & \text{if } \ge 2 \text{ evidence-backed white-space feature opportunities exist} \\
-+10 & \text{if 1 white-space feature opportunity exists} \\
-0 & \text{if zero white-space opportunities identified}
-\end{cases}$$
+```
+countScore      = min(len(search_results), 10) / 10 * 25
+relevanceScore  = average(result.score for result in search_results) * 25
+fallbackScore   = round(min(50, countScore + relevanceScore))
+```
 
----
+capped at **50**, not the full 0–100 range — a weaker, unanalyzed signal is
+deliberately never allowed to look as confident as a real agent analysis. Only
+returns `0` outright when there are no search results at all to fall back to.
 
-## 4. Edge Case Handling & Fallback Behavior
-
-If upstream agents encounter partial failures, `opportunity_score.py` executes fallback scoring over raw search snippet relevance scores:
-
-| Upstream Failure State | Scoring Behavior | Fallback Mechanism |
-|---|---|---|
-| `marketOpportunity == null` | Market components set to neutral ($S_{\text{market}}=0, S_{\text{growth}}=0$) | Uses average search relevance score from `results[].score` |
-| `competitors == null` | Density penalty set to neutral ($S_{\text{density}}=0$) | Assumes baseline competitor saturation |
-| All Upstream Agents Failed | Score defaults to baseline search score | $\text{Score} = \text{Clamp}(\text{AvgSearchScore} \times 100, 30, 70)$ |
-
----
-
-## 5. Code Implementation (`opportunity_score.py`)
+## 4. Real Code (verbatim, `backend/agent/opportunity_score.py`)
 
 ```python
-def calculate_opportunity_score(
-    market_op: dict | None,
-    competitors: dict | None,
-    results: list
-) -> int:
-    score = 50  # Baseline
+_MARKET_SIZE_WEIGHT = 40
+_GROWTH_WEIGHT = 30
+_COMPETITION_WEIGHT = 30
+_SEARCH_FALLBACK_CAP = 50
 
-    if market_op:
-        size_text = market_op.get("marketSize", "").lower()
-        if "billion" in size_text or "tam" in size_text:
-            score += 15
-        elif size_text and "not clear" not in size_text:
-            score += 5
+def calculate_opportunity_score(market_data, competitor_data, search_results=None) -> int:
+    market_data = market_data or {}
+    competitor_data = competitor_data or {}
 
-        trends = market_op.get("trends", [])
-        if len(trends) >= 3:
-            score += 15
-        elif len(trends) > 0:
-            score += 10
+    if _has_no_grounded_data(market_data, competitor_data):
+        return _search_fallback_score(search_results or [])
 
-    if competitors:
-        comp_list = competitors.get("competitors", [])
-        if len(comp_list) > 5:
-            score -= 15
-        elif len(comp_list) >= 2:
-            score -= 5
+    market_score = _market_size_score(market_data.get("marketSize", ""))
+    growth_score = _growth_score(market_data.get("trends", []))
+    competition_score = _competition_score(competitor_data.get("competitors", []))
 
-    return max(0, min(100, score))
+    total = market_score + growth_score + competition_score
+    return max(0, min(100, total))
 ```

@@ -1,99 +1,104 @@
-# 20. Milestone 3: Automated PDF Dossier Exporter & Executive Report Engine
+# 20. Milestone 3: PDF Dossier Exporter
 
-**Document Version:** 3.0 (Milestone 3 Architecture Specification)  
-**Status:** Implemented & Operational  
-**Target Audience:** Frontend Engineers, Document Generation Engineers, Product Managers  
-
----
-
-## 📑 Executive Summary & Exporter Architecture
-
-The **Affinity PDF Dossier Exporter** enables entrepreneurs, student founders, and investment analysts to convert raw digital validation dossiers into publication-ready, multi-page executive PDF reports in under 3 seconds.
-
-The report generator utilizes **ReportLab (Python backend driver)** or **Playwright (Headless Chromium PDF renderer)** to transform JSON responses into styled documents featuring:
-- **Executive Summary Header** (Idea title, timestamp, validation ID).
-- **Opportunity Score Gauge** (Visual 0–100 score indicator).
-- **Market Opportunity Matrix** (CAGR, TAM/SAM estimates, customer segments).
-- **Competitor 3×3 Grid Graphic** (Rendered vector chart of Price vs Feature Breadth).
-- **Source Citation Index** (Verified web references with URL hyperlinks).
-
-```mermaid
-flowchart TD
-    Client["Client UI ('Export PDF' Button)"] --> API["POST /api/v1/validations/{id}/export-pdf"]
-    API --> TokenCheck{"Valid Access Token / Anonymous Permlink?"}
-    TokenCheck -- Valid --> Renderer["ReportLab / Playwright PDF Engine"]
-    Renderer --> FetchData["Load Dossier JSON & Assets"]
-    FetchData --> BuildPDF["Compile Multi-Page PDF Document"]
-    BuildPDF --> StreamPDF["Return Application/PDF Binary Stream"]
-    StreamPDF --> Download["Browser Initiates Instant Download"]
-```
+**Document Version:** 2.0 (corrected — see note below)
+**Status:** Implemented & Operational
+**Target Audience:** Backend Engineers, Frontend Engineers
 
 ---
 
-## 1. Executive PDF Page Layout Blueprint
+> **Correction from earlier drafts of this document:** a previous version described
+> `/api/v1/validations/{id}/export-pdf`-style endpoints with `Authorization: Bearer`
+> tokens, `?theme=dark|light&branding=true` query params, a Playwright/headless-Chromium
+> rendering option, and a code sample that didn't match the real module. None of that
+> exists — there is no authentication anywhere in this app, no theme/branding query
+> params, no Playwright dependency, and the actual `generate_dossier_pdf()` function
+> looks nothing like what was shown. This version describes the real
+> `backend/agent/pdf_exporter.py` and its two real endpoints.
 
-The generated PDF report is structured into three standardized A4 pages:
+## 1. What Actually Exists
+
+**Renderer:** ReportLab only (`SimpleDocTemplate` + `Platypus` flowables — `Paragraph`,
+`Table`, `Spacer`, `HRFlowable`). No Playwright, no headless browser, no HTML-to-PDF
+step anywhere in this pipeline.
+
+**Two real endpoints** (`backend/main.py`):
 
 ```
-+-------------------------------------------------------------------+
-|                        AFFINITY VALIDATION REPORT                  |
-| Idea: AI Specialty Coffee Discovery App                            |
-| Target: Home Baristas & Specialty Coffee Lovers                   |
-| Date: Sept 16, 2026 | Score: 79/100 | Confidence: High (4/5)     |
-+-------------------------------------------------------------------+
-| 1. EXECUTIVE MARKET OPPORTUNITY ANALYSIS                           |
-| - Market Size & Growth: $2.4B Global Market (8.4% CAGR)          |
-| - Unserved White Spaces: Discovery friction for micro-roasters     |
-| - Key Customer Segments: Enthusiasts, Subscibers, Cafe Owners     |
-+-------------------------------------------------------------------+
-| 2. COMPETITOR LANDSCAPE & 3x3 POSITIONING MATRIX                  |
-|                                                                   |
-|    [ High Price ]  Wave           QuickBooks                       |
-|    [ Mod Price  ]  HelloFresh     Trade Coffee (Planted)          |
-|    [ Low Price  ]  Duolingo       Blinkist                         |
-|                    (Narrow)       (Moderate)       (Broad)        |
-+-------------------------------------------------------------------+
-| 3. VERIFIED SOURCE CITATIONS & METHODOLOGY EVIDENCE               |
-| [1] Speciality Coffee Association 2025 Report (sca.coffee/insights)|
-| [2] TechCrunch Startup Discovery Index (techcrunch.com/2026/...)   |
-+-------------------------------------------------------------------+
+POST /export-pdf
+  Body: a validated response-shaped JSON object (PdfExportRequest schema - idea,
+        targetCustomer, marketOpportunity, competitors, swot, mvp, gtm, etc., all
+        optional, extra fields allowed so a full /validate response body can be
+        passed straight through)
+  -> 200, application/pdf, Content-Disposition: attachment; filename="Affinity_Validation_Report.pdf"
+
+GET /validate/{sessionId}/pdf
+  -> Loads that session's already-stored context (session_store.py) and renders the
+     same way - no request body needed, no re-running the pipeline.
+  -> 200, application/pdf, Content-Disposition: attachment; filename="Affinity_Report_{sessionId}.pdf"
 ```
 
----
+Neither endpoint requires an access token or any auth header — this app has no
+authentication layer at all (see doc 19's corrected version). Both are rate-limited
+per IP (`EXPORT_PDF_RATE_LIMIT_PER_MINUTE`, default 10/minute) rather than gated by a
+token.
 
-## 2. API Specifications & Integration Code
+A third, Milestone 4 endpoint also produces a PDF as a side effect: `POST
+/reports/{sessionId}/email` assembles the canonical report
+(`agent/report_assembler.py`), renders it through the same `pdf_exporter.py`, and
+emails it as an attachment via Resend rather than returning it directly.
 
-### Endpoint: `GET /api/v1/validations/{validation_id}/pdf`
-*   **Headers:** `Authorization: Bearer <access_token>`
-*   **Query Params:** `?theme=dark|light&branding=true`
-*   **Response Header:** `Content-Type: application/pdf`, `Content-Disposition: attachment; filename="Affinity_Report_CoffeeApp.pdf"`
+## 2. What the Generated PDF Actually Contains
 
-### Backend Compilation Code (ReportLab Implementation Snippet)
+Four sections, built directly from whatever fields are present in the input dict
+(every field access is defensive — a missing section is simply skipped, not an error):
+
+1. **Header + Executive Summary** — idea title, target customer, the opportunity
+   score (read from `marketOpportunity.opportunityScore`), and the `summary` string.
+2. **Market Size & Growth** — `marketOpportunity.marketSize` and a table of up to 3
+   customer segments (`segment`, `painPoints`).
+3. **Competitor Landscape** — a table of up to 5 competitors with `name`,
+   `estimatedPrice`, `featureBreadth` — these are frequently `"unknown"` in real
+   output (see doc on competitor discovery), which the table renders as-is rather than
+   hiding.
+4. **SWOT & Risk Matrix** — strengths and weaknesses joined into two summary lines.
+   SWOT items are `{"text": ..., "sourceIds": [...]}` objects (Milestone 4, Track A);
+   the exporter reads `.get("text")` from each rather than assuming a bare string.
+
+There is **no rendered opportunity-score gauge graphic, no rendered 3×3 competitor
+positioning chart, and no source-citation index with hyperlinks** in the actual PDF —
+those were described in the earlier, incorrect version of this document but were
+never built. The competitor/segment data appears as plain tables, not visual charts.
+
+MVP recommendations and GTM strategy are part of the canonical report object
+(`report_assembler.py`, Milestone 4) but are not yet rendered into the PDF output
+itself — `generate_dossier_pdf()` only reads the four sections listed above.
+
+## 3. Real Code (verbatim structure, `backend/agent/pdf_exporter.py`)
 
 ```python
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib import colors
-import io
-
-def generate_pdf_report(dossier_data: dict) -> bytes:
+def generate_dossier_pdf(dossier_data: dict) -> bytes:
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
+    doc = SimpleDocTemplate(buffer, pagesize=letter, ...)
     story = []
-    styles = getSampleStyleSheet()
-    
-    # Title Header
-    title_style = ParagraphStyle('ReportTitle', parent=styles['Heading1'], fontSize=20, textColor=colors.HexColor("#0F172A"))
-    story.append(Paragraph(f"Affinity Dossier: {dossier_data.get('ideaTitle', 'Startup Idea')}", title_style))
-    story.append(Spacer(1, 12))
-    
-    # Score Summary
-    score = dossier_data.get('opportunityScore', {}).get('score', 0)
-    story.append(Paragraph(f"<b>Opportunity Feasibility Score:</b> {score} / 100", styles['Normal']))
-    story.append(Spacer(1, 18))
-    
+
+    idea_title = dossier_data.get("idea", dossier_data.get("ideaTitle", "Startup Concept"))
+    story.append(Paragraph(f"Affinity Market Feasibility Dossier: {idea_title}", title_style))
+
+    market_opp = dossier_data.get("marketOpportunity") or {}
+    opp_score = market_opp.get("opportunityScore", ...)
+    story.append(Paragraph(f"Feasibility Opportunity Score: {opp_score} / 100", body_style))
+    # ... market size, segments table, competitor table, SWOT summary ...
+
     doc.build(story)
     buffer.seek(0)
     return buffer.getvalue()
 ```
+
+## 4. Known Gap (documented honestly, not invented)
+
+`generate_dossier_pdf()` expects a **flat** dict (`idea`, `targetCustomer`,
+`marketOpportunity`, `summary`, `competitors`, `swot`, ...). The Milestone 4 canonical
+report object (`report_assembler.py`) nests these under `ideaSummary` instead. Rather
+than changing `pdf_exporter.py` itself (which would touch its two already-working call
+sites above), `report_assembler.report_to_pdf_input()` adapts the canonical shape back
+to the flat one before it reaches the exporter — a shim, not a rewrite.

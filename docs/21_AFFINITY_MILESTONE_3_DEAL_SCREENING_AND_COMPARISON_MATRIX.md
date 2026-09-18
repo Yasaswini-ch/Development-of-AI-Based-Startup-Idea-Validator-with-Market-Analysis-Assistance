@@ -1,85 +1,52 @@
-# 21. Milestone 3: Deal-Screening & Multi-Idea Comparison Matrix Engine
+# 21. Multi-Idea Comparison Matrix
 
-**Document Version:** 3.0 (Milestone 3 Architecture Specification)  
-**Status:** Implemented & Operational  
-**Target Audience:** Angel Investors, VC Analysts, Product Portfolio Managers  
-
----
-
-## 📑 Executive Summary & Deal Screening Engine
-
-For investors, startup incubators, and multi-project founders, evaluating startup ideas in isolation is insufficient. The **Affinity Multi-Idea Comparison Matrix** allows users to select up to 5 validated startup concepts and compare them side-by-side across quantitative metrics, market sizes, competitive saturation levels, and white-space potential.
-
-```mermaid
-flowchart TD
-    subgraph MultiSelect["1. Concept Selection"]
-        IdeaA["Idea A: AI Coffee Sub (Score: 79)"]
-        IdeaB["Idea B: Smart Water Bottle (Score: 68)"]
-        IdeaC["Idea C: Automated Invoicing (Score: 62)"]
-    end
-    
-    subgraph MatrixEngine["2. Comparison Engine"]
-        MultiSelect --> Normalize["Normalize Feasibility Metrics"]
-        Normalize --> Ranking["Rank Concepts by Risk vs Reward"]
-    end
-    
-    subgraph OutputMatrix["3. Executive Comparison Matrix"]
-        MatrixEngine --> SideBySide["Side-by-Side Evaluation Dashboard"]
-        MatrixEngine --> CSVExport["Export Comparative Data (CSV / JSON)"]
-    end
-```
+**Document Version:** 2.0 (corrected — see note below)
+**Status:** Not implemented — proposed future feature
+**Target Audience:** Product, Backend Engineers
 
 ---
 
-## 1. Side-by-Side Comparison Matrix Schema
+> **Correction from earlier drafts of this document:** a previous version of this file
+> described a `POST /api/v1/validations/compare` endpoint and a full side-by-side
+> multi-idea comparison matrix, labeled *"Status: Implemented & Operational."* That
+> was never true. No such endpoint, no such UI, and no such comparison logic exists
+> anywhere in this codebase — not partially, not under a different name. There is
+> nothing in `backend/main.py`'s route list, nowhere in `frontend/src/`, that does
+> this. This version is honest about that: the content below is a **design proposal**
+> for a feature that has not been built, not a record of one that has.
 
-| Evaluation Dimension | Startup Concept A (Coffee Sub) | Startup Concept B (Water Bottle) | Startup Concept C (Invoicing App) |
-| :--- | :--- | :--- | :--- |
-| **Opportunity Score** | **79 / 100** | **68 / 100** | **62 / 100** |
-| **Estimated Market Size** | $2.4B (8.4% CAGR) | $1.1B (5.2% CAGR) | $18.5B (12.1% CAGR) |
-| **Competitor Density** | Moderate (2 Direct) | Moderate (2 Direct) | High (4 Direct) |
-| **Source Consensus Ratio**| 4/5 (High Growth) | 3/5 (Moderate Growth) | 2/5 (High Pressure) |
-| **Dominant Competitors** | Trade Coffee, HelloFresh | HidrateSpark, Waterllama | FreshBooks, Wave, QuickBooks |
-| **Primary White-Space** | Discovery for micro-roasters| Hydration tracking alerts | Automated micro-invoicing |
-| **Execution Risk Rating** | **Low** | **Medium (Hardware)** | **High (Saturated Market)** |
+## 1. Current Reality
 
----
+Affinity validates **one idea per request**. `POST /validate` takes a single
+`{idea, targetCustomer, problem}` and returns one full analysis, tied to one
+`sessionId`. There is no concept of "select N previous validations and compare them" —
+sessions aren't even listable today (no `GET /sessions` or equivalent), so a caller
+would first need a way to enumerate their own past validations before comparing any of
+them, which also doesn't exist.
 
-## 2. API Contract for Comparison Endpoint (`POST /api/v1/validations/compare`)
+Nothing about this is a partial implementation waiting to be finished — it's a
+genuinely unbuilt idea, first written up (as a real proposal, without the false
+status claim) in `docs/17_AFFINITY_MILESTONE_3_4_TECHNICAL_ROADMAP.md` and `docs/
+unique-features-plan.md`'s differentiator list, neither of which includes it either —
+so this is, at most, a future idea beyond the currently planned Milestone 4 scope.
 
-### Request Payload
-```json
-{
-  "validation_ids": [
-    "val_88319a",
-    "val_99102b",
-    "val_10482c"
-  ]
-}
-```
+## 2. If This Were Built
 
-### Response Payload Schema
-```json
-{
-  "comparison_count": 3,
-  "top_ranked_id": "val_88319a",
-  "comparison_matrix": [
-    {
-      "validationId": "val_88319a",
-      "ideaTitle": "AI Specialty Coffee Discovery App",
-      "opportunityScore": 79,
-      "growthAgreementRatio": "4/5",
-      "competitorCount": 2,
-      "riskRating": "Low"
-    },
-    {
-      "validationId": "val_99102b",
-      "ideaTitle": "Smart Water Bottle Hydration Tracker",
-      "opportunityScore": 68,
-      "growthAgreementRatio": "3/5",
-      "competitorCount": 2,
-      "riskRating": "Medium"
-    }
-  ]
-}
-```
+Kept here as a design sketch, clearly marked as such, since the shape is still a
+reasonable one:
+
+- Would need session **listing** first (e.g. by a founder-supplied identifier, since
+  there's no user-account system to scope "my sessions" to — see doc 19's corrected
+  version on the current lack of authentication).
+- A comparison would read from the same canonical report object
+  (`agent/report_assembler.py`, Milestone 4) for each selected session — reusing
+  `opportunityScore`, `confidence`, and `swot.risks` rather than inventing a separate
+  "risk rating" or "source consensus ratio" metric, since those already exist on each
+  individual report.
+- Output would be a side-by-side table of existing fields, not a new scoring model —
+  consistent with this project's "don't re-derive, assemble what already exists"
+  principle for report-shaped features.
+
+This is deliberately a short section — there's no implementation to document, and
+padding a proposal out to look like a spec risks the same problem this correction is
+fixing.

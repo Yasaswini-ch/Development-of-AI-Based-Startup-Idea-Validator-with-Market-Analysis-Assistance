@@ -173,13 +173,15 @@ def _has_product_context(name: str, doc) -> bool:
 [`backend/agent/white_space.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/white_space.py) synthesizes unaddressed feature gaps by cross-referencing customer pain points from `marketOpportunity` against competitor density:
 - High competitor density + repeated customer complaints = **High-Value Gap**.
 
-### 6.2 Mathematical Opportunity Score Formulation
-[`backend/agent/opportunity_score.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/opportunity_score.py) computes a 0–100 integer score:
+### 6.2 Opportunity Score Formula
 
-$$\text{OpportunityScore} = \text{Clamp}\left(50 + S_{\text{market}} + S_{\text{growth}} - S_{\text{density}} + S_{\text{gaps}}, 0, 100\right)$$
-
-Where:
-- $S_{\text{market}} = +15$ if TAM/SAM $> \$1\text{B}$, $+5$ if positive market size indicated.
-- $S_{\text{growth}} = +15$ if CAGR $> 10\%$ or strong growth trend present.
-- $S_{\text{density}} = -15$ if competitors $> 5$, $-5$ if 2–4 competitors.
-- $S_{\text{gaps}} = +15$ if clear white-space feature gaps are identified.
+> **Correction:** an earlier draft of this section showed a `50 + market + growth −
+> density + gaps` formula with a white-space term. That formula doesn't exist in the
+> real module — there is no `Base=50`, no subtraction, and no white-space component.
+> See `docs/15_AFFINITY_OPPORTUNITY_SCORE_MATHEMATICAL_MODEL.md` for the corrected,
+> verified-against-source formula. Summary: `OpportunityScore = clamp(marketSizeScore
+> [0-40] + growthScore [0-30] + competitionScore [0-30], 0, 100)`, purely additive,
+> computed by keyword-matching `marketOpportunity.marketSize`/`.trends` and counting
+> `competitors.competitors` — no CAGR parsing, no dollar-figure parsing. If both
+> upstream agents produced no data at all, it falls back to a raw-search-relevance
+> score capped at 50 instead of running the formula above.
