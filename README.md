@@ -12,11 +12,6 @@ identified locally via NER, an evidence-backed SWOT/risk analysis, MVP feature
 recommendations, a GTM strategy, and a session-based conversational advisor for
 follow-up questions — plus a downloadable PDF dossier and optional email delivery.
 
-Milestones 1–3 are complete. Milestone 4 (evidence citations, a confidence dashboard,
-contradiction detection, validation experiments, and a canonical report object) is in
-progress — see [`PENDING-TASKS.md`](PENDING-TASKS.md) for the current breakdown (local
-reference only, not committed).
-
 ## How it works
 
 ![How the AI Startup Validator Works](docs/images/How%20the%20AI%20Startup%20Validator%20Works.png)
