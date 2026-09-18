@@ -15,10 +15,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from agent.chat_graph import ChatRateLimitError, run_chat_turn
 from agent.db import cache_table, get_engine
-from agent.email_delivery import is_valid_email, send_report_email
+from agent.email_delivery import is_valid_email, send_canonical_report_email, send_report_email
 from agent.graph import pipeline
 from agent.job_store import complete_job, create_job, fail_job, get_job
 from agent.pdf_exporter import generate_dossier_pdf
+from agent.report_assembler import assemble_report, report_to_pdf_input
 from agent.session_store import create_session, get_session
 from agent.structured_output import compact_sources
 from sqlalchemy import delete, select
@@ -177,6 +178,7 @@ _RATE_LIMIT_WINDOW_SECONDS = 60.0
 _VALIDATE_RATE_LIMIT = int(os.environ.get("VALIDATE_RATE_LIMIT_PER_MINUTE", "10"))
 _CHAT_RATE_LIMIT = int(os.environ.get("CHAT_RATE_LIMIT_PER_MINUTE", "30"))
 _EXPORT_PDF_RATE_LIMIT = int(os.environ.get("EXPORT_PDF_RATE_LIMIT_PER_MINUTE", "10"))
+_REPORT_EMAIL_RATE_LIMIT = int(os.environ.get("REPORT_EMAIL_RATE_LIMIT_PER_MINUTE", "5"))
 
 _rate_limit_lock = threading.Lock()
 _rate_limit_hits: dict[str, list[float]] = {}
@@ -273,6 +275,20 @@ class PdfExportRequest(BaseModel):
     gtm: dict | None = None
 
 
+class EmailReportRequest(BaseModel):
+    """Schema for POST /reports/{sessionId}/email (docs/unique-features-plan.md §7)."""
+
+    recipient: str
+
+    @field_validator("recipient")
+    @classmethod
+    def _validate_recipient(cls, value: str) -> str:
+        value = value.strip()
+        if not value or not is_valid_email(value):
+            raise ValueError("recipient must be a valid email address")
+        return value
+
+
 def _create_validation_session(payload: ValidateRequest, response: dict) -> str:
     return create_session(
         {
@@ -288,6 +304,12 @@ def _create_validation_session(payload: ValidateRequest, response: dict) -> str:
             "swot": response.get("swot"),
             "mvp": response.get("mvp"),
             "gtm": response.get("gtm"),
+            # Tracks B/C - not produced by the pipeline yet; stored
+            # defensively so report_assembler.py picks them up the moment
+            # they exist, with no change needed here when that lands.
+            "contradictions": response.get("contradictions"),
+            "experiments": response.get("experiments"),
+            "actionPlan": response.get("actionPlan"),
         }
     )
 
@@ -623,3 +645,69 @@ def export_pdf_session(session_id: str, request: Request):
             status_code=500,
             content={"error": f"PDF export failed: {str(exc)}"},
         )
+
+
+# --------------------------------------------------
+# CANONICAL REPORT (MILESTONE 4, TRACK D)
+# --------------------------------------------------
+
+@app.get("/reports/{session_id}")
+def get_report(session_id: str, request: Request):
+    """Return the canonical report object (docs/unique-features-plan.md §6)
+    assembled from an existing validation session. Never reruns retrieval
+    or any agent - report_assembler.py only reads out what the pipeline
+    already produced for this session.
+    """
+    if _is_rate_limited(f"reports:{_client_ip(request)}", _EXPORT_PDF_RATE_LIMIT):
+        return _rate_limit_response("Too many report requests. Please wait a minute and try again.")
+
+    session = get_session(session_id)
+    if not session:
+        return JSONResponse(
+            status_code=404,
+            content={"error": "Session not found or expired."},
+        )
+
+    return assemble_report(session_id, session["context"])
+
+
+@app.post("/reports/{session_id}/email")
+def email_report(session_id: str, payload: EmailReportRequest, request: Request):
+    """Email an already-generated report as a PDF attachment. Per the
+    email rules in docs/unique-features-plan.md §7: only reads an existing
+    completed report, never reruns retrieval/any agent, and never logs the
+    recipient address or report contents.
+    """
+    if _is_rate_limited(f"report-email:{_client_ip(request)}", _REPORT_EMAIL_RATE_LIMIT):
+        return _rate_limit_response("Too many email requests. Please wait a minute and try again.")
+
+    session = get_session(session_id)
+    if not session:
+        return JSONResponse(
+            status_code=404,
+            content={"error": "Session not found or expired."},
+        )
+
+    report = assemble_report(session_id, session["context"])
+
+    try:
+        pdf_bytes = generate_dossier_pdf(report_to_pdf_input(report))
+    except Exception:
+        logger.exception("PDF generation failed while emailing report for session %s", session_id)
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Could not generate the report PDF for delivery."},
+        )
+
+    delivery_id = str(uuid.uuid4())
+    sent = send_canonical_report_email(payload.recipient, report, pdf_bytes)
+    if not sent:
+        return JSONResponse(
+            status_code=502,
+            content={"status": "failed", "error": "Email delivery is not available right now. Please try again shortly."},
+        )
+
+    return JSONResponse(
+        status_code=202,
+        content={"status": "queued", "deliveryId": delivery_id},
+    )
