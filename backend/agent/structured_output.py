@@ -31,6 +31,33 @@ def compact_sources(results: list, limit: int = 6, snippet_chars: int = 220) -> 
     return sources
 
 
+def valid_source_ids(value) -> bool:
+    """True if `value` is a list of strings - the shape every agent's
+    sourceIds field must have (see swot_agent.py's established contract,
+    docs/unique-features-plan.md §5.1). Shared here so market/mvp/gtm
+    validators check the same rule instead of each redefining it.
+    """
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def sanitize_source_ids(value, valid_ids: set[str]) -> list[str]:
+    """Drop any sourceId that is not in `valid_ids` (a hallucinated citation
+    the model invented) and de-duplicate while preserving order - never let
+    an ungrounded sourceId reach the API response. Same honesty-first rule
+    swot_agent.py already applies to its own claims, shared here so every
+    agent that cites compact_sources() ids gets it for free.
+    """
+    if not isinstance(value, list):
+        return []
+    seen = set()
+    out = []
+    for item in value:
+        if isinstance(item, str) and item in valid_ids and item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
+
+
 def _balanced_objects(text: str) -> list[str]:
     objects = []
     depth = 0
