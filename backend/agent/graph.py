@@ -1,5 +1,6 @@
 import logging
 import time
+from datetime import datetime, timezone
 from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -597,6 +598,56 @@ def _source_relevance_by_id(results: list) -> dict[str, float]:
     return lookup
 
 
+def _parse_published_at(value) -> datetime | None:
+    """Best-effort ISO-8601 parse of a source's publishedAt (see
+    tools.py) - returns None on anything that doesn't parse rather than
+    raising, since a malformed date from a provider is still "unknown",
+    not a pipeline failure.
+    """
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _source_recency(results: list) -> dict:
+    """Real recency data where the underlying search provider actually
+    exposes a publish date (Tavily sometimes does; Hacker News's Algolia
+    API always does; DuckDuckGo's text search and Wikipedia's search API
+    don't - see tools.py) - reports how many sources have a known date and
+    their median age, rather than a blanket "unavailable" for the whole
+    dashboard just because not every provider supports it.
+    """
+    total = len(results)
+    ages_days = []
+    for result in results:
+        parsed = _parse_published_at(result.get("publishedAt"))
+        if parsed is not None:
+            ages_days.append((datetime.now(timezone.utc) - parsed).total_seconds() / 86400)
+
+    if not ages_days:
+        return {
+            "sourcesWithKnownDate": 0,
+            "totalSources": total,
+            "medianAgeDays": None,
+        }
+
+    ages_days.sort()
+    mid = len(ages_days) // 2
+    median = ages_days[mid] if len(ages_days) % 2 else (ages_days[mid - 1] + ages_days[mid]) / 2
+
+    return {
+        "sourcesWithKnownDate": len(ages_days),
+        "totalSources": total,
+        "medianAgeDays": round(median, 1),
+    }
+
+
 def _confidence_dashboard(state: PipelineState) -> dict:
     """Extend the existing evidence-agreement indicator (confidence_node,
     computed early from raw search results) with the claim-level dashboard
@@ -643,11 +694,7 @@ def _confidence_dashboard(state: PipelineState) -> dict:
             "inferred": total_claims - claims_with_source,
             "percentage": _pct(claims_with_source, total_claims),
         },
-        # retrieval.py/tools.py don't currently capture a source's publish
-        # date (confirmed: no provider path sets one - see tools.py), so
-        # this is left honestly unavailable rather than invented. Add a
-        # "publishedAt" field upstream to make this real.
-        "sourceRecency": "not available - source publish dates are not currently captured",
+        "sourceRecency": _source_recency(state.get("results", [])),
     }
 
 

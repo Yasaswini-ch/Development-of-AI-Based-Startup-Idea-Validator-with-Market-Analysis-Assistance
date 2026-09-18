@@ -1,3 +1,4 @@
+import datetime as dt
 import sys
 import unittest
 from pathlib import Path
@@ -165,6 +166,41 @@ class MilestoneThreeTests(unittest.TestCase):
         self.assertEqual(confidence["directEvidenceRatio"], {"direct": 3, "inferred": 2, "percentage": 60})
         # Cited sources are src-1 (score 0.8) and src-2 (score 0.4) -> mean 0.6.
         self.assertAlmostEqual(confidence["averageRelevance"], 0.6)
+
+    def test_confidence_dashboard_source_recency_reports_known_and_unknown_dates(self):
+        now = dt.datetime.now(dt.timezone.utc)
+        state = {
+            "results": [
+                {"title": "A", "url": "https://a", "score": 0.8, "publishedAt": (now - dt.timedelta(days=10)).isoformat()},
+                {"title": "B", "url": "https://b", "score": 0.7, "publishedAt": (now - dt.timedelta(days=100)).isoformat()},
+                {"title": "C", "url": "https://c", "score": 0.6, "publishedAt": None},
+                {"title": "D", "url": "https://d", "score": 0.5, "publishedAt": "not-a-real-date"},
+            ],
+            "swot": None,
+            "mvp": None,
+            "gtm": None,
+            "errors": {},
+        }
+
+        recency = confidence_dashboard_node(state)["confidence"]["sourceRecency"]
+
+        # Only A and B have a parseable date; C is None and D is malformed -
+        # both must be excluded, never crash, never counted as "known".
+        self.assertEqual(recency["sourcesWithKnownDate"], 2)
+        self.assertEqual(recency["totalSources"], 4)
+        self.assertAlmostEqual(recency["medianAgeDays"], 55.0, delta=0.1)
+
+    def test_confidence_dashboard_source_recency_is_honestly_unknown_with_no_dated_sources(self):
+        state = {
+            "results": [{"title": "A", "url": "https://a", "score": 0.8}],
+            "swot": None,
+            "mvp": None,
+            "gtm": None,
+            "errors": {},
+        }
+
+        recency = confidence_dashboard_node(state)["confidence"]["sourceRecency"]
+        self.assertEqual(recency, {"sourcesWithKnownDate": 0, "totalSources": 1, "medianAgeDays": None})
 
     def test_confidence_dashboard_skipped_on_pipeline_error(self):
         state = {"error": "search failed", "confidence": None}
