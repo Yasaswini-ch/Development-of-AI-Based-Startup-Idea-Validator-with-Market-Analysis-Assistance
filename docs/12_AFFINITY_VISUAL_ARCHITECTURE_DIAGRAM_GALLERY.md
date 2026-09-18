@@ -28,19 +28,24 @@ flowchart TD
     end
 
     subgraph GatewayLayer["2. Gateway Tier (FastAPI)"]
-        Main["FastAPI Router (main.py)"]
-        Cache["Volatile Memory Cache (30-min TTL)"]
+        Main["FastAPI Router (main.py)\nrate limiting + request tracing"]
+        Cache["Database-backed Cache (30-min TTL)"]
         Main <--> Cache
     end
 
     subgraph PipelineLayer["3. Orchestration Tier (LangGraph)"]
         Graph["LangGraph State Machine (graph.py)"]
+        ChatGraph["Chat Graph (chat_graph.py)"]
         SearchModule["agent/retrieval.py"]
-        ConfidenceModule["agent/confidence.py"]
+        ConfidenceModule["confidence_indicator +\nconfidence_dashboard (in graph.py)"]
         MarketModule["agent/market_agent.py"]
         CompetitorModule["agent/competitor_agent.py"]
         WhiteSpaceModule["agent/white_space.py"]
         ScoreModule["agent/opportunity_score.py"]
+        SwotModule["agent/swot_agent.py"]
+        MvpModule["agent/mvp_agent.py"]
+        GtmModule["agent/gtm_agent.py"]
+        ReportModule["agent/report_assembler.py"]
 
         Graph --> SearchModule
         Graph --> ConfidenceModule
@@ -48,20 +53,33 @@ flowchart TD
         Graph --> CompetitorModule
         Graph --> WhiteSpaceModule
         Graph --> ScoreModule
+        Graph --> SwotModule --> MvpModule --> GtmModule
+        GtmModule --> ReportModule
     end
 
-    subgraph ExternalLayer["4. Cloud API Tier"]
-        Groq["Groq Cloud LLM API (qwen3.8-27b)"]
+    subgraph PersistenceLayer["4. Persistence Tier"]
+        DB[("Postgres (prod) /\nSQLite (local) - agent/db.py")]
+    end
+
+    subgraph ExternalLayer["5. Cloud API Tier"]
+        Groq["Groq Cloud LLM API (qwen3.8-27b + fallbacks)"]
         Tavily["Tavily Search API"]
         DDG["DuckDuckGo Search (Fallback)"]
+        Resend["Resend Email API"]
 
         MarketModule --> Groq
+        SwotModule --> Groq
+        MvpModule --> Groq
+        GtmModule --> Groq
         SearchModule --> Tavily
         SearchModule -.Fallback.-> DDG
+        ReportModule -.email.-> Resend
     end
 
     UI -->|POST /validate| Main
     Main --> Graph
+    Main --> ChatGraph
+    Main <--> DB
 ```
 
 ---
@@ -71,12 +89,16 @@ flowchart TD
 ```mermaid
 flowchart TD
     START(["Start Request"]) --> WebSearch["1. web_search_node\n(5 Search Angles)"]
-    WebSearch --> Confidence["2. confidence_indicator\n(Regex Source Consensus)"]
+    WebSearch --> Confidence["2. confidence_indicator\n(Source Agreement per Angle)"]
     Confidence --> Market["3. market_opportunity_node\n(Groq LLM Reasoning)"]
     Market --> Competitors["4. competitor_discovery_node\n(Local spaCy NER)"]
-    Competitors --> WhiteSpace["5. white_space_node\n(Gap Synthesis)"]
-    WhiteSpace --> Score["6. opportunity_score_node\n(0-100 Score Formulation)"]
-    Score --> END(["Return JSON Payload"])
+    Competitors --> Score["5. opportunity_score_node\n(0-100 Score Formulation)"]
+    Score --> WhiteSpace["6. white_space_node\n(Gap Synthesis)"]
+    WhiteSpace --> Swot["7. swot_node\n(Groq LLM, sourceIds per claim)"]
+    Swot --> Mvp["8. mvp_node\n(Groq LLM Feature Prioritization)"]
+    Mvp --> Gtm["9. gtm_node\n(Groq LLM Positioning/Channels)"]
+    Gtm --> ConfDash["10. confidence_dashboard_node\n(Source Coverage, Recency, Agreement)"]
+    ConfDash --> END(["Return JSON Payload + sessionId"])
 ```
 
 ---
