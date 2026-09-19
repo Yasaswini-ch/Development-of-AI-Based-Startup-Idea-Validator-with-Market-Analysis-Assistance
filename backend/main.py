@@ -383,6 +383,8 @@ def _run_pipeline_and_build_response(payload: ValidateRequest, cache_key: str) -
         "swot": state.get("swot"),
         "mvp": state.get("mvp"),
         "gtm": state.get("gtm"),
+        # Track B: cross-artifact contradiction flags
+        "contradictions": state.get("contradictions"),
         "errors": state.get("errors", {}),
     }
 
