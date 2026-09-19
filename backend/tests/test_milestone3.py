@@ -175,6 +175,49 @@ class MilestoneThreeTests(unittest.TestCase):
         # Cited sources are src-1 (score 0.8) and src-2 (score 0.4) -> mean 0.6.
         self.assertAlmostEqual(confidence["averageRelevance"], 0.6)
 
+    def test_confidence_dashboard_includes_market_opportunity_claims(self):
+        # Track A gap fix: market_agent.py's trends/segments (state
+        # ["marketOpportunity"]) must be counted in the dashboard the same
+        # as swot/mvp/gtm claims - they were previously invisible here even
+        # though market_agent.py already emits sourceIds on them.
+        state = {
+            "results": [
+                {"title": "Source A", "url": "https://example.com/a", "score": 0.8},
+                {"title": "Source B", "url": "https://example.com/b", "score": 0.4},
+            ],
+            "swot": None,
+            "mvp": None,
+            "gtm": None,
+            "marketOpportunity": {
+                "trends": [
+                    {"text": "Rising demand", "sourceIds": ["src-1"]},
+                    {"text": "Structural observation", "sourceIds": []},
+                ],
+                "segments": [
+                    {
+                        "segment": "Urban millennials",
+                        "painPoints": "p",
+                        "motivations": "m",
+                        "buyingBehavior": "b",
+                        "sourceIds": ["src-1", "src-2"],
+                    }
+                ],
+            },
+            "errors": {},
+        }
+
+        result = confidence_dashboard_node(state)
+        confidence = result["confidence"]
+
+        # 2 of 3 market claims cite at least one source: the trend with
+        # src-1, and the segment with src-1/src-2.
+        self.assertEqual(confidence["sourceCoverage"], {"claimsWithSource": 2, "totalClaims": 3, "percentage": 67})
+        # Only the segment cites 2+ sources.
+        self.assertEqual(
+            confidence["crossSourceAgreement"],
+            {"claimsWithMultipleSources": 1, "totalClaims": 3, "percentage": 33},
+        )
+
     def test_confidence_dashboard_source_recency_reports_known_and_unknown_dates(self):
         now = dt.datetime.now(dt.timezone.utc)
         state = {

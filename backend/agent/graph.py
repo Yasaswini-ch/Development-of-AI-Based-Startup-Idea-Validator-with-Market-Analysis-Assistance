@@ -555,12 +555,13 @@ _CLAIM_LIST_KEYS = ("strengths", "weaknesses", "opportunities", "threats")
 
 def _collect_claims(state: PipelineState) -> list[dict]:
     """Gather every claim across the pipeline's evidence-backed sections
-    that carries a "sourceIds" field. Only swot_agent.py emits this shape
-    today (see swot_agent.py's _valid_claim_list) - market/mvp/gtm are
-    expected to add their own "sourceIds" fields the same way as their
-    Track A work lands, and this function picks them up automatically the
-    moment those sections start returning items shaped like
-    {"sourceIds": [...]}, with no change needed here.
+    that carries a "sourceIds" field: swot_agent.py's four claim lists and
+    risks, mvp_agent.py's features, gtm_agent.py's channels, and
+    market_agent.py's trends and segments (state["marketOpportunity"] -
+    added once market's Track A sourceIds work landed). New items within
+    these same sections are picked up automatically the moment they're
+    shaped like {"sourceIds": [...]} - only an entirely new top-level
+    section (a new dict key on state) needs a line added here.
     """
     claims: list[dict] = []
 
@@ -581,6 +582,14 @@ def _collect_claims(state: PipelineState) -> list[dict]:
     for channel in gtm.get("channels") or []:
         if isinstance(channel, dict) and "sourceIds" in channel:
             claims.append(channel)
+
+    market = state.get("marketOpportunity") or {}
+    for trend in market.get("trends") or []:
+        if isinstance(trend, dict) and "sourceIds" in trend:
+            claims.append(trend)
+    for segment in market.get("segments") or []:
+        if isinstance(segment, dict) and "sourceIds" in segment:
+            claims.append(segment)
 
     return claims
 
