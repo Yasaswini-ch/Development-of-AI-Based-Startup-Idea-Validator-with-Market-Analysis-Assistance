@@ -6,15 +6,17 @@ from crewai import Agent, Crew, Process, Task
 
 from .deterministic_fallback import deterministic_gtm
 from .llm import get_llm, kickoff_with_fallback
-from .structured_output import compact_json, compact_sources, extract_json_object
+from .structured_output import (
+    compact_json,
+    compact_sources,
+    extract_json_object,
+    sanitize_source_ids,
+    valid_source_ids,
+)
 
 logger = logging.getLogger(__name__)
 
 _MAX_CHANNELS = 4
-
-
-def _valid_source_ids(value) -> bool:
-    return isinstance(value, list) and all(isinstance(item, str) for item in value)
 
 
 def _valid_channel_list(value) -> bool:
@@ -29,7 +31,7 @@ def _valid_channel_list(value) -> bool:
             return False
         if not isinstance(item.get("text"), str) or not item["text"].strip():
             return False
-        if not _valid_source_ids(item.get("sourceIds", [])):
+        if not valid_source_ids(item.get("sourceIds", [])):
             return False
     return True
 
@@ -37,26 +39,11 @@ def _valid_channel_list(value) -> bool:
 def _valid_shape(value: dict) -> bool:
     return (
         isinstance(value.get("positioning"), str)
-        and _valid_source_ids(value.get("positioningSourceIds", []))
+        and valid_source_ids(value.get("positioningSourceIds", []))
         and _valid_channel_list(value.get("channels"))
         and isinstance(value.get("earlyCustomerApproach"), str)
-        and _valid_source_ids(value.get("earlyCustomerApproachSourceIds", []))
+        and valid_source_ids(value.get("earlyCustomerApproachSourceIds", []))
     )
-
-
-def _sanitize_source_ids(value, valid_ids: set[str]) -> list[str]:
-    """Drop any sourceId the model invented that isn't in the sources it
-    was given - same rule swot_agent.py follows.
-    """
-    if not isinstance(value, list):
-        return []
-    seen = set()
-    out = []
-    for item in value:
-        if isinstance(item, str) and item in valid_ids and item not in seen:
-            seen.add(item)
-            out.append(item)
-    return out
 
 
 def _build_crew(idea: str, target_customer: str, context: str, model: str) -> Crew:
@@ -117,12 +104,12 @@ def analyze_gtm(
         if data is None:
             logger.warning("GTM agent returned no valid JSON")
             raise ValueError("GTM analysis did not return a valid result.")
-        data["positioningSourceIds"] = _sanitize_source_ids(data.get("positioningSourceIds"), valid_ids)
-        data["earlyCustomerApproachSourceIds"] = _sanitize_source_ids(
+        data["positioningSourceIds"] = sanitize_source_ids(data.get("positioningSourceIds"), valid_ids)
+        data["earlyCustomerApproachSourceIds"] = sanitize_source_ids(
             data.get("earlyCustomerApproachSourceIds"), valid_ids
         )
         data["channels"] = [
-            {"text": item["text"].strip(), "sourceIds": _sanitize_source_ids(item.get("sourceIds"), valid_ids)}
+            {"text": item["text"].strip(), "sourceIds": sanitize_source_ids(item.get("sourceIds"), valid_ids)}
             for item in data["channels"][:_MAX_CHANNELS]
         ]
         return data

@@ -84,7 +84,7 @@ class MilestoneThreeTests(unittest.TestCase):
     def test_swot_drops_hallucinated_source_ids(self, kickoff):
         """A sourceId the model invents that isn't in the sources it was
         actually given must never reach the caller - see
-        swot_agent._sanitize_source_ids.
+        structured_output.sanitize_source_ids (shared by all four agents).
         """
         kickoff.return_value = SimpleNamespace(
             raw=(

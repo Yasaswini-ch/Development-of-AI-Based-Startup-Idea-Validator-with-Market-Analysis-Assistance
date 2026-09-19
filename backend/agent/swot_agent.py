@@ -6,7 +6,13 @@ from crewai import Agent, Crew, Process, Task
 
 from .deterministic_fallback import deterministic_swot
 from .llm import get_llm, kickoff_with_fallback
-from .structured_output import compact_json, compact_sources, extract_json_object
+from .structured_output import (
+    compact_json,
+    compact_sources,
+    extract_json_object,
+    sanitize_source_ids,
+    valid_source_ids,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -15,10 +21,6 @@ _MAX_ITEMS = 4
 _MAX_RISKS = 4
 
 _SWOT_KEYS = ("strengths", "weaknesses", "opportunities", "threats")
-
-
-def _valid_source_ids(value) -> bool:
-    return isinstance(value, list) and all(isinstance(item, str) for item in value)
 
 
 def _valid_claim_list(value) -> bool:
@@ -35,7 +37,7 @@ def _valid_claim_list(value) -> bool:
             return False
         if not isinstance(item.get("text"), str) or not item["text"].strip():
             return False
-        if not _valid_source_ids(item.get("sourceIds", [])):
+        if not valid_source_ids(item.get("sourceIds", [])):
             return False
     return True
 
@@ -51,7 +53,7 @@ def _valid_shape(value: dict) -> bool:
         and isinstance(item.get("risk"), str)
         and item.get("severity") in _LEVELS
         and item.get("likelihood") in _LEVELS
-        and _valid_source_ids(item.get("sourceIds", []))
+        and valid_source_ids(item.get("sourceIds", []))
         for item in risks
     )
 
@@ -92,25 +94,9 @@ def _build_crew(idea: str, context: str, model: str) -> Crew:
     return Crew(agents=[analyst], tasks=[task], process=Process.sequential, verbose=False)
 
 
-def _sanitize_source_ids(value, valid_ids: set[str]) -> list[str]:
-    """Drop any sourceId the model invented that isn't actually in the
-    sources it was given - never let a hallucinated citation reach the UI,
-    same honesty-first rule the rest of this pipeline follows.
-    """
-    if not isinstance(value, list):
-        return []
-    seen = set()
-    out = []
-    for item in value:
-        if isinstance(item, str) and item in valid_ids and item not in seen:
-            seen.add(item)
-            out.append(item)
-    return out
-
-
 def _sanitize_claims(items: list, valid_ids: set[str], limit: int) -> list[dict]:
     return [
-        {"text": item["text"].strip(), "sourceIds": _sanitize_source_ids(item.get("sourceIds"), valid_ids)}
+        {"text": item["text"].strip(), "sourceIds": sanitize_source_ids(item.get("sourceIds"), valid_ids)}
         for item in items[:limit]
     ]
 
@@ -142,7 +128,7 @@ def analyze_swot(
         for key in _SWOT_KEYS:
             data[key] = _sanitize_claims(data[key], valid_ids, _MAX_ITEMS)
         data["risks"] = [
-            {**risk, "sourceIds": _sanitize_source_ids(risk.get("sourceIds"), valid_ids)}
+            {**risk, "sourceIds": sanitize_source_ids(risk.get("sourceIds"), valid_ids)}
             for risk in data["risks"][:_MAX_RISKS]
         ]
         return data

@@ -6,16 +6,18 @@ from crewai import Agent, Crew, Process, Task
 
 from .deterministic_fallback import deterministic_mvp
 from .llm import get_llm, kickoff_with_fallback
-from .structured_output import compact_json, compact_sources, extract_json_object
+from .structured_output import (
+    compact_json,
+    compact_sources,
+    extract_json_object,
+    sanitize_source_ids,
+    valid_source_ids,
+)
 
 logger = logging.getLogger(__name__)
 
 _LEVELS = {"low", "medium", "high", "unknown"}
 _MAX_FEATURES = 5
-
-
-def _valid_source_ids(value) -> bool:
-    return isinstance(value, list) and all(isinstance(item, str) for item in value)
 
 
 def _valid_shape(value: dict) -> bool:
@@ -28,24 +30,9 @@ def _valid_shape(value: dict) -> bool:
         and isinstance(item.get("rationale"), str)
         and item.get("impact") in _LEVELS
         and item.get("effort") in _LEVELS
-        and _valid_source_ids(item.get("sourceIds", []))
+        and valid_source_ids(item.get("sourceIds", []))
         for item in features
     )
-
-
-def _sanitize_source_ids(value, valid_ids: set[str]) -> list[str]:
-    """Drop any sourceId the model invented that isn't in the sources it
-    was given - same rule swot_agent.py follows.
-    """
-    if not isinstance(value, list):
-        return []
-    seen = set()
-    out = []
-    for item in value:
-        if isinstance(item, str) and item in valid_ids and item not in seen:
-            seen.add(item)
-            out.append(item)
-    return out
 
 
 def _build_crew(idea: str, problem: str, context: str, model: str) -> Crew:
@@ -104,7 +91,7 @@ def analyze_mvp(
             logger.warning("MVP agent returned no valid JSON")
             raise ValueError("MVP analysis did not return a valid result.")
         data["features"] = [
-            {**item, "sourceIds": _sanitize_source_ids(item.get("sourceIds"), valid_ids)}
+            {**item, "sourceIds": sanitize_source_ids(item.get("sourceIds"), valid_ids)}
             for item in data["features"][:_MAX_FEATURES]
         ]
         return data
