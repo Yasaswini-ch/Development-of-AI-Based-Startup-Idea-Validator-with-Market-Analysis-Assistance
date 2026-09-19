@@ -1,5 +1,6 @@
 import { IconAlertTriangle, IconLightbulb } from './icons'
 import DegradedBanner from './DegradedBanner'
+import Citation from './Citation'
 
 const LEVEL_STYLES = {
   low: 'border-border bg-panel text-muted',
@@ -17,7 +18,7 @@ function Badge({ label, value }) {
   )
 }
 
-export default function MvpRecommendations({ data, error }) {
+export default function MvpRecommendations({ data, error, sourceMap }) {
   if (data === null || data === undefined) {
     return (
       <div className="flex flex-col items-center justify-center p-2 text-center">
@@ -43,7 +44,10 @@ export default function MvpRecommendations({ data, error }) {
           <article key={index} className="rounded-xl border border-border bg-surface p-5">
             <div className="flex items-start gap-2">
               <IconLightbulb className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
-              <h3 className="text-sm font-semibold leading-snug text-text">{item.feature}</h3>
+              <h3 className="text-sm font-semibold leading-snug text-text">
+                {item.feature}
+                {sourceMap && <Citation sourceIds={item.sourceIds} sourceMap={sourceMap} />}
+              </h3>
             </div>
             <p className="mt-3 text-sm leading-relaxed text-muted">{item.rationale}</p>
             <div className="mt-4 flex flex-wrap gap-2">

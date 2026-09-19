@@ -1,7 +1,8 @@
 import { IconAlertTriangle, IconGlobe, IconTrendingUp, IconUsers } from './icons'
 import DegradedBanner from './DegradedBanner'
+import Citation from './Citation'
 
-export default function GtmStrategy({ data, error }) {
+export default function GtmStrategy({ data, error, sourceMap }) {
   if (data === null || data === undefined) {
     return (
       <div className="flex flex-col items-center justify-center p-2 text-center">
@@ -30,6 +31,7 @@ export default function GtmStrategy({ data, error }) {
         </h3>
         <p className="mt-3 text-sm leading-relaxed text-text">
           {data.positioning || 'No positioning recommendation was generated.'}
+          {sourceMap && <Citation sourceIds={data.positioningSourceIds} sourceMap={sourceMap} />}
         </p>
       </section>
 
@@ -43,6 +45,9 @@ export default function GtmStrategy({ data, error }) {
             {channels.map((channel, index) => (
               <span key={index} className="rounded-full border border-border bg-panel px-3 py-1 text-sm text-text">
                 {typeof channel === 'string' ? channel : channel.text}
+                {typeof channel !== 'string' && sourceMap && (
+                  <Citation sourceIds={channel.sourceIds} sourceMap={sourceMap} />
+                )}
               </span>
             ))}
           </div>
@@ -58,6 +63,7 @@ export default function GtmStrategy({ data, error }) {
         </h3>
         <p className="mt-3 text-sm leading-relaxed text-text">
           {data.earlyCustomerApproach || 'No early-customer approach was generated.'}
+          {sourceMap && <Citation sourceIds={data.earlyCustomerApproachSourceIds} sourceMap={sourceMap} />}
         </p>
       </section>
     </div>

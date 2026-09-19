@@ -8,6 +8,7 @@ import SwotAnalysis from './SwotAnalysis'
 import MvpRecommendations from './MvpRecommendations'
 import GtmStrategy from './GtmStrategy'
 import ChatAdvisor from './ChatAdvisor'
+import { buildSourceMap } from '../lib/sources'
 
 const INITIAL_VISIBLE = 3
 const RESEARCH_ANGLES = [
@@ -114,13 +115,19 @@ function AngleGroup({ angle, items }) {
 
 const TABS = [
   { key: 'sources', label: 'Sources' },
-  { key: 'market', label: 'Market Opportunity' },
-  { key: 'competitors', label: 'Competitors' },
-  { key: 'whitespace', label: 'White Space' },
-  { key: 'swot', label: 'SWOT & Risks' },
-  { key: 'mvp', label: 'MVP' },
-  { key: 'gtm', label: 'Go to Market' },
+  { key: 'market', label: 'Market & Competition' },
+  { key: 'opportunity', label: 'Opportunity & Risks' },
+  { key: 'build', label: 'Build & Launch' },
 ]
+
+function SectionDivider({ label }) {
+  return (
+    <h3 className="mb-4 flex items-center gap-2 font-mono text-[11px] uppercase tracking-widest text-muted">
+      <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+      {label}
+    </h3>
+  )
+}
 
 export default function ValidationResults({
   summary,
@@ -154,6 +161,7 @@ export default function ValidationResults({
   const confidence = useCountUp(avgScore !== null ? Math.round(avgScore * 100) : 0, 800)
 
   const competitorCount = competitors?.competitors?.length ?? 0
+  const sourceMap = buildSourceMap(results)
 
   return (
     <div className="mt-6">
@@ -181,7 +189,7 @@ export default function ValidationResults({
         <div className="inline-flex min-w-max gap-0.5 rounded-full bg-border p-1">
           {TABS.map((t) => {
           const active = activeTab === t.key
-          const count = t.key === 'sources' ? results.length : t.key === 'competitors' ? competitorCount : null
+          const count = t.key === 'sources' ? results.length : t.key === 'market' ? competitorCount : null
           return (
             <button
               key={t.key}
@@ -221,38 +229,41 @@ export default function ValidationResults({
         )}
 
         {activeTab === 'market' && (
-          <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
-            <MarketOpportunity data={marketOpportunity} error={errors?.marketOpportunity} />
+          <div className="space-y-8">
+            <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+              <SectionDivider label="Market opportunity" />
+              <MarketOpportunity data={marketOpportunity} error={errors?.marketOpportunity} />
+            </div>
+            <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+              <SectionDivider label="Competitors" />
+              <CompetitorAnalysis data={competitors} error={errors?.competitors} />
+            </div>
           </div>
         )}
 
-        {activeTab === 'competitors' && (
-          <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
-            <CompetitorAnalysis data={competitors} error={errors?.competitors} />
+        {activeTab === 'opportunity' && (
+          <div className="space-y-8">
+            <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+              <SectionDivider label="White space" />
+              <WhiteSpaceAnalysis data={whiteSpace} />
+            </div>
+            <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+              <SectionDivider label="SWOT & risks" />
+              <SwotAnalysis data={swot} error={errors?.swot} sourceMap={sourceMap} />
+            </div>
           </div>
         )}
 
-        {activeTab === 'white-space' && (
-          <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
-            <WhiteSpaceAnalysis data={whiteSpace} />
-          </div>
-        )}
-
-        {activeTab === 'swot' && (
-          <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
-            <SwotAnalysis data={swot} error={errors?.swot} />
-          </div>
-        )}
-
-        {activeTab === 'mvp' && (
-          <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
-            <MvpRecommendations data={mvp} error={errors?.mvp} />
-          </div>
-        )}
-
-        {activeTab === 'gtm' && (
-          <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
-            <GtmStrategy data={gtm} error={errors?.gtm} />
+        {activeTab === 'build' && (
+          <div className="space-y-8">
+            <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+              <SectionDivider label="MVP recommendations" />
+              <MvpRecommendations data={mvp} error={errors?.mvp} sourceMap={sourceMap} />
+            </div>
+            <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+              <SectionDivider label="Go to market" />
+              <GtmStrategy data={gtm} error={errors?.gtm} sourceMap={sourceMap} />
+            </div>
           </div>
         )}
       </div>
