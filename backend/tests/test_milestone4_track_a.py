@@ -9,6 +9,7 @@ deterministic_fallback.py - can run standalone.
 
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 import sys
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -179,12 +180,19 @@ class DeterministicFallbackTests(unittest.TestCase):
         self.assertIn("Market report: category is booming", trend_texts)
         self.assertEqual(trend_texts["Market report: category is booming"], ["src-1"])
 
-    def test_analyze_market_opportunity_falls_back_safely(self):
+    @patch("agent.market_agent.kickoff_with_fallback")
+    def test_analyze_market_opportunity_falls_back_safely(self, mock_kickoff):
         # F: analyze_market_opportunity itself must not crash when the LLM
-        # call fails (stubbed Crew.kickoff raises in this test environment,
-        # the same as a real rate-limit/no-API-key failure would) - it
-        # should transparently return the deterministic fallback instead.
+        # call fails (mocked here to always raise, the same as a real
+        # rate-limit/no-API-key failure would) - it should transparently
+        # return the deterministic fallback instead. Mocked rather than
+        # relying on the ambient test environment lacking an API key, since
+        # a real GROQ_API_KEY present at test time would otherwise make
+        # this call out to the live Groq API - slow, network-dependent, and
+        # liable to fail this assertion outright if the real call succeeds.
+        mock_kickoff.side_effect = RuntimeError("LLM call failed")
         result = market_agent.analyze_market_opportunity("An idea", "Target customer", "A problem", _RESULTS)
+        mock_kickoff.assert_called_once()
         self.assertTrue(result.get("degraded"))
         self.assertTrue(all(isinstance(t, dict) and "sourceIds" in t for t in result["trends"]))
 
