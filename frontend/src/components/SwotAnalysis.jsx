@@ -5,6 +5,7 @@ import {
   IconTrendingUp,
 } from './icons'
 import DegradedBanner from './DegradedBanner'
+import Citation from './Citation'
 
 const QUADRANTS = [
   {
@@ -52,7 +53,7 @@ function Unavailable({ error }) {
   )
 }
 
-export default function SwotAnalysis({ data, error }) {
+export default function SwotAnalysis({ data, error, sourceMap }) {
   if (data === null || data === undefined) return <Unavailable error={error} />
 
   const risks = Array.isArray(data.risks) ? data.risks : []
@@ -77,7 +78,12 @@ export default function SwotAnalysis({ data, error }) {
                       {/* Each item is {text, sourceIds} (see docs/unique-features-plan.md
                           §5.1) - typeof-check covers any older/cached plain-string data
                           so this never crashes on a stale cached response either. */}
-                      <span>{typeof item === 'string' ? item : item.text}</span>
+                      <span>
+                        {typeof item === 'string' ? item : item.text}
+                        {typeof item !== 'string' && sourceMap && (
+                          <Citation sourceIds={item.sourceIds} sourceMap={sourceMap} />
+                        )}
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -104,7 +110,10 @@ export default function SwotAnalysis({ data, error }) {
                   key={index}
                   className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4 sm:flex-row sm:items-start sm:justify-between"
                 >
-                  <p className="text-sm leading-relaxed text-text">{item.risk}</p>
+                  <p className="text-sm leading-relaxed text-text">
+                    {item.risk}
+                    {sourceMap && <Citation sourceIds={item.sourceIds} sourceMap={sourceMap} />}
+                  </p>
                   <div className="flex shrink-0 flex-wrap gap-1.5">
                     <span className={`w-fit rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide ${SEVERITY_STYLES[severity]}`}>
                       Severity: {severity}
