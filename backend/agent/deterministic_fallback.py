@@ -225,6 +225,7 @@ def deterministic_mvp(idea: str, problem: str, swot: dict | None, market_opportu
         # back to str() for any older/plain-string shape so this never
         # crashes on a stale cached result.
         opp_text = opp.get("text", "") if isinstance(opp, dict) else str(opp)
+        opp_source_ids = opp.get("sourceIds", []) if isinstance(opp, dict) else []
         features.append(
             {
                 "feature": f"Address: {opp_text[:80]}",
@@ -234,6 +235,7 @@ def deterministic_mvp(idea: str, problem: str, swot: dict | None, market_opportu
                 ),
                 "impact": "unknown",
                 "effort": "unknown",
+                "sourceIds": opp_source_ids if isinstance(opp_source_ids, list) else [],
             }
         )
 
@@ -249,6 +251,7 @@ def deterministic_mvp(idea: str, problem: str, swot: dict | None, market_opportu
                 ),
                 "impact": "unknown",
                 "effort": "unknown",
+                "sourceIds": [],
             }
         )
 
@@ -284,10 +287,12 @@ def deterministic_gtm(
 
     return {
         "positioning": positioning,
-        "channels": channels[:4],
+        "positioningSourceIds": [],
+        "channels": [{"text": channel, "sourceIds": []} for channel in channels[:4]],
         "earlyCustomerApproach": (
             f"Directly recruit and interview a small group of {audience} to "
             "validate the problem before investing in wider marketing spend."
         ),
+        "earlyCustomerApproachSourceIds": [],
         "degraded": True,
     }

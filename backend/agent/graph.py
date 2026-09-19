@@ -500,6 +500,7 @@ def mvp_node(state: PipelineState) -> PipelineState:
             state.get("problem", ""),
             state.get("swot"),
             state.get("marketOpportunity"),
+            state.get("results", []),
         )
     except Exception as exc:
         logger.exception("[mvp] FAILED")
@@ -523,6 +524,7 @@ def gtm_node(state: PipelineState) -> PipelineState:
             state.get("marketOpportunity"),
             state.get("competitors"),
             state.get("swot"),
+            state.get("results", []),
         )
     except Exception as exc:
         logger.exception("[gtm] FAILED")

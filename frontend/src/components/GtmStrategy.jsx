@@ -42,7 +42,7 @@ export default function GtmStrategy({ data, error }) {
           <div className="mt-3 flex flex-wrap gap-2">
             {channels.map((channel, index) => (
               <span key={index} className="rounded-full border border-border bg-panel px-3 py-1 text-sm text-text">
-                {channel}
+                {typeof channel === 'string' ? channel : channel.text}
               </span>
             ))}
           </div>

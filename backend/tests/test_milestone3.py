@@ -110,17 +110,25 @@ class MilestoneThreeTests(unittest.TestCase):
         mvp_kickoff.return_value = SimpleNamespace(
             raw=(
                 '{"features":[{"feature":"Landing page","rationale":"Test demand",'
-                '"impact":"high","effort":"low"}]}'
+                '"impact":"high","effort":"low","sourceIds":["src-1","src-99"]}]}'
             )
         )
         gtm_kickoff.return_value = SimpleNamespace(
             raw=(
-                '{"positioning":"Fast evidence for founders","channels":["Founder communities"],'
-                '"earlyCustomerApproach":"Recruit ten design partners."}'
+                '{"positioning":"Fast evidence for founders","positioningSourceIds":["src-1"],'
+                '"channels":[{"text":"Founder communities","sourceIds":["src-1","src-99"]}],'
+                '"earlyCustomerApproach":"Recruit ten design partners.",'
+                '"earlyCustomerApproachSourceIds":[]}'
             )
         )
-        self.assertEqual(analyze_mvp("Idea", "Problem", {}, {})["features"][0]["impact"], "high")
-        self.assertEqual(analyze_gtm("Idea", "Founders", {}, {}, {})["channels"], ["Founder communities"])
+        sources = [{"title": "Source", "url": "https://example.com", "snippet": "Evidence"}]
+        mvp_result = analyze_mvp("Idea", "Problem", {}, {}, sources)
+        self.assertEqual(mvp_result["features"][0]["impact"], "high")
+        self.assertEqual(mvp_result["features"][0]["sourceIds"], ["src-1"])
+
+        gtm_result = analyze_gtm("Idea", "Founders", {}, {}, {}, sources)
+        self.assertEqual(gtm_result["channels"][0]["text"], "Founder communities")
+        self.assertEqual(gtm_result["channels"][0]["sourceIds"], ["src-1"])
 
     def test_strategy_node_failures_are_isolated(self):
         base = {"idea": "Idea", "results": [], "errors": {}}
