@@ -74,7 +74,10 @@ export default function SwotAnalysis({ data, error }) {
                   {items.map((item, index) => (
                     <li key={index} className="flex gap-2 text-sm leading-relaxed text-text">
                       <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-accent" />
-                      <span>{item}</span>
+                      {/* Each item is {text, sourceIds} (see docs/unique-features-plan.md
+                          §5.1) - typeof-check covers any older/cached plain-string data
+                          so this never crashes on a stale cached response either. */}
+                      <span>{typeof item === 'string' ? item : item.text}</span>
                     </li>
                   ))}
                 </ul>
