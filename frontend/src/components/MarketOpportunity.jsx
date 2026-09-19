@@ -107,7 +107,10 @@ export default function MarketOpportunity({ data, error }) {
           <ul className="space-y-2">
             {trends.map((t, i) => (
               <li key={i} className="text-sm text-text leading-relaxed">
-                {t}
+                {/* Each trend is {text, sourceIds} (see docs/unique-features-plan.md
+                    §5.1) - typeof-check covers any older/cached plain-string data
+                    so this never crashes on a stale cached response either. */}
+                {typeof t === 'string' ? t : t.text}
               </li>
             ))}
           </ul>
