@@ -35,7 +35,10 @@ from .structured_output import compact_sources, extract_json_object, sanitize_so
 
 logger = logging.getLogger(__name__)
 
-_MAX_SOURCES_IN_CONTEXT = 10
+# Not underscore-prefixed - graph.py's confidence dashboard imports this so
+# its source-relevance lookup covers the same citation window market's
+# trends/segments can actually cite (see _source_relevance_by_id).
+MAX_SOURCES_IN_CONTEXT = 10
 _MAX_SNIPPET_LEN = 300
 _MAX_SEGMENTS = 4
 _MAX_TRENDS = 4
@@ -65,7 +68,7 @@ def _build_context(results: list) -> tuple[str, list[dict]]:
 
     market_sources = [s for s in all_sources if s.get("angle") == "Market size & trends"]
     other_sources = [s for s in all_sources if s.get("angle") != "Market size & trends"]
-    shown = (market_sources + other_sources)[:_MAX_SOURCES_IN_CONTEXT]
+    shown = (market_sources + other_sources)[:MAX_SOURCES_IN_CONTEXT]
 
     lines = [f"- [{s['sourceId']}] {s.get('title', '')}: {s.get('snippet', '')}" for s in shown]
     return "\n".join(lines), shown

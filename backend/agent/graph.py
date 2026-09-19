@@ -8,7 +8,7 @@ from langgraph.graph import END, START, StateGraph
 from . import retrieval
 from .competitor_agent import analyze_competitors
 from .gtm_agent import analyze_gtm
-from .market_agent import analyze_market_opportunity
+from .market_agent import MAX_SOURCES_IN_CONTEXT, analyze_market_opportunity
 from .mvp_agent import analyze_mvp
 from .opportunity_score import calculate_opportunity_score
 from .structured_output import compact_sources
@@ -599,8 +599,15 @@ def _source_relevance_by_id(results: list) -> dict[str, float]:
     ordering compact_sources() used when the agents built their prompts -
     so a sourceId a claim cites resolves to the real score of the source it
     actually came from, not a guess.
+
+    Uses market_agent.py's MAX_SOURCES_IN_CONTEXT (10), not
+    compact_sources()'s own default limit (6), because market_agent.py
+    shows the LLM up to 10 sources and sanitizes trend/segment sourceIds
+    against that same wider window - a legitimate market citation of
+    src-7..src-10 would otherwise have no relevance score here and get
+    silently dropped from averageRelevance below.
     """
-    sources = compact_sources(results)
+    sources = compact_sources(results, limit=MAX_SOURCES_IN_CONTEXT)
     lookup = {}
     for index, source in enumerate(sources):
         score = results[index].get("score") if index < len(results) else None
