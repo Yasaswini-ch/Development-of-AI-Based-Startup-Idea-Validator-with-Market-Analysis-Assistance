@@ -102,6 +102,10 @@ class AsyncValidationTests(unittest.TestCase):
         self.assertEqual(status["status"], "complete")
         self.assertEqual(status["summary"], "A promising idea.")
         send_email.assert_called_once()
+        # The "view this report again" link (see email_delivery.py) must
+        # point back at this specific session, not a bare/generic URL.
+        call_args = send_email.call_args.args
+        self.assertIn(status["sessionId"], call_args[3])
 
     def test_slow_pipeline_without_email_stays_synchronous(self):
         def slow_invoke(_state):
@@ -195,6 +199,23 @@ class EmailDeliveryTests(unittest.TestCase):
         with patch.dict("os.environ", {"RESEND_API_KEY": "test-key"}):
             sent = email_delivery.send_report_email("not-an-email", "Idea", {"summary": "Test"})
         self.assertFalse(sent)
+
+    def test_report_html_includes_view_again_link_when_given(self):
+        html = email_delivery._build_report_html(
+            "Idea", {"summary": "Test"}, "https://app.example.com/?session=abc-123"
+        )
+        self.assertIn("https://app.example.com/?session=abc-123", html)
+        self.assertIn("View this report again", html)
+
+    def test_report_html_omits_link_section_without_one(self):
+        html = email_delivery._build_report_html("Idea", {"summary": "Test"})
+        self.assertNotIn("View this report again", html)
+
+    def test_report_text_includes_view_again_link_when_given(self):
+        text = email_delivery._build_report_text(
+            "Idea", {"ideaSummary": {"summary": "Test"}}, "https://app.example.com/?session=abc-123"
+        )
+        self.assertIn("https://app.example.com/?session=abc-123", text)
 
 
 if __name__ == "__main__":

@@ -41,7 +41,7 @@ def _section(title: str, body_html: str) -> str:
     return f'<h2 style="font-family:sans-serif;font-size:16px;margin:24px 0 8px;">{_escape(title)}</h2>{body_html}'
 
 
-def _build_report_html(idea: str, response: dict) -> str:
+def _build_report_html(idea: str, response: dict, report_url: str | None = None) -> str:
     """A plain, readable HTML summary - not the full structured report
     export from docs/unique-features-plan.md, just enough for someone to
     read the outcome in their inbox and click through to the app for detail.
@@ -92,10 +92,24 @@ def _build_report_html(idea: str, response: dict) -> str:
         "Open Affinity to see the full report with sources, MVP recommendations, and go-to-market strategy."
         "</p>"
     )
+    if report_url:
+        # No accounts/login exist (see docs/unique-features-plan.md §1) - this
+        # link, not a dashboard, is the only way to come back to a past
+        # session from a different browser/device. Framed honestly as a
+        # bookmark, not a "history" feature backed by a real account.
+        parts.append(
+            f'<p style="margin-top:16px;"><a href="{_escape(report_url)}" '
+            'style="display:inline-block;font-family:sans-serif;font-size:14px;'
+            'color:#fff;background:#e8593a;padding:10px 20px;border-radius:8px;'
+            'text-decoration:none;">View this report again</a></p>'
+            '<p style="font-family:sans-serif;font-size:12px;color:#999;">'
+            "This link isn't tied to an account - anyone with it can open this report."
+            "</p>"
+        )
     return "".join(parts)
 
 
-def _build_report_text(idea: str, report: dict) -> str:
+def _build_report_text(idea: str, report: dict, report_url: str | None = None) -> str:
     """Plain-text companion to the HTML body - rule 10 in
     docs/unique-features-plan.md §7 requires both, for mail clients/
     screen readers that don't render HTML.
@@ -111,15 +125,24 @@ def _build_report_text(idea: str, report: dict) -> str:
         lines += ["Market opportunity:", market["marketSize"], ""]
 
     lines.append("Open Affinity to see the full report with sources, MVP recommendations, and go-to-market strategy.")
+    if report_url:
+        lines += ["", f"View this report again: {report_url}", "(Not tied to an account - anyone with this link can open it.)"]
     return "\n".join(lines)
 
 
-def send_canonical_report_email(to_email: str, report: dict, pdf_bytes: bytes) -> bool:
+def send_canonical_report_email(
+    to_email: str, report: dict, pdf_bytes: bytes, report_url: str | None = None
+) -> bool:
     """Send the Track D canonical report object (report_assembler.py) as a
     PDF attachment, with a plain-text and HTML body summary. Distinct from
     send_report_email above, which sends the smaller inline-HTML-only
     summary used by the long-running-validation async path and predates
     the canonical report object existing at all.
+
+    report_url, when given, is a link back to GET /reports/{sessionId} the
+    email body includes as a "view again" button - the closest thing to
+    "history" this app has without a real login system (see
+    docs/unique-features-plan.md §1: no accounts exist).
 
     Same "never crash the caller, return False" contract as
     send_report_email: a failed/misconfigured email must not be confused
@@ -149,8 +172,8 @@ def send_canonical_report_email(to_email: str, report: dict, pdf_bytes: bytes) -
             "from": from_email,
             "to": [to_email],
             "subject": "Your Affinity validation report is ready",
-            "html": _build_report_html(idea, html_input),
-            "text": _build_report_text(idea, report),
+            "html": _build_report_html(idea, html_input, report_url),
+            "text": _build_report_text(idea, report, report_url),
             "attachments": [
                 {
                     "filename": f"Affinity_Report_{report.get('reportId', 'report')}.pdf",
@@ -180,12 +203,16 @@ def send_canonical_report_email(to_email: str, report: dict, pdf_bytes: bytes) -
         return False
 
 
-def send_report_email(to_email: str, idea: str, response: dict) -> bool:
+def send_report_email(to_email: str, idea: str, response: dict, report_url: str | None = None) -> bool:
     """Send the finished validation report by email. Returns True only on a
     confirmed Resend acceptance; False on any missing config or delivery
     failure - callers should log/store that outcome, not raise on it, since
     a failed email must never take down an otherwise-successful validation
     run (the result is still available in the job store either way).
+
+    report_url, when given, is a link back to GET /reports/{sessionId} - see
+    send_canonical_report_email's docstring for why this is the closest
+    thing to "history" this app has without a real login system.
     """
     api_key = os.environ.get("RESEND_API_KEY")
     if not api_key:
@@ -203,7 +230,7 @@ def send_report_email(to_email: str, idea: str, response: dict) -> bool:
             "from": from_email,
             "to": [to_email],
             "subject": "Your Affinity validation report is ready",
-            "html": _build_report_html(idea, response),
+            "html": _build_report_html(idea, response, report_url),
         }
     ).encode()
 

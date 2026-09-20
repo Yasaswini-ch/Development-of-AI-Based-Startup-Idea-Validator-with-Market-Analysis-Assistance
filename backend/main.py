@@ -69,6 +69,15 @@ allowed_origins = {
     "http://127.0.0.1:5173",
 }
 
+def _report_url(session_id: str) -> str:
+    """Link back to a past session for the "view this report again" email
+    button - the closest thing to history without a real login system (see
+    email_delivery.py's docstrings). Query-param based (?session=...), not
+    a /reports/{id} frontend route, since the SPA has no client-side router.
+    """
+    return f"{frontend_origin.rstrip('/')}/?session={session_id}"
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=sorted(allowed_origins),
@@ -414,7 +423,7 @@ async def _finish_async_validation(task: "asyncio.Task[dict]", job_id: str, payl
     complete_job(job_id, {**response, "sessionId": session_id})
 
     if payload.email:
-        sent = send_report_email(payload.email, payload.idea, response)
+        sent = send_report_email(payload.email, payload.idea, response, _report_url(session_id))
         if not sent:
             logger.warning("Report email was not delivered for job %s", job_id)
 
@@ -704,7 +713,7 @@ def email_report(session_id: str, payload: EmailReportRequest, request: Request)
         )
 
     delivery_id = str(uuid.uuid4())
-    sent = send_canonical_report_email(payload.recipient, report, pdf_bytes)
+    sent = send_canonical_report_email(payload.recipient, report, pdf_bytes, _report_url(session_id))
     if not sent:
         return JSONResponse(
             status_code=502,
