@@ -14,14 +14,16 @@ logger = logging.getLogger(__name__)
 # the quota fix below was validated against.
 DEFAULT_MODEL = "groq/qwen/qwen3.8-27b"
 
-# More models hosted on the *same* Groq account, each with its own rate-limit
+# Two models hosted on the *same* Groq account, each with its own rate-limit
 # bucket - confirmed via `GET /openai/v1/models` against our own key and a
-# direct latency test (all respond in under a second, nothing like Gemini's
-# multi-minute hang, see kickoff_with_fallback's docstring). Two fallbacks
-# rather than one: in practice, active testing (this session's plus the
-# team's) exhausted a single fallback's bucket at the same time as the
-# primary's, so one extra tier of real headroom matters, not just one.
-FALLBACK_MODELS = ("groq/openai/gpt-oss-20b", "groq/openai/gpt-oss-120b")
+# direct latency test (all respond in under a second). In practice, active
+# testing exhausted both Groq tiers' buckets in the same session (they're
+# separate 8000 TPM pools, but heavy back-to-back traffic burns through both),
+# so a third tier on a wholly separate provider/quota - Gemini, on the key
+# already in .env - is the real fix for "every model I can reach shares one
+# account's budget." See get_llm's docstring for why this was previously
+# reverted and why the retest changed that.
+FALLBACK_MODELS = ("groq/openai/gpt-oss-20b", "groq/openai/gpt-oss-120b", "gemini/gemini-3.6-flash")
 _MAX_RETRY_WAIT_SECONDS = 30
 
 # The actual cause of most "Request too large... exceeds the enforced limit"
@@ -40,10 +42,15 @@ _MAX_RETRY_WAIT_SECONDS = 30
 # "low"/"medium"/"high", so "low" is the closest equivalent for those.
 # (qwen3.6-27b's "none" entry was dropped with the model itself - see
 # DEFAULT_MODEL above; qwen3.8-27b was confirmed to accept "none" live.)
+# gemini-3.6-flash hits the exact same failure shape as qwen did: left at
+# its default, it spends its entire max_tokens budget on hidden reasoning
+# and returns empty content (finish_reason="length", 0 text tokens) -
+# confirmed live, and "none" fixes it the same way, down to a 1-token reply.
 _REASONING_EFFORT = {
     "groq/qwen/qwen3.8-27b": "none",
     "groq/openai/gpt-oss-20b": "low",
     "groq/openai/gpt-oss-120b": "low",
+    "gemini/gemini-3.6-flash": "none",
 }
 
 
@@ -52,20 +59,29 @@ def get_llm(max_tokens: int | None = None, model: str | None = None):
 
     Set LLM_MODEL to override the primary model, LLM_FALLBACK_MODELS
     (comma-separated) to override the fallback chain (see FALLBACK_MODELS
-    above and kickoff_with_fallback). Groq needs GROQ_API_KEY.
+    above and kickoff_with_fallback). Groq needs GROQ_API_KEY, Gemini needs
+    GEMINI_API_KEY.
 
-    A same-request fallback to a different *provider* (Gemini, using the key
-    already in .env) was tried and reverted: it doesn't fail fast on a bad
-    call, it hangs for minutes past its own timeout parameter before ever
-    raising - confirmed by direct testing. That's worse than the honest
-    static fallback content the caller already returns on total failure, so
-    it's not a usable fallback with our pinned litellm version.
+    A same-request fallback to a different *provider* (Gemini) was
+    previously tried and reverted here as "hangs for minutes past its own
+    timeout." Retested directly against litellm 1.97.0 on 2026-09-20: no
+    hang - every call returned or raised in under 2s, timeouts included.
+    What actually looked like a hang before was two separate issues that
+    both fail in an unrelated-looking way: (1) the model name on file then
+    (gemini-1.5-flash / gemini-2.0-flash) is deprecated and now 404s
+    instantly rather than hanging, and (2) gemini-3.6-flash, like
+    qwen3.8-27b, spends its whole max_tokens budget on hidden reasoning and
+    returns empty content unless reasoning_effort="none" - a fast,
+    silent-looking failure, not a slow one. With the current model name and
+    that fix applied, Gemini is a genuine third fallback tier on a wholly
+    separate quota pool from Groq - see FALLBACK_MODELS.
 
     Returns an `LLM` object with the model's known-good reasoning_effort
-    applied whenever the model is one of the three above; falls back to a
-    plain model string for anything else (e.g. a manual LLM_MODEL override
-    to an untested model), so an unrecognized model doesn't get a
-    reasoning_effort value it was never confirmed to accept.
+    applied whenever the model is one of the ones in _REASONING_EFFORT
+    above; falls back to a plain model string for anything else (e.g. a
+    manual LLM_MODEL override to an untested model), so an unrecognized
+    model doesn't get a reasoning_effort value it was never confirmed to
+    accept.
     """
     model = model or os.environ.get("LLM_MODEL", DEFAULT_MODEL)
     kwargs = {}
@@ -145,7 +161,7 @@ def _kickoff_with_metrics(model: str, build_crew):
     return output
 
 
-def kickoff_with_fallback(build_crew):
+def kickoff_with_fallback(build_crew, primary: str | None = None):
     """Run a CrewAI crew built against the primary model; on a rate limit,
     switch to the next model in FALLBACK_MODELS immediately (no wait - each
     is a separate quota bucket, so there's nothing to wait out) instead of
@@ -163,8 +179,16 @@ def kickoff_with_fallback(build_crew):
     bucket. Each additional Groq model here is its own separate budget, so
     switching to one is real, immediate headroom rather than a longer wait
     for the same wall to still be there.
+
+    `primary` overrides the usual LLM_MODEL/DEFAULT_MODEL choice for just
+    this call, without changing what every other caller defaults to. Used
+    by chat_graph.py so the chat advisor - the most frequently-hit endpoint
+    during interactive use - defaults to Gemini's separate quota pool
+    instead of competing with the five pipeline analysis agents for the
+    same Groq budget on every session; it still falls through to the Groq
+    models below if Gemini itself is unavailable.
     """
-    primary = os.environ.get("LLM_MODEL", DEFAULT_MODEL)
+    primary = primary or os.environ.get("LLM_MODEL", DEFAULT_MODEL)
     fallbacks_env = os.environ.get("LLM_FALLBACK_MODELS")
     fallbacks = [m.strip() for m in fallbacks_env.split(",")] if fallbacks_env else list(FALLBACK_MODELS)
 
