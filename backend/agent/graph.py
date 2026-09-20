@@ -14,6 +14,7 @@ from .mvp_agent import analyze_mvp
 from .opportunity_score import calculate_opportunity_score
 from .structured_output import compact_sources
 from .swot_agent import analyze_swot
+from .viability_score import calculate_market_viability
 from .white_space import analyze_white_space
 
 logger = logging.getLogger(__name__)
@@ -83,6 +84,9 @@ class PipelineState(TypedDict, total=False):
 
     # Track B: cross-artifact contradiction flags
     contradictions: list
+
+    # Market Viability Score
+    marketViability: dict
 
     # Errors
     error: str
@@ -494,6 +498,26 @@ def swot_node(state: PipelineState) -> PipelineState:
     return {**state, "swot": value}
 
 
+def viability_score_node(state: PipelineState) -> PipelineState:
+    """Deterministic - no LLM call, same "don't generate a fake score if
+    upstream failed" rule opportunity_score_node follows: skipped entirely
+    when marketOpportunity is None rather than scoring nothing as if it
+    were real data.
+    """
+    logger.info("[viability_score] START")
+    if state.get("error"):
+        return state
+
+    market_opportunity = state.get("marketOpportunity")
+    if market_opportunity is None:
+        logger.warning("[viability_score] Skipped because marketOpportunity is None")
+        return state
+
+    value = calculate_market_viability(market_opportunity, state.get("swot"))
+    logger.info("[viability_score] COMPLETE - score=%s", value["score"])
+    return {**state, "marketViability": value}
+
+
 def mvp_node(state: PipelineState) -> PipelineState:
     logger.info("[mvp] START")
     if state.get("error"):
@@ -629,6 +653,10 @@ def _collect_claims(state: PipelineState) -> list[dict]:
     for segment in market.get("segments") or []:
         if isinstance(segment, dict) and "sourceIds" in segment:
             claims.append(segment)
+    for tier in ("tam", "sam", "som"):
+        value = market.get(tier)
+        if isinstance(value, dict) and "sourceIds" in value:
+            claims.append(value)
 
     return claims
 
@@ -843,6 +871,7 @@ def build_pipeline():
     )
 
     graph.add_node("swot_analysis", _timed("swot_analysis", swot_node))
+    graph.add_node("viability_score", _timed("viability_score", viability_score_node))
     graph.add_node("mvp_recommendation", _timed("mvp_recommendation", mvp_node))
     graph.add_node("gtm_strategy", _timed("gtm_strategy", gtm_node))
 
@@ -909,7 +938,8 @@ def build_pipeline():
     )
 
     graph.add_edge("white_space", "swot_analysis")
-    graph.add_edge("swot_analysis", "mvp_recommendation")
+    graph.add_edge("swot_analysis", "viability_score")
+    graph.add_edge("viability_score", "mvp_recommendation")
     graph.add_edge("mvp_recommendation", "gtm_strategy")
     graph.add_edge("gtm_strategy", "contradiction_detector")
     graph.add_edge("contradiction_detector", "confidence_dashboard")

@@ -136,6 +136,36 @@ class MarketAgentShapeValidationTests(unittest.TestCase):
         self.assertFalse(market_agent._is_valid_shape(data))
 
 
+class TamSamSomShapeTests(unittest.TestCase):
+    """market_agent.py's _is_valid_tier / tam-sam-som handling in _is_valid_shape."""
+
+    def _base(self, **overrides):
+        data = {"marketSize": "text", "trends": _VALID_TRENDS, "segments": _VALID_SEGMENTS}
+        data.update(overrides)
+        return data
+
+    def test_null_tiers_are_valid(self):
+        # A missing figure is null, not a guessed number - must be accepted.
+        self.assertTrue(market_agent._is_valid_shape(self._base(tam=None, sam=None, som=None)))
+
+    def test_missing_tier_keys_default_to_valid(self):
+        # Same leniency as sourceIds: an omitted key is treated as null.
+        self.assertTrue(market_agent._is_valid_shape(self._base()))
+
+    def test_well_formed_tier_claim_is_valid(self):
+        tam = {"text": "$2.1 billion global market", "sourceIds": ["src-1"]}
+        self.assertTrue(market_agent._is_valid_shape(self._base(tam=tam)))
+
+    def test_bare_number_tier_is_rejected(self):
+        # A tier must be null or a {text, sourceIds} claim, never a bare
+        # number/string with no citation.
+        self.assertFalse(market_agent._is_valid_shape(self._base(tam="$2.1 billion")))
+
+    def test_tier_with_non_list_source_ids_is_rejected(self):
+        bad_tier = {"text": "$2.1 billion", "sourceIds": "src-1"}
+        self.assertFalse(market_agent._is_valid_shape(self._base(sam=bad_tier)))
+
+
 class BuildContextTests(unittest.TestCase):
     def test_source_id_is_shown_alongside_its_evidence(self):
         # G: a search result's sourceId is actually available to the LLM
@@ -195,6 +225,38 @@ class DeterministicFallbackTests(unittest.TestCase):
         mock_kickoff.assert_called_once()
         self.assertTrue(result.get("degraded"))
         self.assertTrue(all(isinstance(t, dict) and "sourceIds" in t for t in result["trends"]))
+
+    def test_fallback_tam_sam_som_are_always_null(self):
+        # The deterministic fallback can't reliably tell which dollar
+        # figure in a snippet is TAM vs SAM vs SOM - it must never guess.
+        result = deterministic_market_opportunity("An idea", "Target customer", "A problem", _RESULTS)
+        self.assertIsNone(result["tam"])
+        self.assertIsNone(result["sam"])
+        self.assertIsNone(result["som"])
+
+    @patch("agent.market_agent.kickoff_with_fallback")
+    def test_hallucinated_tier_source_id_is_dropped(self, mock_kickoff):
+        # A tam/sam/som citing a sourceId that was never actually shown to
+        # the model must be sanitized away, same as trends/segments.
+        import json
+        from types import SimpleNamespace
+
+        mock_kickoff.return_value = SimpleNamespace(
+            raw=json.dumps(
+                {
+                    "marketSize": "text",
+                    "tam": {"text": "$2.1 billion", "sourceIds": ["src-1", "src-99"]},
+                    "sam": None,
+                    "som": None,
+                    "trends": _VALID_TRENDS,
+                    "segments": _VALID_SEGMENTS,
+                }
+            )
+        )
+        result = market_agent.analyze_market_opportunity("An idea", "Target customer", "A problem", _RESULTS)
+        self.assertEqual(result["tam"]["sourceIds"], ["src-1"])
+        self.assertIsNone(result["sam"])
+        self.assertIsNone(result["som"])
 
 
 class OpportunityScoreCompatibilityTests(unittest.TestCase):
