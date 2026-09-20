@@ -113,3 +113,36 @@ export function IconInfo(props) {
     </svg>
   )
 }
+
+export function IconGauge(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M12 21a9 9 0 1 0-9-9" />
+      <path d="M12 12 8 8" />
+      <path d="M12 12h.01" />
+    </svg>
+  )
+}
+
+export function IconFlask(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M9 3h6" />
+      <path d="M10 3v6l-5.5 9.5A1 1 0 0 0 5.36 20h13.28a1 1 0 0 0 .86-1.5L14 9V3" />
+      <path d="M7.5 15h9" />
+    </svg>
+  )
+}
+
+export function IconListChecks(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="m3 7 1.5 1.5L7 6" />
+      <path d="m3 13 1.5 1.5L7 12" />
+      <path d="m3 19 1.5 1.5L7 18" />
+      <path d="M11 7h10" />
+      <path d="M11 13h10" />
+      <path d="M11 19h10" />
+    </svg>
+  )
+}

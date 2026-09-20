@@ -5,6 +5,7 @@ import EmptyState from './components/EmptyState'
 import ErrorState from './components/ErrorState'
 import useCountUp from './hooks/useCountUp'
 import useLoadingSteps from './hooks/useLoadingSteps'
+import { mockExperiments, mockActionPlan } from './mocks/validationMock'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 const STORAGE_KEY = 'affinity:lastValidation'
@@ -191,6 +192,14 @@ export default function App() {
               swot={validation.swot}
               mvp={validation.mvp}
               gtm={validation.gtm}
+              confidence={validation.confidence}
+              contradictions={validation.contradictions}
+              // Tracks C/D (experiment_generator.py, action_plan.py) haven't
+              // shipped on the backend yet, so /validate never returns these -
+              // fall back to the local fixture so the tab isn't empty. Drop
+              // the `??` fallback once the backend starts returning them.
+              experiments={validation.experiments ?? mockExperiments}
+              actionPlan={validation.actionPlan ?? mockActionPlan}
               sessionId={validation.sessionId}
               apiUrl={API_URL}
               errors={validation.errors}
