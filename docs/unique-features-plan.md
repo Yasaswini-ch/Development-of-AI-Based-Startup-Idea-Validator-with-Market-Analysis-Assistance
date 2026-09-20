@@ -185,6 +185,47 @@ The session store records important pivots and decisions from chat. The advisor 
 show what changed from the original idea without resending the entire transcript to
 the model.
 
+### 5.7 Opportunity Score and Market Viability Score - implemented and verified
+
+Both are deterministic (no LLM call) and answer different questions, so they're kept
+as two separate numbers rather than one score trying to do both jobs:
+
+**Opportunity Score** (`backend/agent/opportunity_score.py`) - "how big is this
+market": `marketSizeScore[0-40] + growthScore[0-30] + competitionScore[0-30]`,
+clamped to 0-100.
+- `marketSizeScore`: keyword-matched against the market-size text ("billion"/
+  "global"/"rapidly growing" = 40, "million"/"growing"/"regional" = 25, any
+  non-empty market-size text = 15, otherwise 0).
+- `growthScore`: counts how many trends contain a positive-growth signal word
+  ("growth", "demand", "adoption", "surge", ...) - 3+ = 30, 2 = 22, 1 = 12, 0 = 6.
+- `competitionScore`: inverse of named-competitor count - 0 competitors = 30, 1 = 24,
+  2 = 18, 3 = 12, 4+ = 6.
+- If both market and competitor data came back completely empty (a real upstream
+  failure, not a genuine "no competitors" market), falls back to a weaker score
+  derived directly from raw search-result count and relevance instead of a
+  misleadingly perfect 0.
+
+**Market Viability Score** (`backend/agent/viability_score.py`) - "how likely is
+this specific venture to succeed": `0.4*marketDemand + 0.3*(100-executionRisk) +
+0.3*growthVelocity`, each sub-metric 0-100. Deliberately built by recombining
+signals the pipeline already computes, not new LLM-guessed numbers:
+- `marketDemand` = `(marketSizeScore + growthScore) / 70 * 100` - the same two
+  Opportunity Score inputs above, renormalized to a 0-100 scale.
+- `growthVelocity` = `growthScore / 30 * 100` - the growth signal alone, reported
+  separately since size and growth are different questions a founder asks.
+- `executionRisk` = average of `severity * likelihood` across
+  `swot_agent.py`'s risks (low/medium/high/unknown map to 1/2/3/2), normalized
+  against the worst case (high\*high = 9). No risk data at all scores 50 (genuine
+  uncertainty), never 0 (which would misread as "no risk exists").
+
+Both formulas are intentionally simple and auditable rather than tuned against any
+external dataset - the honesty claim is "deterministic and reproducible from
+evidence you can see," not "statistically validated." Every sub-metric that feeds
+either score is visible in the API response (`opportunityScore` inside
+`marketOpportunity`; `score`/`marketDemand`/`executionRisk`/`growthVelocity` in
+`marketViability`), so a skeptical reader can verify the arithmetic themselves
+instead of trusting one opaque number.
+
 ## 6. Report Generation and PDF Export
 
 The report assembler consumes structured pipeline artifacts and produces one canonical

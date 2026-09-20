@@ -29,6 +29,35 @@ function loadPersisted() {
   }
 }
 
+// GET /reports/{id} returns the canonical report object (report_assembler.py),
+// a differently-shaped object than /validate's response - this adapts it
+// back to the shape ValidationResults/App already expect. Two known gaps,
+// both from the canonical report itself rather than this adapter: it never
+// includes whiteSpace (report_assembler.py doesn't carry it), and its
+// `sources` are compact_sources()'s trimmed copies (no per-source relevance
+// `score`), not the original scored `results` - so a resumed session's
+// Sources tab won't show match percentages the way a fresh one does.
+function adaptReportToValidation(report) {
+  const ideaSummary = report.ideaSummary || {}
+  return {
+    summary: ideaSummary.summary || '',
+    results: report.sources || [],
+    marketOpportunity: report.marketOpportunity,
+    competitors: report.competitors,
+    whiteSpace: null,
+    swot: report.swot,
+    mvp: report.mvp,
+    gtm: report.gtm,
+    marketViability: report.marketViability,
+    confidence: report.confidence,
+    contradictions: report.contradictions,
+    experiments: report.experiments,
+    actionPlan: report.actionPlan,
+    sessionId: report.sessionId,
+    errors: report.sectionErrors || {},
+  }
+}
+
 export default function App() {
   const [persisted] = useState(loadPersisted)
   const [isLoading, setIsLoading] = useState(false)
@@ -58,6 +87,41 @@ export default function App() {
       // the app still works, it just won't survive a tab reload.
     }
   }, [validation, lastSubmission, updatedAt])
+
+  // Resuming from a "view this report again" email link (?session=...) -
+  // see email_delivery.py/main.py's _report_url. Runs once on mount only;
+  // an already-persisted mid-flow session (loadPersisted, e.g. from a
+  // backgrounded-tab reload) takes priority over a stale session id still
+  // sitting in the URL bar, so this never clobbers what's already showing.
+  useEffect(() => {
+    if (persisted?.validation) return
+    const sessionId = new URLSearchParams(window.location.search).get('session')
+    if (!sessionId) return
+
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(`${API_URL}/reports/${sessionId}`)
+        if (!res.ok || cancelled) return
+        const report = await res.json()
+        setValidation(adaptReportToValidation(report))
+        setUpdatedAt(report.generatedAt ? new Date(report.generatedAt) : new Date())
+      } catch {
+        // Link expired/invalid, or offline - fall back to the normal empty
+        // form silently rather than showing an error for a background
+        // convenience feature the user didn't explicitly request this visit.
+      } finally {
+        // Drop ?session= regardless of outcome so a later manual reload
+        // doesn't keep re-fetching (or re-failing) the same stale link.
+        window.history.replaceState({}, '', window.location.pathname)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function validateIdea(payload) {
     setIsLoading(true)
