@@ -125,18 +125,28 @@ validation on every LLM-backed agent.
 ### Competitor Discovery (Milestone 2) — local NER, not an LLM agent
 
 - **Input**: the Web Search step's real results (same context-passing pattern)
-- **Not a CrewAI agent, no LLM call, no API dependency** — by explicit decision, not
-  as a fallback. Local Named Entity Recognition (spaCy's `en_core_web_sm`) reads
-  company names off real search snippets for zero API cost, zero rate limit, and zero
-  latency variance, freeing the entire shared Groq quota for the agents that need it.
+- **Not a CrewAI agent, no LLM call, no API dependency for name identification** — by
+  explicit decision, not as a fallback. Local Named Entity Recognition (spaCy's
+  `en_core_web_sm`) reads company names off real search snippets for zero API cost,
+  zero rate limit, and zero latency variance, freeing the entire shared Groq quota for
+  the agents that need it.
 - **LangGraph node**: `competitor_discovery` — runs after `market_opportunity`
 - **Output**: `{ competitors[] }` where each entry is
   `{ name, offering, url, gap, estimatedPrice, featureBreadth }` — `url` is copied
   from the actual source it was found in (not invented). `estimatedPrice`/
-  `featureBreadth` are rough local pattern matches from nearby source text, or
-  `"unknown"` rather than guessing when there's no signal. An empty `competitors: []`
-  is a genuine "the sources didn't name an identifiable company" outcome, not a
-  failure — see §4.
+  `featureBreadth` start as rough local pattern matches from nearby source text, or
+  `"unknown"` rather than guessing when there's no signal.
+  > **Correction:** as of `_refine_with_gemini` in `competitor_agent.py`, a genuine
+  > `"unknown"` price/breadth gap is optionally refined by a single Gemini call — a
+  > separate API key/quota (`GEMINI_API_KEY`) from the Groq key the four CrewAI
+  > agents share, so it still never competes for that budget. It's strictly optional
+  > (skipped entirely without the key, and any failure falls back silently to the
+  > regex-only result) and strictly grounded (given only the same local snippet text
+  > the regex heuristic used, required to answer `"unknown"` rather than guess, and
+  > never allowed to override a value the regex already found). Name identification
+  > itself is still 100% local NER — this only affects the two grid fields.
+  An empty `competitors: []` is a genuine "the sources didn't name an identifiable
+  company" outcome, not a failure — see §4.
 
 ### Opportunity Score (Milestone 2 stretch)
 
