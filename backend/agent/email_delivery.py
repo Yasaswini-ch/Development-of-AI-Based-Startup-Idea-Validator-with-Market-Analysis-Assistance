@@ -23,6 +23,15 @@ logger = logging.getLogger(__name__)
 _RESEND_ENDPOINT = "https://api.resend.com/emails"
 _EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
+# urllib.request's default User-Agent ("Python-urllib/3.x") gets a bare
+# HTTP 403 from Cloudflare (which fronts api.resend.com) with body
+# "error code: 1010" - a bot-signature block, not a Resend API rejection
+# (confirmed live: an otherwise-identical request succeeds the instant a
+# real User-Agent is set, and fails again the instant it's removed). Same
+# User-Agent value tools.py's Hacker News call already sets, for the same
+# reason, against a different Cloudflare-fronted API.
+_REQUEST_HEADERS_BASE = {"User-Agent": "StartupIdeaValidator/1.0", "Content-Type": "application/json"}
+
 
 def is_valid_email(address: str) -> bool:
     return bool(_EMAIL_PATTERN.match(address.strip()))
@@ -187,10 +196,7 @@ def send_canonical_report_email(
         _RESEND_ENDPOINT,
         data=payload,
         method="POST",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
+        headers={**_REQUEST_HEADERS_BASE, "Authorization": f"Bearer {api_key}"},
     )
     try:
         with urllib.request.urlopen(request, timeout=15) as resp:
@@ -238,10 +244,7 @@ def send_report_email(to_email: str, idea: str, response: dict, report_url: str 
         _RESEND_ENDPOINT,
         data=payload,
         method="POST",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
+        headers={**_REQUEST_HEADERS_BASE, "Authorization": f"Bearer {api_key}"},
     )
     try:
         with urllib.request.urlopen(request, timeout=10) as resp:
