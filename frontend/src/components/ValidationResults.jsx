@@ -8,6 +8,9 @@ import SwotAnalysis from './SwotAnalysis'
 import MvpRecommendations from './MvpRecommendations'
 import GtmStrategy from './GtmStrategy'
 import ChatAdvisor from './ChatAdvisor'
+import ConfidenceDashboard from './ConfidenceDashboard'
+import ContradictionsBanner from './ContradictionsBanner'
+import ExperimentsActionPlan from './ExperimentsActionPlan'
 import { buildSourceMap } from '../lib/sources'
 
 const INITIAL_VISIBLE = 3
@@ -118,6 +121,7 @@ const TABS = [
   { key: 'market', label: 'Market & Competition' },
   { key: 'opportunity', label: 'Opportunity & Risks' },
   { key: 'build', label: 'Build & Launch' },
+  { key: 'experiments', label: 'Experiments & Action Plan' },
 ]
 
 function SectionDivider({ label }) {
@@ -138,6 +142,10 @@ export default function ValidationResults({
   swot,
   mvp,
   gtm,
+  confidence,
+  contradictions,
+  experiments,
+  actionPlan,
   sessionId,
   apiUrl,
   errors,
@@ -154,12 +162,6 @@ export default function ValidationResults({
     groups.push({ angle: key, items: results.filter((r) => (r.angle || 'Sources') === key) })
   }
 
-  const scored = results.filter((r) => typeof r.score === 'number')
-  const avgScore = scored.length
-    ? scored.reduce((sum, r) => sum + r.score, 0) / scored.length
-    : null
-  const confidence = useCountUp(avgScore !== null ? Math.round(avgScore * 100) : 0, 800)
-
   const competitorCount = competitors?.competitors?.length ?? 0
   const sourceMap = buildSourceMap(results)
 
@@ -175,12 +177,14 @@ export default function ValidationResults({
           </div>
           <p className="mt-3 text-sm text-text leading-relaxed">{summary}</p>
         </div>
-        {avgScore !== null && (
-          <div className="shrink-0 border-l border-border pl-6 text-right">
-            <p className="font-serif text-4xl text-accent">{confidence}%</p>
-            <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Confidence</p>
-          </div>
-        )}
+      </div>
+
+      <div className="mt-6">
+        <ConfidenceDashboard data={confidence} />
+      </div>
+
+      <div className="mt-6">
+        <ContradictionsBanner data={contradictions} sourceMap={sourceMap} />
       </div>
 
       {/* Pill tab switcher, not the classic underline-tabs strip - the
@@ -232,7 +236,7 @@ export default function ValidationResults({
           <div className="space-y-8">
             <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
               <SectionDivider label="Market opportunity" />
-              <MarketOpportunity data={marketOpportunity} error={errors?.marketOpportunity} />
+              <MarketOpportunity data={marketOpportunity} error={errors?.marketOpportunity} sourceMap={sourceMap} />
             </div>
             <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
               <SectionDivider label="Competitors" />
@@ -264,6 +268,17 @@ export default function ValidationResults({
               <SectionDivider label="Go to market" />
               <GtmStrategy data={gtm} error={errors?.gtm} sourceMap={sourceMap} />
             </div>
+          </div>
+        )}
+
+        {activeTab === 'experiments' && (
+          <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+            <SectionDivider label="Experiments & action plan" />
+            <ExperimentsActionPlan
+              experiments={experiments}
+              actionPlan={actionPlan}
+              error={errors?.experiments}
+            />
           </div>
         )}
       </div>

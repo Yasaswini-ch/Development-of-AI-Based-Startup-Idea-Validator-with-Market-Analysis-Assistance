@@ -1,12 +1,16 @@
 import { IconTrendingUp, IconUsers, IconAlertTriangle } from './icons'
 import useCountUp from '../hooks/useCountUp'
 import DegradedBanner from './DegradedBanner'
+import Citation from './Citation'
 
-function SegmentCard({ segment }) {
-  const { segment: name, painPoints, motivations, buyingBehavior } = segment
+function SegmentCard({ segment, sourceMap }) {
+  const { segment: name, painPoints, motivations, buyingBehavior, sourceIds } = segment
   return (
     <div className="rounded-xl border border-border bg-surface p-5">
-      <h4 className="text-sm font-semibold text-text">{name}</h4>
+      <h4 className="text-sm font-semibold text-text">
+        {name}
+        {sourceMap && <Citation sourceIds={sourceIds} sourceMap={sourceMap} />}
+      </h4>
       <dl className="mt-3 space-y-3">
         <div>
           <dt className="font-mono text-[10px] uppercase tracking-widest text-muted">Pain points</dt>
@@ -67,7 +71,7 @@ function UnavailableCard({ error }) {
 // wraps this in the tab panel's own card, and the "Market Opportunity" tab
 // label already says what section this is, so a repeated heading here
 // would just be redundant.
-export default function MarketOpportunity({ data, error }) {
+export default function MarketOpportunity({ data, error, sourceMap }) {
   // `data === null` means the backend node failed for this request (per the API
   // contract) - distinct from a normal "nothing to show yet" state, so it gets its
   // own inline message rather than silently rendering nothing.
@@ -111,6 +115,9 @@ export default function MarketOpportunity({ data, error }) {
                     §5.1) - typeof-check covers any older/cached plain-string data
                     so this never crashes on a stale cached response either. */}
                 {typeof t === 'string' ? t : t.text}
+                {typeof t !== 'string' && sourceMap && (
+                  <Citation sourceIds={t.sourceIds} sourceMap={sourceMap} />
+                )}
               </li>
             ))}
           </ul>
@@ -128,7 +135,7 @@ export default function MarketOpportunity({ data, error }) {
               column this used to sit in. */}
           <div className="grid gap-3 sm:grid-cols-2">
             {segments.map((s, i) => (
-              <SegmentCard key={i} segment={s} />
+              <SegmentCard key={i} segment={s} sourceMap={sourceMap} />
             ))}
           </div>
         </div>
