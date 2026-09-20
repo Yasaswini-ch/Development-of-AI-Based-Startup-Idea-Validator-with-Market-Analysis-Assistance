@@ -16,34 +16,62 @@ proved unreliable with our tested Groq model (repeated "tool_use_failed"
 errors, then silent fallback to garbage text). Instead the task asks for
 plain JSON in its answer, which we parse and validate ourselves, with a
 safe fallback if parsing fails or no valid JSON can be found at all.
+
+Milestone 4 / Track A: trends and segments now carry a "sourceIds" field,
+same {"text", "sourceIds"} per-claim shape swot_agent.py already
+established (docs/unique-features-plan.md §5.1) - see
+_is_valid_trend/_is_valid_segment below. marketSize stays a plain string
+(it's one narrative sentence, not a list of discrete claims, so there's no
+SWOT-equivalent per-item shape to mirror there).
 """
 
-import json
 import logging
 
 from crewai import Agent, Crew, Process, Task
 
+from .deterministic_fallback import deterministic_market_opportunity
 from .llm import get_llm, kickoff_with_fallback
-from .output_guard import strip_reasoning
+from .structured_output import compact_sources, extract_json_object, sanitize_source_ids, valid_source_ids
 
 logger = logging.getLogger(__name__)
 
-_MAX_SOURCES_IN_CONTEXT = 10
+# Not underscore-prefixed - graph.py's confidence dashboard imports this so
+# its source-relevance lookup covers the same citation window market's
+# trends/segments can actually cite (see _source_relevance_by_id).
+MAX_SOURCES_IN_CONTEXT = 10
 _MAX_SNIPPET_LEN = 300
 _MAX_SEGMENTS = 4
 _MAX_TRENDS = 4
 
 
-def _build_context(results: list) -> str:
+def _build_context(results: list) -> tuple[str, list[dict]]:
     """Condense the real search results into a compact block of grounding
-    text for the prompt - capped so we don't blow up the context window
-    with everything retrieval.py fetched.
+    text for the prompt, tagged with the sourceId the model must cite - and
+    return the exact source list shown, so the caller can build the same
+    valid_ids set used to sanitize the model's sourceIds afterwards.
+
+    compact_sources() assigns "src-N" purely by position in `results` - the
+    same convention swot_agent.py and graph.py's confidence dashboard rely
+    on - so it's called here on the full, un-reordered `results` list first
+    (never on a re-sorted copy) to guarantee "src-N" means the same source
+    everywhere in the app, not just within this agent's own prompt.
+
+    Market-size prioritization (the "don't crowd out Market size & trends
+    results" fix, confirmed by the same live failure as
+    competitor_agent.py's _build_context) is still applied, but only to
+    decide which of those already-canonically-numbered sources get shown in
+    this prompt - it no longer changes what "src-N" refers to.
     """
-    lines = []
-    for r in results[:_MAX_SOURCES_IN_CONTEXT]:
-        snippet = (r.get("snippet") or "")[:_MAX_SNIPPET_LEN]
-        lines.append(f"- {r.get('title', '')}: {snippet}")
-    return "\n".join(lines) if lines else "No search results were available."
+    all_sources = compact_sources(results, limit=len(results) or 1, snippet_chars=_MAX_SNIPPET_LEN)
+    if not all_sources:
+        return "No search results were available.", []
+
+    market_sources = [s for s in all_sources if s.get("angle") == "Market size & trends"]
+    other_sources = [s for s in all_sources if s.get("angle") != "Market size & trends"]
+    shown = (market_sources + other_sources)[:MAX_SOURCES_IN_CONTEXT]
+
+    lines = [f"- [{s['sourceId']}] {s.get('title', '')}: {s.get('snippet', '')}" for s in shown]
+    return "\n".join(lines), shown
 
 
 def _build_market_crew(idea: str, target_customer: str, problem: str, context: str, model: str) -> Crew:
@@ -60,7 +88,15 @@ def _build_market_crew(idea: str, target_customer: str, problem: str, context: s
             "the given sources. Writes for a founder who needs to act on this, "
             "not a report that just restates what a segment is called."
         ),
-        llm=get_llm(model=model),
+        # Rebalanced to 750 (was 900, briefly tried 250 then 550). Market's
+        # JSON schema (marketSize sentence + trends array + multi-field
+        # segments) is the most verbose of the four agents and was
+        # confirmed live to truncate into invalid JSON at 550, so it keeps
+        # more headroom than mvp/gtm below even though all four still
+        # collectively exceed Groq's ~1000 output-tokens/minute cap on the
+        # primary model - the model-fallback chain (see llm.py) is the
+        # actual safety net for whichever call(s) exceed the shared budget.
+        llm=get_llm(max_tokens=750, model=model),
         verbose=False,
     )
 
@@ -69,19 +105,29 @@ def _build_market_crew(idea: str, target_customer: str, problem: str, context: s
             f'Startup idea: "{idea}"\n'
             f"Target customer: {target_customer or 'not specified'}\n"
             f"Problem being solved: {problem or 'not specified'}\n\n"
-            "Here are real, current web search results about this idea's market:\n"
+            "Here are real, current web search results about this idea's market. "
+            "Each one is tagged with a sourceId like [src-1]:\n"
             f"{context}\n\n"
             "Based only on the information above, analyze:\n"
             "1. Market size (state whether the figures are global, regional, or "
-            "niche if the sources indicate this) and growth trend.\n"
-            "2. Up to 4 notable trends or adoption patterns.\n"
+            "niche if the sources indicate this) and growth trend. Include TAM, "
+            "SAM, or CAGR only when the provided sources explicitly support those "
+            "figures; otherwise state that they are not clear from the sources.\n"
+            "2. Up to 4 notable trends or adoption patterns. Each trend needs a "
+            "\"sourceIds\" array citing the sourceId(s) of the source(s) shown "
+            "above that it's grounded in - use an empty array only when a trend "
+            "is a structural observation not tied to a specific source, never "
+            "invent a sourceId that isn't shown above.\n"
             "3. Up to 4 customer segments - for each, their pain points (what "
             "problem they're trying to solve), motivations (what they care "
-            "about / why they'd buy), and buying behavior (how they decide or "
-            "purchase, if the sources suggest anything about this).\n"
+            "about / why they'd buy), buying behavior (how they decide or "
+            "purchase, if the sources suggest anything about this), and a "
+            "\"sourceIds\" array the same way as for trends.\n"
             "Do not invent statistics, segments, or behaviors that aren't "
             "supported by the sources - if buying behavior isn't evident from "
-            "the sources, say so plainly rather than guessing."
+            "the sources, say so plainly rather than guessing.\n"
+            "Output strict JSON only: within JSON strings, never escape an "
+            "apostrophe with a backslash - write don't directly, not don\\'t."
         ),
         expected_output=(
             "A single JSON object, and nothing else - no markdown code fences, no "
@@ -89,21 +135,24 @@ def _build_market_crew(idea: str, target_customer: str, problem: str, context: s
             "content from the sources above. For example, for a different idea "
             "this might look like:\n"
             '{"marketSize": "The global market was valued at $2.1 billion in 2024 '
-            'and is growing at 12% annually.", '
-            '"trends": ["Rising demand for subscription-based delivery", '
-            '"Increased focus on eco-friendly packaging"], '
+            'and is growing at 12% annually; TAM/SAM are not clear from the provided sources.", '
+            '"trends": [{"text": "Rising demand for subscription-based delivery", "sourceIds": ["src-1"]}, '
+            '{"text": "Increased focus on eco-friendly packaging", "sourceIds": []}], '
             '"segments": ['
             '{"segment": "Urban millennials", '
             '"painPoints": "Limited time to research and compare options", '
             '"motivations": "Convenience and sustainability credentials", '
-            '"buyingBehavior": "Research online, prefer subscription models over one-off purchases"}, '
+            '"buyingBehavior": "Research online, prefer subscription models over one-off purchases", '
+            '"sourceIds": ["src-1"]}, '
             '{"segment": "Budget-conscious families", '
             '"painPoints": "Existing options are too expensive for regular use", '
             '"motivations": "Value for money without sacrificing quality", '
-            '"buyingBehavior": "Not clear from the sources"}'
+            '"buyingBehavior": "Not clear from the sources", '
+            '"sourceIds": []}'
             "]}\n"
             "Use at most 4 items in trends and 4 objects in segments, grounded "
-            "only in the sources given to you."
+            "only in the sources given to you, and never cite a sourceId that "
+            "wasn't shown to you above."
         ),
         agent=analyst,
     )
@@ -111,49 +160,27 @@ def _build_market_crew(idea: str, target_customer: str, problem: str, context: s
     return Crew(agents=[analyst], tasks=[task], process=Process.sequential, verbose=False)
 
 
-def _find_balanced_objects(text: str) -> list[str]:
-    """Find every top-level {...} substring via brace counting, not just
-    first-'{'-to-last-'}' (which breaks if the model wraps its real answer
-    in explanatory text containing its own braces, e.g. a markdown code
-    fence example). Returns them in the order they appear.
+def _is_valid_trend(item) -> bool:
+    """A trend is {"text": str, "sourceIds": [str]} - the same per-claim
+    shape as swot_agent.py's items - not a bare string. sourceIds defaults
+    to an empty list when the key is missing, same leniency swot_agent.py
+    applies, since the field is still always present on the sanitized output.
     """
-    objects = []
-    depth = 0
-    start = None
-    for i, ch in enumerate(text):
-        if ch == "{":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == "}":
-            if depth > 0:
-                depth -= 1
-                if depth == 0 and start is not None:
-                    objects.append(text[start : i + 1])
-    return objects
-
-
-def _extract_json(text: str) -> dict | None:
-    """Try every balanced {...} substring, last-to-first, and return the
-    first one that's both valid JSON and has the right shape. This
-    recovers the real answer even when the model buries it in a rambling
-    scratchpad, as long as it does eventually produce valid JSON somewhere.
-    """
-    for candidate in reversed(_find_balanced_objects(text)):
-        try:
-            data = json.loads(candidate)
-        except (json.JSONDecodeError, ValueError):
-            continue
-        if isinstance(data, dict) and _is_valid_shape(data):
-            return data
-    return None
+    return (
+        isinstance(item, dict)
+        and isinstance(item.get("text"), str)
+        and bool(item["text"].strip())
+        and valid_source_ids(item.get("sourceIds", []))
+    )
 
 
 def _is_valid_segment(item) -> bool:
     if not isinstance(item, dict):
         return False
     required = ("segment", "painPoints", "motivations", "buyingBehavior")
-    return all(isinstance(item.get(key), str) for key in required)
+    if not all(isinstance(item.get(key), str) for key in required):
+        return False
+    return valid_source_ids(item.get("sourceIds", []))
 
 
 def _is_valid_shape(data: dict) -> bool:
@@ -161,7 +188,7 @@ def _is_valid_shape(data: dict) -> bool:
         return False
     if "trends" not in data or not isinstance(data["trends"], list):
         return False
-    if not all(isinstance(item, str) for item in data["trends"]):
+    if not all(_is_valid_trend(item) for item in data["trends"]):
         return False
     if "segments" not in data or not isinstance(data["segments"], list):
         return False
@@ -173,36 +200,50 @@ def _is_valid_shape(data: dict) -> bool:
 def analyze_market_opportunity(
     idea: str, target_customer: str, problem: str, results: list
 ) -> dict:
-    """Raises on any failure - a crew error (e.g. Groq rate limit) or output that
-    doesn't parse/validate - rather than silently returning empty trends/segments.
-
-    Unlike an empty competitors list (a valid outcome - see competitor_agent.py),
-    a market opportunity with zero segments isn't a legitimate "nothing to find"
-    result - it means the call failed. Raising here lets the caller
-    (agent/graph.py's market_opportunity_node) catch it and set
-    marketOpportunity=null + errors.marketOpportunity, which is what reaches the
-    frontend's "analysis wasn't available" state instead of a silent, misleading
-    "not enough data" placeholder that looked identical to a real weak result.
+    """Falls back to a deterministic, evidence-based summary (see
+    deterministic_fallback.py) whenever the LLM call itself fails (e.g. no
+    API key configured, every fallback model rate limited) or its output
+    doesn't parse into a valid shape, instead of raising and leaving this
+    section entirely blank. The fallback result carries `"degraded": True`
+    so callers/UI can distinguish it from a full AI-reasoned result - it is
+    never silently indistinguishable from one.
     """
-    context = _build_context(results)
+    context, sources = _build_context(results)
+    valid_ids = {source["sourceId"] for source in sources}
 
-    crew_output = kickoff_with_fallback(
-        lambda model: _build_market_crew(idea, target_customer, problem, context, model)
-    )
-    candidate_text = strip_reasoning(crew_output.raw)
+    try:
+        crew_output = kickoff_with_fallback(
+            lambda model: _build_market_crew(idea, target_customer, problem, context, model)
+        )
 
-    # Search for valid JSON directly rather than rejecting the whole
-    # response for containing extra text first - this model often
-    # rambles through a visible scratchpad but still lands on a
-    # correct, well-shaped JSON object by the end of it.
-    data = _extract_json(candidate_text)
-    if data is None:
-        logger.warning("Market opportunity: no valid JSON found in output: %r", candidate_text)
-        raise ValueError("Market opportunity analysis did not return a valid, parseable result.")
+        # Search for valid JSON directly rather than rejecting the whole
+        # response for containing extra text first - this model often
+        # rambles through a visible scratchpad but still lands on a
+        # correct, well-shaped JSON object by the end of it.
+        data = extract_json_object(crew_output.raw, _is_valid_shape)
+        if data is None:
+            logger.warning("Market opportunity: no valid JSON found in output: %r", crew_output.raw)
+            raise ValueError("Market opportunity analysis did not return a valid, parseable result.")
 
-    data["trends"] = data["trends"][:_MAX_TRENDS]
-    data["segments"] = data["segments"][:_MAX_SEGMENTS]
-    # Phase 2 stretch feature - filled in by the opportunity_score graph node
-    # after this agent returns, so stub it here for a stable shape.
-    data.setdefault("opportunityScore", 0)
-    return data
+        # Never let a hallucinated sourceId (one the model invented, or one
+        # that was shown but isn't actually in this run's evidence) reach
+        # the API response - same sanitize-after-parse step swot_agent.py
+        # already does.
+        data["trends"] = [
+            {"text": item["text"].strip(), "sourceIds": sanitize_source_ids(item.get("sourceIds"), valid_ids)}
+            for item in data["trends"][:_MAX_TRENDS]
+        ]
+        data["segments"] = [
+            {**segment, "sourceIds": sanitize_source_ids(segment.get("sourceIds"), valid_ids)}
+            for segment in data["segments"][:_MAX_SEGMENTS]
+        ]
+        # Phase 2 stretch feature - filled in by the opportunity_score graph node
+        # after this agent returns, so stub it here for a stable shape.
+        data.setdefault("opportunityScore", 0)
+        return data
+    except Exception:
+        logger.warning(
+            "Market opportunity: LLM analysis unavailable, using deterministic evidence-based fallback",
+            exc_info=True,
+        )
+        return deterministic_market_opportunity(idea, target_customer, problem, results)

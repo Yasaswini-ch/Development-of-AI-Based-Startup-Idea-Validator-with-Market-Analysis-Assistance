@@ -1,11 +1,15 @@
 import { Fragment } from 'react'
 import { IconAlertTriangle } from './icons'
 
-// NAYA (add):
-const PRICE_ROWS = ['high', 'low']
-const PRICE_LABELS = { high: 'High price', low: 'Low price' }
-const BREADTH_COLS = ['narrow', 'broad']
-const BREADTH_LABELS = { narrow: 'Narrow', broad: 'Broad' }
+// Matches the backend's actual categories (competitor_agent.py's
+// _estimate_price/_estimate_breadth pattern-match these from source text,
+// not an LLM call) - a 2x2 version of this grid dropped "mid"/"moderate"
+// competitors into "not placed" alongside genuinely unknown ones,
+// misrepresenting real data as missing.
+const PRICE_ROWS = ['high', 'mid', 'low']
+const PRICE_LABELS = { high: 'High price', mid: 'Mid price', low: 'Low price' }
+const BREADTH_COLS = ['narrow', 'moderate', 'broad']
+const BREADTH_LABELS = { narrow: 'Narrow', moderate: 'Moderate', broad: 'Broad' }
 function hostnameOf(url) {
   try {
     return new URL(url).hostname.replace('www.', '')
@@ -82,11 +86,11 @@ function PositioningGrid({ competitors }) {
         Positioning snapshot
       </h3>
       <p className="mb-3 text-[11px] leading-snug text-muted">
-        Approximate, LLM-estimated placement by price and feature breadth &mdash; not
-        verified market data.
+        Approximate placement by price and feature breadth, pattern-matched from
+        source text &mdash; not verified market data.
       </p>
 
-      <div className="grid grid-cols-[auto_repeat(2,1fr)] gap-1.5">
+      <div className="grid grid-cols-[auto_repeat(3,1fr)] gap-1.5">
         <div />
         {BREADTH_COLS.map((col) => (
           <div
@@ -131,7 +135,7 @@ function PositioningGrid({ competitors }) {
 
       {unclassified.length > 0 && (
         <p className="mt-2 text-[11px] leading-snug text-muted">
-          Not placed (mid-range or unknown): {unclassified.map((c) => c.name).join(', ')}
+          Not placed (price/breadth unknown): {unclassified.map((c) => c.name).join(', ')}
         </p>
       )}
     </div>

@@ -86,3 +86,63 @@ export function IconCheckCircle(props) {
     </svg>
   )
 }
+
+export function IconMessageCircle(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z" />
+    </svg>
+  )
+}
+
+export function IconX(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </svg>
+  )
+}
+
+export function IconInfo(props) {
+  return (
+    <svg {...base} {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 16v-4" />
+      <path d="M12 8h.01" />
+    </svg>
+  )
+}
+
+export function IconGauge(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M12 21a9 9 0 1 0-9-9" />
+      <path d="M12 12 8 8" />
+      <path d="M12 12h.01" />
+    </svg>
+  )
+}
+
+export function IconFlask(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M9 3h6" />
+      <path d="M10 3v6l-5.5 9.5A1 1 0 0 0 5.36 20h13.28a1 1 0 0 0 .86-1.5L14 9V3" />
+      <path d="M7.5 15h9" />
+    </svg>
+  )
+}
+
+export function IconListChecks(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="m3 7 1.5 1.5L7 6" />
+      <path d="m3 13 1.5 1.5L7 12" />
+      <path d="m3 19 1.5 1.5L7 18" />
+      <path d="M11 7h10" />
+      <path d="M11 13h10" />
+      <path d="M11 19h10" />
+    </svg>
+  )
+}
