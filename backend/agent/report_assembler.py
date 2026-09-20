@@ -70,6 +70,7 @@ def assemble_report(session_id: str, context: dict) -> dict:
         "swot": context.get("swot"),
         "mvp": context.get("mvp"),
         "gtm": context.get("gtm"),
+        "marketViability": context.get("marketViability"),
         "confidence": context.get("confidence"),
         # Tracks B/C - default empty until contradiction_detector.py /
         # experiment_generator.py / action_plan.py are wired into the

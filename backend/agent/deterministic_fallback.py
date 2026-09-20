@@ -119,9 +119,16 @@ def deterministic_market_opportunity(idea: str, target_customer: str, problem: s
     pattern-matched evidence instead of LLM reasoning. trends and segments
     carry the same {"text"/"segment", ..., "sourceIds"} shape as the real
     LLM path (Milestone 4 / Track A) - see _market_trends/_market_segments.
+    tam/sam/som are always null here: distinguishing which dollar figure in
+    a snippet is TAM vs SAM vs SOM needs real reasoning, not just a regex
+    money-pattern hit, so this fallback never guesses which tier a number
+    belongs to.
     """
     return {
         "marketSize": _market_size_sentence(results),
+        "tam": None,
+        "sam": None,
+        "som": None,
         "trends": _market_trends(results),
         "segments": _market_segments(target_customer, problem, idea),
         "opportunityScore": 0,

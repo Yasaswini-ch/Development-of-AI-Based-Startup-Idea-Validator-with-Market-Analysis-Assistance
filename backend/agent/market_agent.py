@@ -23,6 +23,13 @@ established (docs/unique-features-plan.md §5.1) - see
 _is_valid_trend/_is_valid_segment below. marketSize stays a plain string
 (it's one narrative sentence, not a list of discrete claims, so there's no
 SWOT-equivalent per-item shape to mirror there).
+
+Milestone 4 follow-up: tam/sam/som are structured alongside marketSize -
+each is either a {"text", "sourceIds"} claim (see _is_valid_tier below) or
+null when the sources don't support that specific figure. Kept separate
+from marketSize (which stays a free narrative sentence) rather than
+replacing it, since existing callers (opportunity_score.py, the frontend)
+already depend on marketSize's shape and semantics.
 """
 
 import logging
@@ -113,6 +120,13 @@ def _build_market_crew(idea: str, target_customer: str, problem: str, context: s
             "niche if the sources indicate this) and growth trend. Include TAM, "
             "SAM, or CAGR only when the provided sources explicitly support those "
             "figures; otherwise state that they are not clear from the sources.\n"
+            "1b. Separately, TAM (Total Addressable Market), SAM (Serviceable "
+            "Addressable Market), and SOM (Serviceable Obtainable Market) as three "
+            "distinct figures, each with a \"sourceIds\" array the same way as for "
+            "trends below. Set any of the three to null (not a guessed number) "
+            "whenever the sources don't explicitly support that specific figure - "
+            "never derive one tier's number from another or estimate a plausible-"
+            "looking value.\n"
             "2. Up to 4 notable trends or adoption patterns. Each trend needs a "
             "\"sourceIds\" array citing the sourceId(s) of the source(s) shown "
             "above that it's grounded in - use an empty array only when a trend "
@@ -136,6 +150,9 @@ def _build_market_crew(idea: str, target_customer: str, problem: str, context: s
             "this might look like:\n"
             '{"marketSize": "The global market was valued at $2.1 billion in 2024 '
             'and is growing at 12% annually; TAM/SAM are not clear from the provided sources.", '
+            '"tam": {"text": "$2.1 billion global market (2024)", "sourceIds": ["src-1"]}, '
+            '"sam": null, '
+            '"som": null, '
             '"trends": [{"text": "Rising demand for subscription-based delivery", "sourceIds": ["src-1"]}, '
             '{"text": "Increased focus on eco-friendly packaging", "sourceIds": []}], '
             '"segments": ['
@@ -174,6 +191,22 @@ def _is_valid_trend(item) -> bool:
     )
 
 
+def _is_valid_tier(value) -> bool:
+    """A TAM/SAM/SOM tier is either null (the sources don't support that
+    specific figure) or a {"text", "sourceIds"} claim, same per-claim shape
+    as trends/segments - never a bare number or string, since every figure
+    still needs to cite where it came from.
+    """
+    if value is None:
+        return True
+    return (
+        isinstance(value, dict)
+        and isinstance(value.get("text"), str)
+        and bool(value["text"].strip())
+        and valid_source_ids(value.get("sourceIds", []))
+    )
+
+
 def _is_valid_segment(item) -> bool:
     if not isinstance(item, dict):
         return False
@@ -186,6 +219,9 @@ def _is_valid_segment(item) -> bool:
 def _is_valid_shape(data: dict) -> bool:
     if "marketSize" not in data or not isinstance(data["marketSize"], str):
         return False
+    for tier in ("tam", "sam", "som"):
+        if not _is_valid_tier(data.get(tier)):
+            return False
     if "trends" not in data or not isinstance(data["trends"], list):
         return False
     if not all(_is_valid_trend(item) for item in data["trends"]):
@@ -229,6 +265,15 @@ def analyze_market_opportunity(
         # that was shown but isn't actually in this run's evidence) reach
         # the API response - same sanitize-after-parse step swot_agent.py
         # already does.
+        for tier in ("tam", "sam", "som"):
+            value = data.get(tier)
+            if isinstance(value, dict):
+                data[tier] = {
+                    "text": value["text"].strip(),
+                    "sourceIds": sanitize_source_ids(value.get("sourceIds"), valid_ids),
+                }
+            else:
+                data[tier] = None
         data["trends"] = [
             {"text": item["text"].strip(), "sourceIds": sanitize_source_ids(item.get("sourceIds"), valid_ids)}
             for item in data["trends"][:_MAX_TRENDS]

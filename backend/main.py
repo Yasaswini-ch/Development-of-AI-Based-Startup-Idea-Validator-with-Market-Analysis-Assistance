@@ -304,6 +304,7 @@ def _create_validation_session(payload: ValidateRequest, response: dict) -> str:
             "swot": response.get("swot"),
             "mvp": response.get("mvp"),
             "gtm": response.get("gtm"),
+            "marketViability": response.get("marketViability"),
             # Tracks B/C - not produced by the pipeline yet; stored
             # defensively so report_assembler.py picks them up the moment
             # they exist, with no change needed here when that lands.
@@ -385,6 +386,7 @@ def _run_pipeline_and_build_response(payload: ValidateRequest, cache_key: str) -
         "gtm": state.get("gtm"),
         # Track B: cross-artifact contradiction flags
         "contradictions": state.get("contradictions"),
+        "marketViability": state.get("marketViability"),
         "errors": state.get("errors", {}),
     }
 
