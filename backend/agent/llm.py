@@ -7,7 +7,12 @@ from crewai import LLM
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "groq/qwen/qwen3.6-27b"
+# qwen3.6-27b was deprecated and removed from Groq (confirmed via
+# GET /openai/v1/models on Sept 15, 2026: only qwen/qwen3.8-27b remains of the
+# qwen line). qwen3.8-27b was confirmed live against our key, including
+# accepting reasoning_effort="none" with the same 2-token "say OK" behavior
+# the quota fix below was validated against.
+DEFAULT_MODEL = "groq/qwen/qwen3.8-27b"
 
 # More models hosted on the *same* Groq account, each with its own rate-limit
 # bucket - confirmed via `GET /openai/v1/models` against our own key and a
@@ -18,6 +23,28 @@ DEFAULT_MODEL = "groq/qwen/qwen3.6-27b"
 # primary's, so one extra tier of real headroom matters, not just one.
 FALLBACK_MODELS = ("groq/openai/gpt-oss-20b", "groq/openai/gpt-oss-120b")
 _MAX_RETRY_WAIT_SECONDS = 30
+
+# The actual cause of most "Request too large... exceeds the enforced limit"
+# failures all session: by default, qwen3.6-27b reserves an output-token
+# budget for its own hidden <think> reasoning that alone exceeds Groq's 1000
+# output-tokens-per-minute cap - confirmed directly: the same trivial "say
+# OK" prompt failed outright with reasoning left at its default, and
+# succeeded using 2 completion tokens with reasoning_effort="none". Real
+# agent calls (market/competitor analysis) confirmed the same fix end to
+# end: fewer real failures, and the tokens actually used drop sharply since
+# there's no wasted scratchpad to generate or strip.
+#
+# Each model takes a different set of valid values (also confirmed
+# directly, not assumed) - qwen3.6-27b accepts "none" or "default";
+# openai/gpt-oss-20b and -120b reject "none" outright and require one of
+# "low"/"medium"/"high", so "low" is the closest equivalent for those.
+# (qwen3.6-27b's "none" entry was dropped with the model itself - see
+# DEFAULT_MODEL above; qwen3.8-27b was confirmed to accept "none" live.)
+_REASONING_EFFORT = {
+    "groq/qwen/qwen3.8-27b": "none",
+    "groq/openai/gpt-oss-20b": "low",
+    "groq/openai/gpt-oss-120b": "low",
+}
 
 
 def get_llm(max_tokens: int | None = None, model: str | None = None):
@@ -34,26 +61,88 @@ def get_llm(max_tokens: int | None = None, model: str | None = None):
     static fallback content the caller already returns on total failure, so
     it's not a usable fallback with our pinned litellm version.
 
-    Returns a plain model string by default (proven reliable for the Web
-    Search Agent's summary). Only pass max_tokens for an agent that's
-    specifically running out of room - we found that raising the default
-    for every agent made this model MORE likely to ramble through a visible
-    chain-of-thought instead of answering directly, not less, so don't
-    apply it globally.
+    Returns an `LLM` object with the model's known-good reasoning_effort
+    applied whenever the model is one of the three above; falls back to a
+    plain model string for anything else (e.g. a manual LLM_MODEL override
+    to an untested model), so an unrecognized model doesn't get a
+    reasoning_effort value it was never confirmed to accept.
     """
     model = model or os.environ.get("LLM_MODEL", DEFAULT_MODEL)
-    if max_tokens is None:
+    kwargs = {}
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
+    reasoning_effort = _REASONING_EFFORT.get(model)
+    if reasoning_effort is not None:
+        kwargs["reasoning_effort"] = reasoning_effort
+    if not kwargs:
         return model
-    return LLM(model=model, max_tokens=max_tokens)
+    return LLM(model=model, **kwargs)
+
+
+def _is_model_not_found_error(exc: Exception) -> bool:
+    """True when the model itself doesn't exist / isn't accessible (Groq code
+    "model_not_found"). Found live on Sept 15, 2026: the then-primary
+    qwen/qwen3.6-27b was deprecated out from under a deployed config, and this
+    404-shaped failure was raised straight through kickoff_with_fallback
+    instead of trying the fallback models - even though they were perfectly
+    healthy and on completely separate quota buckets. A missing model is at
+    least as switch-worthy as an exhausted one: waiting can't fix it, but the
+    next model can.
+    """
+    text = str(exc)
+    return "model_not_found" in text or "does not exist or you do not have access" in text
+
+
+def _is_rate_limit_error(exc: Exception) -> bool:
+    """True for any Groq rate-limit response, whether or not it names a
+    concrete cooldown. Groq has (at least) two differently-shaped rate-limit
+    errors: "Used 980/1000, try again in 6.2s" (a real cooldown to wait out)
+    and "Requested 2048, limit is 1000" (a single request's own configured
+    output cap exceeds the model's entire per-minute budget - no amount of
+    waiting fixes that on this model, only a different model can). Both
+    carry Groq's own "rate_limit_exceeded" code, so checking for that -
+    instead of requiring the "try again in Ns" phrase - is what actually
+    catches both, confirmed live: the second shape was silently treated as
+    unrecoverable before this fix, raising immediately instead of trying the
+    next model, even though the next model doesn't share that request's
+    conflict with the first one's tighter per-minute cap.
+    """
+    text = str(exc)
+    return "rate_limit_exceeded" in text or "RateLimitError" in text
 
 
 def _retry_after_seconds(exc: Exception) -> float | None:
-    """Groq's rate-limit error message names its own cooldown, e.g. "Please
-    try again in 25.545s" - parse that instead of guessing a backoff.
-    Returns None for anything that isn't this specific, recoverable error.
+    """Groq's rate-limit error message sometimes names its own cooldown,
+    e.g. "Please try again in 25.545s" - parse that instead of guessing a
+    backoff. Returns None when no concrete cooldown is present (see
+    _is_rate_limit_error - that's still a rate limit, just not one where
+    waiting would help).
     """
     match = re.search(r"try again in ([\d.]+)s", str(exc))
     return float(match.group(1)) if match else None
+
+
+def _kickoff_with_metrics(model: str, build_crew):
+    """Runs one crew.kickoff() call and logs latency + token usage - the
+    real numbers Track F's optimization pass needs to tune prompt/limit
+    budgets from, which nothing previously captured (only success/failure
+    was logged, never how long a call took or how many tokens it used).
+    """
+    start = time.time()
+    output = build_crew(model).kickoff()
+    elapsed_ms = round((time.time() - start) * 1000)
+    usage = getattr(output, "token_usage", None)
+    if usage is not None:
+        logger.info(
+            "llm_call model=%s elapsed_ms=%d prompt_tokens=%s completion_tokens=%s total_tokens=%s",
+            model, elapsed_ms,
+            getattr(usage, "prompt_tokens", None),
+            getattr(usage, "completion_tokens", None),
+            getattr(usage, "total_tokens", None),
+        )
+    else:
+        logger.info("llm_call model=%s elapsed_ms=%d", model, elapsed_ms)
+    return output
 
 
 def kickoff_with_fallback(build_crew):
@@ -87,23 +176,41 @@ def kickoff_with_fallback(build_crew):
     last_exc = None
     for i, model in enumerate(models):
         try:
-            return build_crew(model).kickoff()
+            return _kickoff_with_metrics(model, build_crew)
         except Exception as exc:
             last_exc = exc
-            wait = _retry_after_seconds(exc)
-            if wait is None:
+            # model_not_found switches immediately too (see
+            # _is_model_not_found_error) - but only ever waits out a cooldown
+            # for an actual rate limit, since no wait fixes a missing model.
+            if not (_is_rate_limit_error(exc) or _is_model_not_found_error(exc)):
                 raise
 
             is_last = i == len(models) - 1
             if not is_last:
+                reason = (
+                    "Rate limited" if _is_rate_limit_error(exc)
+                    else "Model unavailable"
+                )
                 logger.warning(
-                    "Rate limited on %s, switching to fallback model %s instead of waiting %.1fs",
-                    model, models[i + 1], wait,
+                    "%s on %s, switching to fallback model %s",
+                    reason, model, models[i + 1],
                 )
                 continue
+
+            # Every model in the chain is exhausted or unavailable. Only wait
+            # if this last failure is a rate limit that actually names a
+            # cooldown - if it's the "requested output exceeds the model's own
+            # per-minute cap" shape, or the model simply doesn't exist, no
+            # wait fixes that, so there's nothing left to do but report the
+            # failure.
+            if not _is_rate_limit_error(exc):
+                raise
+            wait = _retry_after_seconds(exc)
+            if wait is None:
+                raise
 
             wait = min(wait, _MAX_RETRY_WAIT_SECONDS) + 0.5
             logger.warning("All models rate limited, waiting %.1fs before one final retry", wait)
             time.sleep(wait)
-            return build_crew(model).kickoff()
+            return _kickoff_with_metrics(model, build_crew)
     raise last_exc

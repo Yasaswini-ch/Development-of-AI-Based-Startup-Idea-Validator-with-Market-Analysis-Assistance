@@ -3,8 +3,24 @@ import useCountUp from '../hooks/useCountUp'
 import { IconTrendingUp, IconUsers, IconShield, IconNewspaper, IconGlobe } from './icons'
 import MarketOpportunity from './MarketOpportunity'
 import CompetitorAnalysis from './CompetitorAnalysis'
+import WhiteSpaceAnalysis from './WhiteSpaceAnalysis'
+import SwotAnalysis from './SwotAnalysis'
+import MvpRecommendations from './MvpRecommendations'
+import GtmStrategy from './GtmStrategy'
+import ChatAdvisor from './ChatAdvisor'
+import ConfidenceDashboard from './ConfidenceDashboard'
+import ContradictionsBanner from './ContradictionsBanner'
+import ExperimentsActionPlan from './ExperimentsActionPlan'
+import { buildSourceMap } from '../lib/sources'
 
 const INITIAL_VISIBLE = 3
+const RESEARCH_ANGLES = [
+  'Market size & trends',
+  'Competitors',
+  'Industry news',
+  'Customer demand',
+  'How others solve this',
+]
 
 const ANGLE_ICONS = {
   'market size & trends': IconTrendingUp,
@@ -87,6 +103,11 @@ function AngleGroup({ angle, items }) {
         )}
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {items.length === 0 && (
+          <p className="rounded-xl border border-dashed border-border bg-panel p-4 text-sm text-muted sm:col-span-2 lg:col-span-3">
+            No reliable sources were returned for this research angle.
+          </p>
+        )}
         {visible.map((r, i) => (
           <ResultCard key={r.url || i} r={r} isTop={r.score === topScore} />
         ))}
@@ -97,15 +118,42 @@ function AngleGroup({ angle, items }) {
 
 const TABS = [
   { key: 'sources', label: 'Sources' },
-  { key: 'market', label: 'Market Opportunity' },
-  { key: 'competitors', label: 'Competitors' },
+  { key: 'market', label: 'Market & Competition' },
+  { key: 'opportunity', label: 'Opportunity & Risks' },
+  { key: 'build', label: 'Build & Launch' },
+  { key: 'experiments', label: 'Experiments & Action Plan' },
 ]
 
-export default function ValidationResults({ summary, results, marketOpportunity, competitors, errors }) {
+function SectionDivider({ label }) {
+  return (
+    <h3 className="mb-4 flex items-center gap-2 font-mono text-[11px] uppercase tracking-widest text-muted">
+      <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+      {label}
+    </h3>
+  )
+}
+
+export default function ValidationResults({
+  summary,
+  results,
+  marketOpportunity,
+  competitors,
+  whiteSpace,
+  swot,
+  mvp,
+  gtm,
+  confidence,
+  contradictions,
+  experiments,
+  actionPlan,
+  sessionId,
+  apiUrl,
+  errors,
+}) {
   const [activeTab, setActiveTab] = useState('sources')
 
   const groups = []
-  const order = []
+  const order = [...RESEARCH_ANGLES]
   for (const r of results) {
     const key = r.angle || 'Sources'
     if (!order.includes(key)) order.push(key)
@@ -114,13 +162,8 @@ export default function ValidationResults({ summary, results, marketOpportunity,
     groups.push({ angle: key, items: results.filter((r) => (r.angle || 'Sources') === key) })
   }
 
-  const scored = results.filter((r) => typeof r.score === 'number')
-  const avgScore = scored.length
-    ? scored.reduce((sum, r) => sum + r.score, 0) / scored.length
-    : null
-  const confidence = useCountUp(avgScore !== null ? Math.round(avgScore * 100) : 0, 800)
-
   const competitorCount = competitors?.competitors?.length ?? 0
+  const sourceMap = buildSourceMap(results)
 
   return (
     <div className="mt-6">
@@ -134,20 +177,23 @@ export default function ValidationResults({ summary, results, marketOpportunity,
           </div>
           <p className="mt-3 text-sm text-text leading-relaxed">{summary}</p>
         </div>
-        {avgScore !== null && (
-          <div className="shrink-0 border-l border-border pl-6 text-right">
-            <p className="font-serif text-4xl text-accent">{confidence}%</p>
-            <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Confidence</p>
-          </div>
-        )}
+      </div>
+
+      <div className="mt-6">
+        <ConfidenceDashboard data={confidence} />
+      </div>
+
+      <div className="mt-6">
+        <ContradictionsBanner data={contradictions} sourceMap={sourceMap} />
       </div>
 
       {/* Pill tab switcher, not the classic underline-tabs strip - the
           active tab gets its own raised pill instead of a line underneath. */}
-      <div className="mt-6 inline-flex gap-0.5 rounded-full bg-border p-1">
-        {TABS.map((t) => {
+      <div className="mt-6 max-w-full overflow-x-auto pb-1">
+        <div className="inline-flex min-w-max gap-0.5 rounded-full bg-border p-1">
+          {TABS.map((t) => {
           const active = activeTab === t.key
-          const count = t.key === 'sources' ? results.length : t.key === 'competitors' ? competitorCount : null
+          const count = t.key === 'sources' ? results.length : t.key === 'market' ? competitorCount : null
           return (
             <button
               key={t.key}
@@ -169,30 +215,75 @@ export default function ValidationResults({ summary, results, marketOpportunity,
               )}
             </button>
           )
-        })}
+          })}
+        </div>
       </div>
 
       <div className="mt-6">
         {activeTab === 'sources' && (
           <div className="space-y-8">
-            {groups.map((g) => (
-              <AngleGroup key={g.angle} angle={g.angle} items={g.items} />
-            ))}
+            {groups.length > 0 ? (
+              groups.map((g) => <AngleGroup key={g.angle} angle={g.angle} items={g.items} />)
+            ) : (
+              <p className="rounded-2xl border border-border bg-panel p-6 text-center text-sm text-muted">
+                No research sources were returned.
+              </p>
+            )}
           </div>
         )}
 
         {activeTab === 'market' && (
-          <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
-            <MarketOpportunity data={marketOpportunity} error={errors?.marketOpportunity} />
+          <div className="space-y-8">
+            <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+              <SectionDivider label="Market opportunity" />
+              <MarketOpportunity data={marketOpportunity} error={errors?.marketOpportunity} sourceMap={sourceMap} />
+            </div>
+            <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+              <SectionDivider label="Competitors" />
+              <CompetitorAnalysis data={competitors} error={errors?.competitors} />
+            </div>
           </div>
         )}
 
-        {activeTab === 'competitors' && (
+        {activeTab === 'opportunity' && (
+          <div className="space-y-8">
+            <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+              <SectionDivider label="White space" />
+              <WhiteSpaceAnalysis data={whiteSpace} />
+            </div>
+            <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+              <SectionDivider label="SWOT & risks" />
+              <SwotAnalysis data={swot} error={errors?.swot} sourceMap={sourceMap} />
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'build' && (
+          <div className="space-y-8">
+            <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+              <SectionDivider label="MVP recommendations" />
+              <MvpRecommendations data={mvp} error={errors?.mvp} sourceMap={sourceMap} />
+            </div>
+            <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+              <SectionDivider label="Go to market" />
+              <GtmStrategy data={gtm} error={errors?.gtm} sourceMap={sourceMap} />
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'experiments' && (
           <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
-            <CompetitorAnalysis data={competitors} error={errors?.competitors} />
+            <SectionDivider label="Experiments & action plan" />
+            <ExperimentsActionPlan
+              experiments={experiments}
+              actionPlan={actionPlan}
+              error={errors?.experiments}
+            />
           </div>
         )}
       </div>
+
+      {sessionId && <ChatAdvisor key={sessionId} sessionId={sessionId} apiUrl={apiUrl} />}
     </div>
   )
 }
