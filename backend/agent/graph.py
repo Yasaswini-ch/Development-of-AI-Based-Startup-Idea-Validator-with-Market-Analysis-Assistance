@@ -7,6 +7,7 @@ from langgraph.graph import END, START, StateGraph
 
 from . import retrieval
 from .competitor_agent import analyze_competitors
+from .contradiction_detector import detect_contradictions
 from .gtm_agent import analyze_gtm
 from .market_agent import MAX_SOURCES_IN_CONTEXT, analyze_market_opportunity
 from .mvp_agent import analyze_mvp
@@ -79,6 +80,9 @@ class PipelineState(TypedDict, total=False):
     swot: dict
     mvp: dict
     gtm: dict
+
+    # Track B: cross-artifact contradiction flags
+    contradictions: list
 
     # Errors
     error: str
@@ -538,6 +542,41 @@ def gtm_node(state: PipelineState) -> PipelineState:
 
 
 # --------------------------------------------------
+# TRACK B: CONTRADICTION DETECTOR
+# --------------------------------------------------
+
+def contradiction_detector_node(state: PipelineState) -> PipelineState:
+    """Runs after SWOT/MVP/GTM/Score so every artifact it cross-checks is
+    already in state. Same try/except-per-node pattern as the rest of this
+    file: a failure here writes "contradictions": None and records the
+    error, never erasing the sections already produced above it.
+    """
+    logger.info("[contradiction_detector] START")
+
+    if state.get("error"):
+        logger.warning("[contradiction_detector] Skipped because web search failed")
+        return state
+
+    try:
+        contradictions = detect_contradictions(
+            state.get("marketOpportunity"),
+            state.get("swot"),
+            state.get("mvp"),
+            state.get("gtm"),
+        )
+    except Exception as exc:
+        logger.exception("[contradiction_detector] FAILED")
+        return {
+            **state,
+            "contradictions": None,
+            "errors": {**state.get("errors", {}), "contradictions": _friendly_error_message(exc)},
+        }
+
+    logger.info("[contradiction_detector] COMPLETE - %d flagged", len(contradictions))
+    return {**state, "contradictions": contradictions}
+
+
+# --------------------------------------------------
 # TRACK A: CONFIDENCE DASHBOARD
 # --------------------------------------------------
 #
@@ -807,6 +846,13 @@ def build_pipeline():
     graph.add_node("mvp_recommendation", _timed("mvp_recommendation", mvp_node))
     graph.add_node("gtm_strategy", _timed("gtm_strategy", gtm_node))
 
+    # Track B: contradiction detector - runs after SWOT/MVP/GTM/Score so
+    # every artifact it cross-checks is already in state.
+    graph.add_node(
+        "contradiction_detector",
+        _timed("contradiction_detector", contradiction_detector_node),
+    )
+
     # Track A: confidence dashboard (source coverage, cross-source
     # agreement, direct-evidence ratio) - runs last so it can see every
     # strategy agent's sourceIds-bearing claims.
@@ -865,7 +911,8 @@ def build_pipeline():
     graph.add_edge("white_space", "swot_analysis")
     graph.add_edge("swot_analysis", "mvp_recommendation")
     graph.add_edge("mvp_recommendation", "gtm_strategy")
-    graph.add_edge("gtm_strategy", "confidence_dashboard")
+    graph.add_edge("gtm_strategy", "contradiction_detector")
+    graph.add_edge("contradiction_detector", "confidence_dashboard")
     graph.add_edge("confidence_dashboard", END)
 
     return graph.compile()
