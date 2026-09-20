@@ -107,6 +107,41 @@ class AsyncValidationTests(unittest.TestCase):
         call_args = send_email.call_args.args
         self.assertIn(status["sessionId"], call_args[3])
 
+    @patch("main.send_report_email", return_value=True)
+    @patch("main.pipeline.invoke", return_value=_fake_state(marketOpportunity={"marketSize": "text", "degraded": True}))
+    def test_fast_but_degraded_response_still_emails_when_requested(self, _invoke, send_email):
+        response = self.client.post(
+            "/validate",
+            json={"idea": "Idea", "email": "founder@example.com"},
+        )
+        self.assertEqual(response.status_code, 200)
+        send_email.assert_called_once()
+        call_args = send_email.call_args.args
+        self.assertIn(response.json()["sessionId"], call_args[3])
+
+    @patch("main.send_report_email", return_value=True)
+    @patch("main.pipeline.invoke", return_value=_fake_state())
+    def test_fast_and_clean_response_does_not_email(self, _invoke, send_email):
+        response = self.client.post(
+            "/validate",
+            json={"idea": "Idea", "email": "founder@example.com"},
+        )
+        self.assertEqual(response.status_code, 200)
+        send_email.assert_not_called()
+
+    @patch("main.send_report_email", return_value=True)
+    @patch(
+        "main.pipeline.invoke",
+        return_value=_fake_state(errors={"swot": "This analysis hit a temporary usage limit. Please try again in a moment."}),
+    )
+    def test_fast_response_with_section_error_still_emails(self, _invoke, send_email):
+        response = self.client.post(
+            "/validate",
+            json={"idea": "Idea", "email": "founder@example.com"},
+        )
+        self.assertEqual(response.status_code, 200)
+        send_email.assert_called_once()
+
     def test_slow_pipeline_without_email_stays_synchronous(self):
         def slow_invoke(_state):
             time.sleep(0.1)
@@ -177,6 +212,27 @@ class JobStoreTests(unittest.TestCase):
 
     def test_unknown_job_returns_none(self):
         self.assertIsNone(job_store.get_job("missing"))
+
+
+class ResponseIsPartialTests(unittest.TestCase):
+    def test_clean_response_is_not_partial(self):
+        self.assertFalse(main._response_is_partial(_fake_state()))
+
+    def test_degraded_section_is_partial(self):
+        response = _fake_state(marketOpportunity={"marketSize": "text", "degraded": True})
+        self.assertTrue(main._response_is_partial(response))
+
+    def test_section_error_is_partial(self):
+        response = _fake_state(errors={"gtm": "This analysis couldn't be completed for this request."})
+        self.assertTrue(main._response_is_partial(response))
+
+    def test_null_section_is_not_partial_on_its_own(self):
+        # A section can be None for reasons _response_is_partial doesn't
+        # need to guess at (e.g. web search itself failed, which is a
+        # top-level "error" state main.py handles separately) - only an
+        # explicit errors.<section> message or degraded:true counts here.
+        response = _fake_state(swot=None)
+        self.assertFalse(main._response_is_partial(response))
 
 
 class EmailDeliveryTests(unittest.TestCase):

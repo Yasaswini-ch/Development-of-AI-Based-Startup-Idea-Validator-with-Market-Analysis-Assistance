@@ -232,7 +232,29 @@ def _clear_rate_limits() -> None:
 # instead of holding the HTTP connection open, and emails the report when
 # the (still-running) pipeline finishes. Callers that don't supply an email
 # keep the original fully-synchronous behavior unchanged.
-_ASYNC_EMAIL_THRESHOLD_SECONDS = float(os.environ.get("VALIDATE_ASYNC_THRESHOLD_SECONDS", "25"))
+_ASYNC_EMAIL_THRESHOLD_SECONDS = float(os.environ.get("VALIDATE_ASYNC_THRESHOLD_SECONDS", "60"))
+
+# Sections that can independently degrade to a deterministic fallback or
+# fail outright - same set report_assembler.py's _degraded_sections/
+# _section_errors track for the canonical report, mirrored here since the
+# raw /validate response uses the same top-level key names but isn't
+# itself the canonical report shape.
+_DEGRADABLE_SECTIONS = ("marketOpportunity", "competitors", "whiteSpace", "swot", "mvp", "gtm")
+
+
+def _response_is_partial(response: dict) -> bool:
+    """True if any section failed outright (errors.<section> set) or fell
+    back to a deterministic result (degraded: true) - used to email the
+    report even on a fast (<60s) response, since "fast but partial" is
+    still worth flagging to someone who asked to be emailed, not just
+    "slow." Never true for a fully clean response.
+    """
+    if any((response.get("errors") or {}).values()):
+        return True
+    return any(
+        isinstance(response.get(section), dict) and response[section].get("degraded")
+        for section in _DEGRADABLE_SECTIONS
+    )
 
 
 # --------------------------------------------------
@@ -474,6 +496,12 @@ async def validate_idea(payload: ValidateRequest, request: Request):
         )
 
         session_id = _create_validation_session(payload, cached)
+
+        if payload.email and _response_is_partial(cached):
+            sent = send_report_email(payload.email, payload.idea, cached, _report_url(session_id))
+            if not sent:
+                logger.warning("Partial-result report email was not delivered for session %s", session_id)
+
         return {**cached, "sessionId": session_id}
 
     # ----------------------------------------------
@@ -525,6 +553,16 @@ async def validate_idea(payload: ValidateRequest, request: Request):
     # ----------------------------------------------
 
     session_id = _create_validation_session(payload, response)
+
+    if payload.email and _response_is_partial(response):
+        # Finished within the synchronous window, but part of it degraded
+        # or failed outright - email the complete (still-shown-in-browser)
+        # results anyway, same as the slow/async path, since "fast but
+        # partial" is still worth the report link, not just "slow."
+        sent = send_report_email(payload.email, payload.idea, response, _report_url(session_id))
+        if not sent:
+            logger.warning("Partial-result report email was not delivered for session %s", session_id)
+
     return {**response, "sessionId": session_id}
 
 
