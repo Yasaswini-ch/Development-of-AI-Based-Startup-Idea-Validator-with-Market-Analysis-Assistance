@@ -19,9 +19,19 @@
 In early iterations of Affinity, Competitor Discovery was executed by an LLM agent using CrewAI. Live load testing revealed that relying on LLMs for competitor extraction resulted in severe token quota exhaustion and frequent entity hallucinations (e.g. returning generic terms like "Software", "Platform", or outdated entities).
 
 [`backend/agent/competitor_agent.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/competitor_agent.py) solves this by using **local spaCy Named Entity Recognition (NER)** (`en_core_web_sm`). This non-LLM approach achieves:
-- **$0.00 API Token Cost** per competitor extraction.
-- **Zero Rate-Limit Overhead**, saving 100% of LLM quota for Market Opportunity analysis.
+- **$0.00 API Token Cost** for competitor *name identification*.
+- **Zero Rate-Limit Overhead** on the shared Groq quota, saving it for Market Opportunity/SWOT/MVP/GTM.
 - **Factual Grounding**, extracting company and product names directly from live search text.
+
+> **Correction:** name identification is still 100% local NER with no API cost, but
+> `_refine_with_gemini()` (added after this doc's "Verified & Operational" status was
+> set) optionally fills a genuine `"unknown"` price/featureBreadth gap using a single
+> Gemini call per validation run - a separate key/quota (`GEMINI_API_KEY`) from Groq,
+> so it still never competes for that budget, but it is a real, optional external API
+> call, not $0.00/zero-dependency for the grid fields specifically. Strictly grounded
+> in the same local snippet text the regex heuristic uses, and never overrides a value
+> the regex already found - see `competitor_agent.py`'s own docstrings for the exact
+> contract.
 
 ---
 
