@@ -42,10 +42,12 @@ authentication layer at all (see doc 19's corrected version). Both are rate-limi
 per IP (`EXPORT_PDF_RATE_LIMIT_PER_MINUTE`, default 10/minute) rather than gated by a
 token.
 
-A third, Milestone 4 endpoint also produces a PDF as a side effect: `POST
-/reports/{sessionId}/email` assembles the canonical report
-(`agent/report_assembler.py`), renders it through the same `pdf_exporter.py`, and
-emails it as an attachment via Resend rather than returning it directly.
+> **Correction:** `POST /reports/{sessionId}/email` no longer renders a PDF at all -
+> it assembles the canonical report (`agent/report_assembler.py`) and emails its
+> HTML/text bodies directly via SendGrid, with no attachment. The HTML/text bodies
+> already carry the full report content on their own; a PDF is still available, just
+> via a separate, direct-download path (`GET /validate/{sessionId}/pdf`, covered
+> below) rather than bundled into every email.
 
 ## 2. What the Generated PDF Actually Contains
 

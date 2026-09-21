@@ -65,7 +65,7 @@ flowchart TD
         Groq["Groq Cloud LLM API (qwen3.8-27b + fallbacks)"]
         Tavily["Tavily Search API"]
         DDG["DuckDuckGo Search (Fallback)"]
-        Resend["Resend Email API"]
+        SendGrid["SendGrid Email API"]
 
         MarketModule --> Groq
         SwotModule --> Groq
@@ -73,7 +73,7 @@ flowchart TD
         GtmModule --> Groq
         SearchModule --> Tavily
         SearchModule -.Fallback.-> DDG
-        ReportModule -.email.-> Resend
+        ReportModule -.email.-> SendGrid
     end
 
     UI -->|POST /validate| Main

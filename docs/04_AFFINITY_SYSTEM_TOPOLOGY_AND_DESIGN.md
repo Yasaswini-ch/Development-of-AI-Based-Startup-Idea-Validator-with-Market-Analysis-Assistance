@@ -65,7 +65,7 @@ flowchart TD
         Groq["Groq Cloud LLM API (qwen3.8-27b + fallbacks)"]
         Tavily["Tavily Web Search API"]
         DDG["DuckDuckGo Search (Fallback)"]
-        Resend["Resend Email API"]
+        SendGrid["SendGrid Email API"]
 
         MarketAgent --> Groq
         SwotAgent --> Groq
@@ -73,7 +73,7 @@ flowchart TD
         GtmAgent --> Groq
         Retrieval --> Tavily
         Retrieval -.Fallback.-> DDG
-        ReportAssembler -.email.-> Resend
+        ReportAssembler -.email.-> SendGrid
     end
 
     UI -->|POST /validate| Gateway
@@ -104,9 +104,9 @@ flowchart TD
 - **Role:** Backs validation sessions, background jobs (async/email path), and the response cache — replacing what used to be process-local dicts that didn't survive a restart or work across more than one backend instance.
 
 ### Tier 5: Cloud Services & External APIs
-- **Groq Cloud API:** Provides inference for the Market Opportunity, SWOT, MVP, and GTM agents (`qwen/qwen3.8-27b` primary, two same-provider fallback models).
+- **Groq Cloud API:** Provides inference for the Market Opportunity, SWOT, MVP, and GTM agents (`qwen/qwen3.8-27b` primary, two same-provider fallback models, then `gemini/gemini-3.6-flash` as a genuinely separate provider/quota fallback tier).
 - **Tavily API & Fallbacks:** Provides live search data across 5 research angles.
-- **Resend API:** Delivers the canonical report as an emailed PDF attachment (`POST /reports/{sessionId}/email`).
+- **SendGrid API:** Emails the canonical report as an HTML/text body, no PDF attachment (`POST /reports/{sessionId}/email`) - `GET /validate/{sessionId}/pdf` covers direct PDF download separately.
 
 ---
 
