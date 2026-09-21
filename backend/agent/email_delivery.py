@@ -1,33 +1,44 @@
 """Email delivery for validation reports that take longer than the
 synchronous request threshold to finish (see main.py's async path).
 
-Sends via Gmail's SMTP server (smtplib, standard library - no new
-dependency) authenticated as GMAIL_SMTP_USER using a Gmail App Password
-(GMAIL_SMTP_APP_PASSWORD; requires 2-Step Verification on that account,
-generated at myaccount.google.com -> Security -> App Passwords). Switched
-from Resend's HTTP API: Resend's free/sandbox sender can only deliver to
-the account owner's own address until a domain is verified, and this
-project has no domain - Gmail SMTP has no such restriction and can send
-to any recipient, using an account already on hand instead of a $ domain
-purchase. If either env var is missing, send_report_email logs a warning
-and returns False instead of raising, the same "degrade, don't crash"
-pattern used everywhere else a credential is optional (see llm.py,
-tools.py).
+Sends via SendGrid's HTTP API (urllib, standard library - no new
+dependency, same pattern as tools.py's other HTTP calls), authenticated
+with SENDGRID_API_KEY and sent from SENDGRID_FROM_EMAIL (verified once via
+SendGrid's "Single Sender Verification" - no domain needed, just click the
+confirmation link SendGrid emails to that address). Once verified, that
+single sender can email any recipient.
+
+Second transport tried here, in order: Resend's HTTP API (dropped - its
+free/sandbox sender can only deliver to the account owner's own address
+until a domain is verified, and this project has no domain), then Gmail
+SMTP (dropped - confirmed live that Render's free-tier web services block
+outbound SMTP ports 587/465/25 entirely, "OSError: [Errno 101] Network is
+unreachable", a network-level restriction with no code-side fix). SendGrid
+over HTTPS (port 443) hits neither problem: not domain-gated for arbitrary
+recipients, and not a port SMTP-blocking hosts filter.
+
+If either env var is missing, send_report_email logs a warning and returns
+False instead of raising, the same "degrade, don't crash" pattern used
+everywhere else a credential is optional (see llm.py, tools.py).
 """
 
+import json
 import logging
 import os
 import re
-import smtplib
-from email.mime.application import MIMEApplication
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+import urllib.request
 
 logger = logging.getLogger(__name__)
 
 _EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-_SMTP_HOST = "smtp.gmail.com"
-_SMTP_PORT = 587
+_SENDGRID_ENDPOINT = "https://api.sendgrid.com/v3/mail/send"
+
+# Same lesson as email_delivery.py's earlier Resend integration and
+# tools.py's Hacker News call: a bare urllib.request default User-Agent
+# ("Python-urllib/3.x") gets blocked as a bot signature by some APIs'
+# Cloudflare fronting - set a real one preemptively rather than
+# rediscovering the same 403 again.
+_REQUEST_HEADERS_BASE = {"User-Agent": "StartupIdeaValidator/1.0", "Content-Type": "application/json"}
 
 
 def is_valid_email(address: str) -> bool:
@@ -392,58 +403,50 @@ def _build_report_text(idea: str, report: dict, report_url: str | None = None) -
     return "\n".join(lines)
 
 
-def _send_via_gmail_smtp(
-    to_email: str,
-    subject: str,
-    html: str,
-    text: str | None = None,
-    attachment_bytes: bytes | None = None,
-    attachment_filename: str | None = None,
-) -> bool:
-    """Shared SMTP transport for both send_report_email and
+def _send_via_sendgrid(to_email: str, subject: str, html: str, text: str | None = None) -> bool:
+    """Shared HTTP transport for both send_report_email and
     send_canonical_report_email below - never raises, returns False on any
     missing credential or delivery failure so a failed/misconfigured email
     is never confused with a failure to assemble the report itself (same
-    contract both callers already documented under the old Resend
-    transport).
+    contract both callers already documented under the earlier Resend/
+    Gmail SMTP transports).
     """
-    user = os.environ.get("GMAIL_SMTP_USER")
-    app_password = os.environ.get("GMAIL_SMTP_APP_PASSWORD")
-    if not user or not app_password:
-        logger.warning("GMAIL_SMTP_USER/GMAIL_SMTP_APP_PASSWORD not set - skipping report email to %s", to_email)
+    api_key = os.environ.get("SENDGRID_API_KEY")
+    from_email = os.environ.get("SENDGRID_FROM_EMAIL")
+    if not api_key or not from_email:
+        logger.warning("SENDGRID_API_KEY/SENDGRID_FROM_EMAIL not set - skipping report email to %s", to_email)
         return False
 
     if not is_valid_email(to_email):
         logger.warning("Refusing to send report email to invalid address")
         return False
 
-    message = MIMEMultipart("mixed")
-    message["From"] = f"Affinity <{user}>"
-    message["To"] = to_email
-    message["Subject"] = subject
+    payload = json.dumps(
+        {
+            "personalizations": [{"to": [{"email": to_email}]}],
+            "from": {"email": from_email, "name": "Affinity"},
+            "subject": subject,
+            "content": [
+                {"type": "text/plain", "value": text or " "},
+                {"type": "text/html", "value": html},
+            ],
+        }
+    ).encode()
 
-    body = MIMEMultipart("alternative")
-    if text:
-        body.attach(MIMEText(text, "plain"))
-    body.attach(MIMEText(html, "html"))
-    message.attach(body)
-
-    if attachment_bytes:
-        attachment = MIMEApplication(attachment_bytes, Name=attachment_filename or "report.pdf")
-        attachment["Content-Disposition"] = f'attachment; filename="{attachment_filename or "report.pdf"}"'
-        message.attach(attachment)
-
+    request = urllib.request.Request(
+        _SENDGRID_ENDPOINT,
+        data=payload,
+        method="POST",
+        headers={**_REQUEST_HEADERS_BASE, "Authorization": f"Bearer {api_key}"},
+    )
     try:
-        with smtplib.SMTP(_SMTP_HOST, _SMTP_PORT, timeout=15) as server:
-            server.starttls()
-            server.login(user, app_password)
-            server.sendmail(user, [to_email], message.as_string())
-        return True
+        with urllib.request.urlopen(request, timeout=15) as resp:
+            return 200 <= resp.status < 300
     except Exception:
         # Never log the recipient address or report contents (see
         # docs/unique-features-plan.md §7 email rules) - just that a send
         # failed.
-        logger.exception("Failed to send report email via Gmail SMTP")
+        logger.exception("Failed to send report email via SendGrid")
         return False
 
 
@@ -476,7 +479,7 @@ def send_canonical_report_email(to_email: str, report: dict, report_url: str | N
     # adapt rather than duplicate the HTML-building logic for this shape.
     html_input = {**report, "summary": idea_summary.get("summary", ""), "errors": report.get("sectionErrors")}
 
-    return _send_via_gmail_smtp(
+    return _send_via_sendgrid(
         to_email,
         "Your Affinity validation report is ready",
         _build_report_html(idea, html_input, report_url),
@@ -486,7 +489,7 @@ def send_canonical_report_email(to_email: str, report: dict, report_url: str | N
 
 def send_report_email(to_email: str, idea: str, response: dict, report_url: str | None = None) -> bool:
     """Send the finished validation report by email. Returns True only on a
-    confirmed SMTP acceptance; False on any missing config or delivery
+    confirmed SendGrid acceptance; False on any missing config or delivery
     failure - callers should log/store that outcome, not raise on it, since
     a failed email must never take down an otherwise-successful validation
     run (the result is still available in the job store either way).
@@ -495,7 +498,7 @@ def send_report_email(to_email: str, idea: str, response: dict, report_url: str 
     send_canonical_report_email's docstring for why this is the closest
     thing to "history" this app has without a real login system.
     """
-    return _send_via_gmail_smtp(
+    return _send_via_sendgrid(
         to_email,
         "Your Affinity validation report is ready",
         _build_report_html(idea, response, report_url),
