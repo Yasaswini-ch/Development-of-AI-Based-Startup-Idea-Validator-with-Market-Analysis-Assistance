@@ -320,6 +320,40 @@ class EmailReportRequest(BaseModel):
         return value
 
 
+_MAX_COMPARE_SESSIONS = 5
+
+
+class CompareReportsRequest(BaseModel):
+    """Schema for POST /reports/compare (Multi-Idea Comparison Matrix,
+    doc 21). No session-listing endpoint exists (no accounts to scope one
+    to) - the caller supplies sessionIds it already has (e.g. from its own
+    locally-kept history of past validations), the same way
+    GET /reports/{sessionId} already requires knowing the id upfront.
+    """
+
+    sessionIds: list[str]
+
+    @field_validator("sessionIds")
+    @classmethod
+    def _validate_session_ids(cls, value: list[str]) -> list[str]:
+        cleaned = [s.strip() for s in value if s and s.strip()]
+        if len(cleaned) < 2:
+            raise ValueError("at least 2 sessionIds are required to compare")
+        if len(cleaned) > _MAX_COMPARE_SESSIONS:
+            raise ValueError(f"at most {_MAX_COMPARE_SESSIONS} sessionIds can be compared at once")
+        # Dedupe while preserving order - comparing an id against itself
+        # twice is never a real request, just a client-side mistake.
+        seen = set()
+        deduped = []
+        for session_id in cleaned:
+            if session_id not in seen:
+                seen.add(session_id)
+                deduped.append(session_id)
+        if len(deduped) < 2:
+            raise ValueError("at least 2 distinct sessionIds are required to compare")
+        return deduped
+
+
 def _create_validation_session(payload: ValidateRequest, response: dict) -> str:
     return create_session(
         {
@@ -720,6 +754,48 @@ def get_report(session_id: str, request: Request):
         )
 
     return assemble_report(session_id, session["context"])
+
+
+@app.post("/reports/compare")
+def compare_reports(payload: CompareReportsRequest, request: Request):
+    """Multi-Idea Comparison Matrix (doc 21) - bundles each requested
+    session's canonical report together so a caller can render them side
+    by side, without a round trip per session. Never reruns retrieval or
+    any agent, same as GET /reports/{sessionId} - this only reads out
+    what each session's pipeline run already produced.
+
+    No session-listing endpoint exists (no accounts to scope one to - see
+    doc 19's corrected version), so the caller already has to know which
+    sessionIds it wants compared; this just fetches and bundles them.
+
+    A session_id that's expired or never existed is reported in `missing`
+    rather than failing the whole request - a partial comparison (the
+    sessions that ARE still valid) is still useful, the same "don't let
+    one bad input erase everything else" principle the rest of this
+    pipeline follows for partial failures.
+    """
+    if _is_rate_limited(f"reports-compare:{_client_ip(request)}", _EXPORT_PDF_RATE_LIMIT):
+        return _rate_limit_response("Too many report requests. Please wait a minute and try again.")
+
+    reports = []
+    missing = []
+    for session_id in payload.sessionIds:
+        session = get_session(session_id)
+        if not session:
+            missing.append(session_id)
+            continue
+        reports.append(assemble_report(session_id, session["context"]))
+
+    if len(reports) < 2:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": "Fewer than 2 of the given sessions were found or unexpired.",
+                "missing": missing,
+            },
+        )
+
+    return {"reports": reports, "missing": missing}
 
 
 @app.post("/reports/{session_id}/email")

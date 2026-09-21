@@ -14,7 +14,7 @@ from sqlalchemy import delete, select
 
 from .db import get_engine, now, sessions_table
 
-_SESSION_TTL_SECONDS = 2 * 60 * 60
+_SESSION_TTL_SECONDS = 7 * 24 * 60 * 60
 _MAX_SESSIONS = 200
 _MAX_TURNS = 12
 _CHAT_WINDOW_SECONDS = 60
