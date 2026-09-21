@@ -6,15 +6,21 @@ from typing import TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from . import retrieval
+from .action_plan import generate_action_plan
 from .competitor_agent import analyze_competitors
 from .contradiction_detector import detect_contradictions
+from .experiment_generator import generate_experiments
 from .gtm_agent import analyze_gtm
-from .market_agent import MAX_SOURCES_IN_CONTEXT, analyze_market_opportunity
+from .market_agent import (
+    MAX_SOURCES_IN_CONTEXT,
+    analyze_market_opportunity,
+)
 from .mvp_agent import analyze_mvp
 from .opportunity_score import calculate_opportunity_score
 from .structured_output import compact_sources
 from .swot_agent import analyze_swot
 from .white_space import analyze_white_space
+
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 def _friendly_error_message(exc: Exception) -> str:
     """Convert internal exceptions into user-friendly error messages."""
+
     text = str(exc)
 
     if "RateLimitError" in text or "rate_limit" in text:
@@ -43,7 +50,10 @@ def _friendly_error_message(exc: Exception) -> str:
 # SUMMARY
 # ============================================================
 
-def _build_summary(idea: str, results: list) -> str:
+def _build_summary(
+    idea: str,
+    results: list,
+) -> str:
     """Build a summary directly from web-search results."""
 
     if not results:
@@ -71,7 +81,11 @@ def _build_summary(idea: str, results: list) -> str:
 # ============================================================
 
 class PipelineState(TypedDict, total=False):
+
+    # --------------------------------------------------------
     # User input
+    # --------------------------------------------------------
+
     idea: str
     targetCustomer: str
     problem: str
@@ -80,31 +94,62 @@ class PipelineState(TypedDict, total=False):
     budget: str
     stage: str
 
+    # --------------------------------------------------------
     # Search
+    # --------------------------------------------------------
+
     summary: str
     results: list
 
+    # --------------------------------------------------------
     # Cross-source confidence
+    # --------------------------------------------------------
+
     confidence: dict
 
+    # --------------------------------------------------------
     # Market analysis
+    # --------------------------------------------------------
+
     marketOpportunity: dict
 
+    # --------------------------------------------------------
     # Competitor analysis
+    # --------------------------------------------------------
+
     competitors: dict
 
+    # --------------------------------------------------------
     # White-space analysis
+    # --------------------------------------------------------
+
     whiteSpace: dict
 
+    # --------------------------------------------------------
     # Strategy artifacts
+    # --------------------------------------------------------
+
     swot: dict
     mvp: dict
     gtm: dict
 
+    # --------------------------------------------------------
+    # TRACK C
+    # --------------------------------------------------------
+
+    experiments: list
+    actionPlan: dict
+
+    # --------------------------------------------------------
     # Contradictions
+    # --------------------------------------------------------
+
     contradictions: list
 
+    # --------------------------------------------------------
     # Errors
+    # --------------------------------------------------------
+
     error: str
     errors: dict
 
@@ -113,14 +158,9 @@ class PipelineState(TypedDict, total=False):
 # MILESTONE 1: WEB SEARCH
 # ============================================================
 
-def web_search_node(state: PipelineState) -> PipelineState:
-    """
-    Collect real web-search results.
-
-    IMPORTANT:
-    industry and location are explicitly forwarded to retrieval.collect()
-    so retrieval can create idea-specific queries.
-    """
+def web_search_node(
+    state: PipelineState,
+) -> PipelineState:
 
     logger.info("[web_search] START")
 
@@ -133,18 +173,15 @@ def web_search_node(state: PipelineState) -> PipelineState:
     logger.info(
         "[web_search] INPUT | idea=%s | targetCustomer=%s | "
         "problem=%s | industry=%s | location=%s",
-        idea[:150],
+        idea,
         target_customer,
-        problem[:150],
+        problem,
         industry,
         location,
     )
 
     try:
-        # ----------------------------------------------------
-        # IMPORTANT FIX
-        # Pass ALL relevant fields to retrieval.
-        # ----------------------------------------------------
+
         results = retrieval.collect(
             idea=idea,
             target_customer=target_customer,
@@ -153,199 +190,80 @@ def web_search_node(state: PipelineState) -> PipelineState:
             location=location,
         )
 
-    except Exception as exc:
-        logger.exception("[web_search] FAILED")
-
-        return {
-            **state,
-            "error": str(exc),
-        }
-
-    logger.info(
-        "[web_search] COMPLETE - %d results",
-        len(results),
-    )
-
-    # --------------------------------------------------------
-    # LOG ACTUAL SEARCH QUERIES
-    # --------------------------------------------------------
-    #
-    # This is useful for debugging.
-    # If old queries such as:
-    #
-    # "platform recommendations market"
-    #
-    # appear here, then another retrieval function is being used.
-    #
-    # --------------------------------------------------------
-
-    for index, result in enumerate(results, start=1):
-
-        if not isinstance(result, dict):
-            continue
+        summary = _build_summary(
+            idea,
+            results,
+        )
 
         logger.info(
-            "[web_search] RESULT #%d | angle=%s | query=%s | "
-            "score=%s | title=%s",
-            index,
-            result.get("angle"),
-            result.get("query"),
-            result.get("score"),
-            result.get("title"),
-        )
-
-    return {
-        **state,
-        "summary": _build_summary(idea, results),
-        "results": results,
-    }
-
-
-# ============================================================
-# CROSS-SOURCE CONFIDENCE
-# ============================================================
-
-def confidence_node(state: PipelineState) -> PipelineState:
-    """
-    Calculate cross-source confidence from relevance scores.
-    """
-
-    logger.info("[confidence] START")
-
-    if state.get("error"):
-        logger.warning(
-            "[confidence] Skipped because web search failed"
-        )
-        return state
-
-    results = state.get("results", [])
-
-    if not results:
-        logger.warning(
-            "[confidence] No search results available"
+            "[web_search] COMPLETE - %d sources",
+            len(results),
         )
 
         return {
             **state,
-            "confidence": {
-                "agreeingSources": 0,
-                "totalSources": 0,
-                "percentage": 0,
-                "label": "0/0 sources agree",
+            "summary": summary,
+            "results": results,
+        }
+
+    except Exception as exc:
+
+        logger.exception(
+            "[web_search] FAILED"
+        )
+
+        return {
+            **state,
+            "summary": _build_summary(
+                idea,
+                [],
+            ),
+            "results": [],
+            "error": str(exc),
+            "errors": {
+                **state.get("errors", {}),
+                "webSearch": _friendly_error_message(exc),
             },
         }
 
-    # --------------------------------------------------------
-    # Group by angle
-    # --------------------------------------------------------
 
-    angles = {}
+# ============================================================
+# CONFIDENCE INDICATOR
+# ============================================================
 
-    for result in results:
+def confidence_node(
+    state: PipelineState,
+) -> PipelineState:
 
-        if not isinstance(result, dict):
-            continue
-
-        angle = result.get("angle", "Sources")
-
-        if angle not in angles:
-            angles[angle] = []
-
-        angles[angle].append(result)
-
-    # --------------------------------------------------------
-    # Per-angle confidence
-    # --------------------------------------------------------
-
-    per_angle = {}
-
-    for angle, items in angles.items():
-
-        scored_items = [
-            item
-            for item in items
-            if isinstance(item.get("score"), (int, float))
-        ]
-
-        total_sources = len(items)
-
-        if not scored_items:
-
-            per_angle[angle] = {
-                "agreeingSources": 0,
-                "totalSources": total_sources,
-                "percentage": 0,
-                "label": f"0/{total_sources} sources agree",
-            }
-
-            continue
-
-        agreeing_sources = sum(
-            1
-            for item in scored_items
-            if item.get("score", 0) >= 0.5
-        )
-
-        scored_total = len(scored_items)
-
-        percentage = round(
-            (agreeing_sources / scored_total) * 100
-        )
-
-        per_angle[angle] = {
-            "agreeingSources": agreeing_sources,
-            "totalSources": scored_total,
-            "percentage": percentage,
-            "label": (
-                f"{agreeing_sources}/"
-                f"{scored_total} sources agree"
-            ),
-        }
-
-    # --------------------------------------------------------
-    # Overall confidence
-    # --------------------------------------------------------
-
-    scored_results = [
-        result
-        for result in results
-        if isinstance(result.get("score"), (int, float))
-    ]
-
-    total_scored = len(scored_results)
-
-    agreeing_total = sum(
-        1
-        for result in scored_results
-        if result.get("score", 0) >= 0.5
+    logger.info(
+        "[confidence_indicator] START"
     )
 
-    if total_scored:
-        overall_percentage = round(
-            (agreeing_total / total_scored) * 100
-        )
-    else:
-        overall_percentage = 0
+    results = state.get(
+        "results",
+        [],
+    )
 
     confidence = {
-        "agreeingSources": agreeing_total,
-        "totalSources": total_scored,
-        "percentage": overall_percentage,
-        "label": (
-            f"{agreeing_total}/"
-            f"{total_scored} sources agree"
+        "sourceCount": len(results),
+        "sourceCoverage": (
+            100 if results else 0
         ),
-        "perAngle": per_angle,
     }
 
     logger.info(
-        "[confidence] COMPLETE - %s",
-        confidence["label"],
+        "[confidence_indicator] COMPLETE"
     )
 
     return {
         **state,
-        "confidence": confidence,
+        "confidence": {
+            **(
+                state.get("confidence")
+                or {}
+            ),
+            **confidence,
+        },
     }
 
 
@@ -353,21 +271,42 @@ def confidence_node(state: PipelineState) -> PipelineState:
 # MARKET OPPORTUNITY
 # ============================================================
 
-def market_opportunity_node(state: PipelineState) -> PipelineState:
-    """Market Opportunity & Customer Segmentation Analysis."""
+def market_opportunity_node(
+    state: PipelineState,
+) -> PipelineState:
 
-    logger.info("[market_opportunity] START")
+    logger.info(
+        "[market_opportunity] START"
+    )
 
     if state.get("error"):
+
         logger.warning(
-            "[market_opportunity] Skipped because web search failed"
+            "[market_opportunity] "
+            "Skipped because web search failed"
         )
+
         return state
 
-    idea = state.get("idea", "")
-    target_customer = state.get("targetCustomer", "")
-    problem = state.get("problem", "")
-    results = state.get("results", [])
+    idea = state.get(
+        "idea",
+        "",
+    )
+
+    target_customer = state.get(
+        "targetCustomer",
+        "",
+    )
+
+    problem = state.get(
+        "problem",
+        "",
+    )
+
+    results = state.get(
+        "results",
+        [],
+    )
 
     try:
 
@@ -409,21 +348,42 @@ def market_opportunity_node(state: PipelineState) -> PipelineState:
 # COMPETITOR DISCOVERY
 # ============================================================
 
-def competitor_discovery_node(state: PipelineState) -> PipelineState:
-    """Competitor Discovery & Comparison Agent."""
+def competitor_discovery_node(
+    state: PipelineState,
+) -> PipelineState:
 
-    logger.info("[competitor_discovery] START")
+    logger.info(
+        "[competitor_discovery] START"
+    )
 
     if state.get("error"):
+
         logger.warning(
-            "[competitor_discovery] Skipped because web search failed"
+            "[competitor_discovery] "
+            "Skipped because web search failed"
         )
+
         return state
 
-    idea = state.get("idea", "")
-    target_customer = state.get("targetCustomer", "")
-    problem = state.get("problem", "")
-    results = state.get("results", [])
+    idea = state.get(
+        "idea",
+        "",
+    )
+
+    target_customer = state.get(
+        "targetCustomer",
+        "",
+    )
+
+    problem = state.get(
+        "problem",
+        "",
+    )
+
+    results = state.get(
+        "results",
+        [],
+    )
 
     try:
 
@@ -465,21 +425,21 @@ def competitor_discovery_node(state: PipelineState) -> PipelineState:
 # OPPORTUNITY SCORE
 # ============================================================
 
-def opportunity_score_node(state: PipelineState) -> PipelineState:
-    """
-    Calculate Opportunity Score using:
+def opportunity_score_node(
+    state: PipelineState,
+) -> PipelineState:
 
-    - Market Size
-    - Market Growth / Trends
-    - Competitor Density
-    """
-
-    logger.info("[opportunity_score] START")
+    logger.info(
+        "[opportunity_score] START"
+    )
 
     if state.get("error"):
+
         logger.warning(
-            "[opportunity_score] Skipped because web search failed"
+            "[opportunity_score] "
+            "Skipped because web search failed"
         )
+
         return state
 
     market_opportunity = state.get(
@@ -492,14 +452,14 @@ def opportunity_score_node(state: PipelineState) -> PipelineState:
 
     results = state.get(
         "results",
-        []
+        [],
     )
 
     if market_opportunity is None:
 
         logger.warning(
-            "[opportunity_score] Skipped because "
-            "marketOpportunity is None"
+            "[opportunity_score] "
+            "Skipped because marketOpportunity is None"
         )
 
         return state
@@ -512,7 +472,9 @@ def opportunity_score_node(state: PipelineState) -> PipelineState:
             results,
         )
 
-        market_opportunity["opportunityScore"] = score
+        market_opportunity[
+            "opportunityScore"
+        ] = score
 
         logger.info(
             "[opportunity_score] COMPLETE - score=%s",
@@ -525,7 +487,9 @@ def opportunity_score_node(state: PipelineState) -> PipelineState:
             "[opportunity_score] FAILED"
         )
 
-        market_opportunity["opportunityScore"] = 0
+        market_opportunity[
+            "opportunityScore"
+        ] = 0
 
     return {
         **state,
@@ -537,25 +501,36 @@ def opportunity_score_node(state: PipelineState) -> PipelineState:
 # WHITE SPACE
 # ============================================================
 
-def white_space_node(state: PipelineState) -> PipelineState:
-    """
-    Identify opportunity gaps using existing pipeline artifacts.
-    """
+def white_space_node(
+    state: PipelineState,
+) -> PipelineState:
 
-    logger.info("[white_space] START")
+    logger.info(
+        "[white_space] START"
+    )
 
     if state.get("error"):
+
         logger.warning(
-            "[white_space] Skipped because web search failed"
+            "[white_space] "
+            "Skipped because web search failed"
         )
+
         return state
 
     try:
 
         white_space = analyze_white_space(
-            state.get("marketOpportunity"),
-            state.get("competitors"),
-            state.get("results", []),
+            state.get(
+                "marketOpportunity"
+            ),
+            state.get(
+                "competitors"
+            ),
+            state.get(
+                "results",
+                [],
+            ),
         )
 
     except Exception as exc:
@@ -589,9 +564,13 @@ def white_space_node(state: PipelineState) -> PipelineState:
 # SWOT
 # ============================================================
 
-def swot_node(state: PipelineState) -> PipelineState:
+def swot_node(
+    state: PipelineState,
+) -> PipelineState:
 
-    logger.info("[swot] START")
+    logger.info(
+        "[swot] START"
+    )
 
     if state.get("error"):
         return state
@@ -599,16 +578,30 @@ def swot_node(state: PipelineState) -> PipelineState:
     try:
 
         value = analyze_swot(
-            state.get("idea", ""),
-            state.get("marketOpportunity"),
-            state.get("competitors"),
-            state.get("whiteSpace"),
-            state.get("results", []),
+            state.get(
+                "idea",
+                "",
+            ),
+            state.get(
+                "marketOpportunity"
+            ),
+            state.get(
+                "competitors"
+            ),
+            state.get(
+                "whiteSpace"
+            ),
+            state.get(
+                "results",
+                [],
+            ),
         )
 
     except Exception as exc:
 
-        logger.exception("[swot] FAILED")
+        logger.exception(
+            "[swot] FAILED"
+        )
 
         return {
             **state,
@@ -619,7 +612,9 @@ def swot_node(state: PipelineState) -> PipelineState:
             },
         }
 
-    logger.info("[swot] COMPLETE")
+    logger.info(
+        "[swot] COMPLETE"
+    )
 
     return {
         **state,
@@ -631,9 +626,13 @@ def swot_node(state: PipelineState) -> PipelineState:
 # MVP
 # ============================================================
 
-def mvp_node(state: PipelineState) -> PipelineState:
+def mvp_node(
+    state: PipelineState,
+) -> PipelineState:
 
-    logger.info("[mvp] START")
+    logger.info(
+        "[mvp] START"
+    )
 
     if state.get("error"):
         return state
@@ -641,16 +640,31 @@ def mvp_node(state: PipelineState) -> PipelineState:
     try:
 
         value = analyze_mvp(
-            state.get("idea", ""),
-            state.get("problem", ""),
-            state.get("swot"),
-            state.get("marketOpportunity"),
-            state.get("results", []),
+            state.get(
+                "idea",
+                "",
+            ),
+            state.get(
+                "problem",
+                "",
+            ),
+            state.get(
+                "swot"
+            ),
+            state.get(
+                "marketOpportunity"
+            ),
+            state.get(
+                "results",
+                [],
+            ),
         )
 
     except Exception as exc:
 
-        logger.exception("[mvp] FAILED")
+        logger.exception(
+            "[mvp] FAILED"
+        )
 
         return {
             **state,
@@ -661,7 +675,9 @@ def mvp_node(state: PipelineState) -> PipelineState:
             },
         }
 
-    logger.info("[mvp] COMPLETE")
+    logger.info(
+        "[mvp] COMPLETE"
+    )
 
     return {
         **state,
@@ -673,9 +689,13 @@ def mvp_node(state: PipelineState) -> PipelineState:
 # GTM
 # ============================================================
 
-def gtm_node(state: PipelineState) -> PipelineState:
+def gtm_node(
+    state: PipelineState,
+) -> PipelineState:
 
-    logger.info("[gtm] START")
+    logger.info(
+        "[gtm] START"
+    )
 
     if state.get("error"):
         return state
@@ -683,17 +703,34 @@ def gtm_node(state: PipelineState) -> PipelineState:
     try:
 
         value = analyze_gtm(
-            state.get("idea", ""),
-            state.get("targetCustomer", ""),
-            state.get("marketOpportunity"),
-            state.get("competitors"),
-            state.get("swot"),
-            state.get("results", []),
+            state.get(
+                "idea",
+                "",
+            ),
+            state.get(
+                "targetCustomer",
+                "",
+            ),
+            state.get(
+                "marketOpportunity"
+            ),
+            state.get(
+                "competitors"
+            ),
+            state.get(
+                "swot"
+            ),
+            state.get(
+                "results",
+                [],
+            ),
         )
 
     except Exception as exc:
 
-        logger.exception("[gtm] FAILED")
+        logger.exception(
+            "[gtm] FAILED"
+        )
 
         return {
             **state,
@@ -704,12 +741,175 @@ def gtm_node(state: PipelineState) -> PipelineState:
             },
         }
 
-    logger.info("[gtm] COMPLETE")
+    logger.info(
+        "[gtm] COMPLETE"
+    )
 
     return {
         **state,
         "gtm": value,
     }
+
+
+# ============================================================
+# TRACK C - EXPERIMENT GENERATOR
+# ============================================================
+
+def experiment_generator_node(
+    state: PipelineState,
+) -> PipelineState:
+
+    logger.info(
+        "[experiment_generator] START"
+    )
+
+    if state.get("error"):
+
+        logger.warning(
+            "[experiment_generator] "
+            "Skipped because web search failed"
+        )
+
+        return state
+
+    try:
+
+        swot = state.get(
+            "swot"
+        ) or {}
+
+        market = state.get(
+            "marketOpportunity"
+        ) or {}
+
+        mvp = state.get(
+            "mvp"
+        ) or {}
+
+        risks = (
+            swot.get(
+                "risks"
+            )
+            or []
+        )
+
+        segments = (
+            market.get(
+                "segments"
+            )
+            or []
+        )
+
+        mvp_features = (
+            mvp.get(
+                "features"
+            )
+            or []
+        )
+
+        experiments = generate_experiments(
+            risks=risks,
+            segments=segments,
+            mvp_features=mvp_features,
+        )
+
+        logger.info(
+            "[experiment_generator] COMPLETE - %d experiments",
+            len(experiments),
+        )
+
+        return {
+            **state,
+            "experiments": experiments,
+        }
+
+    except Exception as exc:
+
+        logger.exception(
+            "[experiment_generator] FAILED"
+        )
+
+        return {
+            **state,
+            "experiments": [],
+            "errors": {
+                **state.get("errors", {}),
+                "experiments": _friendly_error_message(exc),
+            },
+        }
+
+
+# ============================================================
+# TRACK C - ACTION PLAN
+# ============================================================
+
+def action_plan_node(
+    state: PipelineState,
+) -> PipelineState:
+
+    logger.info(
+        "[action_plan] START"
+    )
+
+    if state.get("error"):
+
+        logger.warning(
+            "[action_plan] "
+            "Skipped because web search failed"
+        )
+
+        return state
+
+    try:
+
+        swot = state.get(
+            "swot"
+        ) or {}
+
+        mvp = state.get(
+            "mvp"
+        ) or {}
+
+        gtm = state.get(
+            "gtm"
+        ) or {}
+
+        risks = (
+            swot.get(
+                "risks"
+            )
+            or []
+        )
+
+        action_plan = generate_action_plan(
+            gtm=gtm,
+            mvp=mvp,
+            risks=risks,
+        )
+
+        logger.info(
+            "[action_plan] COMPLETE"
+        )
+
+        return {
+            **state,
+            "actionPlan": action_plan,
+        }
+
+    except Exception as exc:
+
+        logger.exception(
+            "[action_plan] FAILED"
+        )
+
+        return {
+            **state,
+            "actionPlan": None,
+            "errors": {
+                **state.get("errors", {}),
+                "actionPlan": _friendly_error_message(exc),
+            },
+        }
 
 
 # ============================================================
@@ -719,9 +919,6 @@ def gtm_node(state: PipelineState) -> PipelineState:
 def contradiction_detector_node(
     state: PipelineState,
 ) -> PipelineState:
-    """
-    Cross-check market, SWOT, MVP and GTM artifacts.
-    """
 
     logger.info(
         "[contradiction_detector] START"
@@ -739,10 +936,18 @@ def contradiction_detector_node(
     try:
 
         contradictions = detect_contradictions(
-            state.get("marketOpportunity"),
-            state.get("swot"),
-            state.get("mvp"),
-            state.get("gtm"),
+            state.get(
+                "marketOpportunity"
+            ),
+            state.get(
+                "swot"
+            ),
+            state.get(
+                "mvp"
+            ),
+            state.get(
+                "gtm"
+            ),
         )
 
     except Exception as exc:
@@ -788,9 +993,6 @@ _CLAIM_LIST_KEYS = (
 def _collect_claims(
     state: PipelineState,
 ) -> list[dict]:
-    """
-    Collect evidence-backed claims containing sourceIds.
-    """
 
     claims: list[dict] = []
 
@@ -798,7 +1000,12 @@ def _collect_claims(
     # SWOT
     # --------------------------------------------------------
 
-    swot = state.get("swot") or {}
+    swot = (
+        state.get(
+            "swot"
+        )
+        or {}
+    )
 
     for key in _CLAIM_LIST_KEYS:
 
@@ -808,6 +1015,7 @@ def _collect_claims(
                 isinstance(item, dict)
                 and "sourceIds" in item
             ):
+
                 claims.append(item)
 
     for risk in swot.get("risks") or []:
@@ -816,13 +1024,19 @@ def _collect_claims(
             isinstance(risk, dict)
             and "sourceIds" in risk
         ):
+
             claims.append(risk)
 
     # --------------------------------------------------------
     # MVP
     # --------------------------------------------------------
 
-    mvp = state.get("mvp") or {}
+    mvp = (
+        state.get(
+            "mvp"
+        )
+        or {}
+    )
 
     for feature in mvp.get("features") or []:
 
@@ -830,13 +1044,19 @@ def _collect_claims(
             isinstance(feature, dict)
             and "sourceIds" in feature
         ):
+
             claims.append(feature)
 
     # --------------------------------------------------------
     # GTM
     # --------------------------------------------------------
 
-    gtm = state.get("gtm") or {}
+    gtm = (
+        state.get(
+            "gtm"
+        )
+        or {}
+    )
 
     for channel in gtm.get("channels") or []:
 
@@ -844,15 +1064,19 @@ def _collect_claims(
             isinstance(channel, dict)
             and "sourceIds" in channel
         ):
+
             claims.append(channel)
 
     # --------------------------------------------------------
     # MARKET
     # --------------------------------------------------------
 
-    market = state.get(
-        "marketOpportunity"
-    ) or {}
+    market = (
+        state.get(
+            "marketOpportunity"
+        )
+        or {}
+    )
 
     for trend in market.get("trends") or []:
 
@@ -860,6 +1084,7 @@ def _collect_claims(
             isinstance(trend, dict)
             and "sourceIds" in trend
         ):
+
             claims.append(trend)
 
     for segment in market.get("segments") or []:
@@ -868,6 +1093,7 @@ def _collect_claims(
             isinstance(segment, dict)
             and "sourceIds" in segment
         ):
+
             claims.append(segment)
 
     return claims
@@ -876,9 +1102,6 @@ def _collect_claims(
 def _source_relevance_by_id(
     results: list,
 ) -> dict[str, float]:
-    """
-    Map sourceId to its relevance score.
-    """
 
     sources = compact_sources(
         results,
@@ -896,7 +1119,10 @@ def _source_relevance_by_id(
             "score"
         )
 
-        if isinstance(score, (int, float)):
+        if isinstance(
+            score,
+            (int, float),
+        ):
 
             lookup[
                 source["sourceId"]
@@ -908,11 +1134,12 @@ def _source_relevance_by_id(
 def _parse_published_at(
     value,
 ) -> datetime | None:
-    """
-    Best-effort ISO-8601 date parser.
-    """
 
-    if not isinstance(value, str) or not value:
+    if not isinstance(
+        value,
+        str,
+    ) or not value:
+
         return None
 
     try:
@@ -940,9 +1167,6 @@ def _parse_published_at(
 def _source_recency(
     results: list,
 ) -> dict:
-    """
-    Calculate source recency where published dates exist.
-    """
 
     total = len(results)
 
@@ -951,17 +1175,23 @@ def _source_recency(
     for result in results:
 
         parsed = _parse_published_at(
-            result.get("publishedAt")
+            result.get(
+                "publishedAt"
+            )
         )
 
         if parsed is not None:
 
             age = (
-                datetime.now(timezone.utc)
+                datetime.now(
+                    timezone.utc
+                )
                 - parsed
             ).total_seconds() / 86400
 
-            ages_days.append(age)
+            ages_days.append(
+                age
+            )
 
     if not ages_days:
 
@@ -973,9 +1203,13 @@ def _source_recency(
 
     ages_days.sort()
 
-    mid = len(ages_days) // 2
+    mid = len(
+        ages_days
+    ) // 2
 
-    if len(ages_days) % 2:
+    if len(
+        ages_days
+    ) % 2:
 
         median = ages_days[mid]
 
@@ -1001,13 +1235,14 @@ def _source_recency(
 def _confidence_dashboard(
     state: PipelineState,
 ) -> dict:
-    """
-    Build confidence dashboard from evidence-backed claims.
-    """
 
-    claims = _collect_claims(state)
+    claims = _collect_claims(
+        state
+    )
 
-    total_claims = len(claims)
+    total_claims = len(
+        claims
+    )
 
     cited_ids: set[str] = set()
 
@@ -1017,16 +1252,22 @@ def _confidence_dashboard(
     for claim in claims:
 
         source_ids = (
-            claim.get("sourceIds")
+            claim.get(
+                "sourceIds"
+            )
             or []
         )
 
         if source_ids:
 
             claims_with_source += 1
-            cited_ids.update(source_ids)
+            cited_ids.update(
+                source_ids
+            )
 
-        if len(source_ids) >= 2:
+        if len(
+            source_ids
+        ) >= 2:
 
             claims_with_multiple += 1
 
@@ -1039,13 +1280,19 @@ def _confidence_dashboard(
             return 0
 
         return round(
-            (numerator / denominator)
+            (
+                numerator
+                / denominator
+            )
             * 100
         )
 
     relevance_by_id = (
         _source_relevance_by_id(
-            state.get("results", [])
+            state.get(
+                "results",
+                [],
+            )
         )
     )
 
@@ -1057,8 +1304,12 @@ def _confidence_dashboard(
 
     average_relevance = (
         round(
-            sum(cited_scores)
-            / len(cited_scores),
+            sum(
+                cited_scores
+            )
+            / len(
+                cited_scores
+            ),
             2,
         )
         if cited_scores
@@ -1069,8 +1320,10 @@ def _confidence_dashboard(
         "sourceCoverage": {
             "claimsWithSource":
                 claims_with_source,
+
             "totalClaims":
                 total_claims,
+
             "percentage":
                 _pct(
                     claims_with_source,
@@ -1084,8 +1337,10 @@ def _confidence_dashboard(
         "crossSourceAgreement": {
             "claimsWithMultipleSources":
                 claims_with_multiple,
+
             "totalClaims":
                 total_claims,
+
             "percentage":
                 _pct(
                     claims_with_multiple,
@@ -1096,9 +1351,11 @@ def _confidence_dashboard(
         "directEvidenceRatio": {
             "direct":
                 claims_with_source,
+
             "inferred":
                 total_claims
                 - claims_with_source,
+
             "percentage":
                 _pct(
                     claims_with_source,
@@ -1108,7 +1365,10 @@ def _confidence_dashboard(
 
         "sourceRecency":
             _source_recency(
-                state.get("results", [])
+                state.get(
+                    "results",
+                    [],
+                )
             ),
     }
 
@@ -1116,9 +1376,6 @@ def _confidence_dashboard(
 def confidence_dashboard_node(
     state: PipelineState,
 ) -> PipelineState:
-    """
-    Add claim-level confidence dashboard.
-    """
 
     logger.info(
         "[confidence_dashboard] START"
@@ -1149,7 +1406,9 @@ def confidence_dashboard_node(
 
     confidence = {
         **(
-            state.get("confidence")
+            state.get(
+                "confidence"
+            )
             or {}
         ),
         **dashboard,
@@ -1177,9 +1436,6 @@ def _timed(
     node_name: str,
     fn,
 ):
-    """
-    Log wall-clock execution time.
-    """
 
     def wrapper(
         state: PipelineState,
@@ -1187,10 +1443,15 @@ def _timed(
 
         start = time.time()
 
-        result = fn(state)
+        result = fn(
+            state
+        )
 
         elapsed_ms = round(
-            (time.time() - start)
+            (
+                time.time()
+                - start
+            )
             * 1000
         )
 
@@ -1291,6 +1552,30 @@ def build_pipeline():
         ),
     )
 
+    # --------------------------------------------------------
+    # TRACK C NODES
+    # --------------------------------------------------------
+
+    graph.add_node(
+        "experiment_generator",
+        _timed(
+            "experiment_generator",
+            experiment_generator_node,
+        ),
+    )
+
+    graph.add_node(
+        "action_plan",
+        _timed(
+            "action_plan",
+            action_plan_node,
+        ),
+    )
+
+    # --------------------------------------------------------
+    # FINAL NODES
+    # --------------------------------------------------------
+
     graph.add_node(
         "contradiction_detector",
         _timed(
@@ -1307,9 +1592,9 @@ def build_pipeline():
         ),
     )
 
-    # --------------------------------------------------------
+    # ========================================================
     # PIPELINE FLOW
-    # --------------------------------------------------------
+    # ========================================================
 
     graph.add_edge(
         START,
@@ -1356,10 +1641,28 @@ def build_pipeline():
         "gtm_strategy",
     )
 
+    # --------------------------------------------------------
+    # TRACK C FLOW
+    # --------------------------------------------------------
+
     graph.add_edge(
         "gtm_strategy",
+        "experiment_generator",
+    )
+
+    graph.add_edge(
+        "experiment_generator",
+        "action_plan",
+    )
+
+    graph.add_edge(
+        "action_plan",
         "contradiction_detector",
     )
+
+    # --------------------------------------------------------
+    # FINAL FLOW
+    # --------------------------------------------------------
 
     graph.add_edge(
         "contradiction_detector",
