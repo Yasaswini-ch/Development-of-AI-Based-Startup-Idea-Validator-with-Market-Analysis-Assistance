@@ -417,6 +417,9 @@ def _run_pipeline_and_build_response(payload: ValidateRequest, cache_key: str) -
         "gtm": state.get("gtm"),
         # Track B: cross-artifact contradiction flags
         "contradictions": state.get("contradictions"),
+        # Track C: validation experiments and founder action plan
+        "experiments": state.get("experiments"),
+        "actionPlan": state.get("actionPlan"),
         "marketViability": state.get("marketViability"),
         "errors": state.get("errors", {}),
     }

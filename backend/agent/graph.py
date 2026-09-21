@@ -6,8 +6,10 @@ from typing import TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from . import retrieval
+from .action_plan import generate_action_plan
 from .competitor_agent import analyze_competitors
 from .contradiction_detector import detect_contradictions
+from .experiment_generator import generate_experiments
 from .gtm_agent import analyze_gtm
 from .market_agent import MAX_SOURCES_IN_CONTEXT, analyze_market_opportunity
 from .mvp_agent import analyze_mvp
@@ -84,6 +86,10 @@ class PipelineState(TypedDict, total=False):
 
     # Track B: cross-artifact contradiction flags
     contradictions: list
+
+    # Track C: validation experiments and founder action plan
+    experiments: list
+    actionPlan: dict
 
     # Market Viability Score
     marketViability: dict
@@ -601,6 +607,68 @@ def contradiction_detector_node(state: PipelineState) -> PipelineState:
 
 
 # --------------------------------------------------
+# TRACK C: VALIDATION EXPERIMENTS + FOUNDER ACTION PLAN
+# --------------------------------------------------
+
+def experiment_generator_node(state: PipelineState) -> PipelineState:
+    """Runs after SWOT/MVP/Market so it has the risks/features/segments it
+    needs. Same try/except-per-node pattern as the rest of this file, and
+    kept as its own node (not merged with action_plan_node) so a failure in
+    one never blocks the other.
+    """
+    logger.info("[experiment_generator] START")
+
+    if state.get("error"):
+        logger.warning("[experiment_generator] Skipped because web search failed")
+        return state
+
+    try:
+        experiments = generate_experiments(
+            state.get("swot"),
+            state.get("marketOpportunity"),
+            state.get("mvp"),
+        )
+    except Exception as exc:
+        logger.exception("[experiment_generator] FAILED")
+        return {
+            **state,
+            "experiments": None,
+            "errors": {**state.get("errors", {}), "experiments": _friendly_error_message(exc)},
+        }
+
+    logger.info("[experiment_generator] COMPLETE - %d generated", len(experiments))
+    return {**state, "experiments": experiments}
+
+
+def action_plan_node(state: PipelineState) -> PipelineState:
+    """Runs after GTM/MVP/SWOT so it has the channels/features/risks it
+    needs. Same try/except-per-node pattern as the rest of this file.
+    """
+    logger.info("[action_plan] START")
+
+    if state.get("error"):
+        logger.warning("[action_plan] Skipped because web search failed")
+        return state
+
+    try:
+        action_plan = generate_action_plan(
+            state.get("gtm"),
+            state.get("mvp"),
+            state.get("swot"),
+        )
+    except Exception as exc:
+        logger.exception("[action_plan] FAILED")
+        return {
+            **state,
+            "actionPlan": None,
+            "errors": {**state.get("errors", {}), "actionPlan": _friendly_error_message(exc)},
+        }
+
+    logger.info("[action_plan] COMPLETE")
+    return {**state, "actionPlan": action_plan}
+
+
+# --------------------------------------------------
 # TRACK A: CONFIDENCE DASHBOARD
 # --------------------------------------------------
 #
@@ -882,6 +950,16 @@ def build_pipeline():
         _timed("contradiction_detector", contradiction_detector_node),
     )
 
+    # Track C: validation experiments + founder action plan - each its own
+    # node (not merged with contradiction_detector or each other) so a
+    # failure in one never blocks the others, same isolation the rest of
+    # this file already gives every section.
+    graph.add_node(
+        "experiment_generator",
+        _timed("experiment_generator", experiment_generator_node),
+    )
+    graph.add_node("action_plan", _timed("action_plan", action_plan_node))
+
     # Track A: confidence dashboard (source coverage, cross-source
     # agreement, direct-evidence ratio) - runs last so it can see every
     # strategy agent's sourceIds-bearing claims.
@@ -942,7 +1020,9 @@ def build_pipeline():
     graph.add_edge("viability_score", "mvp_recommendation")
     graph.add_edge("mvp_recommendation", "gtm_strategy")
     graph.add_edge("gtm_strategy", "contradiction_detector")
-    graph.add_edge("contradiction_detector", "confidence_dashboard")
+    graph.add_edge("contradiction_detector", "experiment_generator")
+    graph.add_edge("experiment_generator", "action_plan")
+    graph.add_edge("action_plan", "confidence_dashboard")
     graph.add_edge("confidence_dashboard", END)
 
     return graph.compile()
