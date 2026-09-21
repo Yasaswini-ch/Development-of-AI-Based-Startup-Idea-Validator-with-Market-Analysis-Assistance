@@ -138,7 +138,8 @@ class ReportEndpointTests(unittest.TestCase):
         self.assertTrue(body["deliveryId"])
         send_email.assert_called_once()
         # Never reruns retrieval/any agent - only the already-stored session
-        # context and a PDF render happen in this path.
+        # context is read in this path (no PDF generation here anymore -
+        # see GET /validate/{sessionId}/pdf for direct download instead).
 
     @patch("main.send_canonical_report_email", return_value=False)
     def test_email_report_returns_502_when_delivery_fails(self, _send_email):

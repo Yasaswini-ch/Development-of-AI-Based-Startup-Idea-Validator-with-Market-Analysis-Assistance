@@ -104,6 +104,16 @@ export function IconX(props) {
   )
 }
 
+export function IconDownload(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M12 3v12" />
+      <path d="m7 10 5 5 5-5" />
+      <path d="M5 21h14" />
+    </svg>
+  )
+}
+
 export function IconInfo(props) {
   return (
     <svg {...base} {...props}>

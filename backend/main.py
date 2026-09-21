@@ -724,10 +724,11 @@ def get_report(session_id: str, request: Request):
 
 @app.post("/reports/{session_id}/email")
 def email_report(session_id: str, payload: EmailReportRequest, request: Request):
-    """Email an already-generated report as a PDF attachment. Per the
-    email rules in docs/unique-features-plan.md §7: only reads an existing
-    completed report, never reruns retrieval/any agent, and never logs the
-    recipient address or report contents.
+    """Email an already-generated report's HTML/text body (no PDF attachment
+    - use GET /validate/{sessionId}/pdf for a direct download instead). Per
+    the email rules in docs/unique-features-plan.md §7: only reads an
+    existing completed report, never reruns retrieval/any agent, and never
+    logs the recipient address or report contents.
     """
     if _is_rate_limited(f"report-email:{_client_ip(request)}", _REPORT_EMAIL_RATE_LIMIT):
         return _rate_limit_response("Too many email requests. Please wait a minute and try again.")
@@ -741,17 +742,8 @@ def email_report(session_id: str, payload: EmailReportRequest, request: Request)
 
     report = assemble_report(session_id, session["context"])
 
-    try:
-        pdf_bytes = generate_dossier_pdf(report_to_pdf_input(report))
-    except Exception:
-        logger.exception("PDF generation failed while emailing report for session %s", session_id)
-        return JSONResponse(
-            status_code=500,
-            content={"error": "Could not generate the report PDF for delivery."},
-        )
-
     delivery_id = str(uuid.uuid4())
-    sent = send_canonical_report_email(payload.recipient, report, pdf_bytes, _report_url(session_id))
+    sent = send_canonical_report_email(payload.recipient, report, _report_url(session_id))
     if not sent:
         return JSONResponse(
             status_code=502,

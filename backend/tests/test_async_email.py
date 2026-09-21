@@ -241,19 +241,42 @@ class EmailDeliveryTests(unittest.TestCase):
         self.assertFalse(email_delivery.is_valid_email("not-an-email"))
         self.assertFalse(email_delivery.is_valid_email(""))
 
-    def test_send_without_api_key_returns_false(self):
+    def test_send_without_credentials_returns_false(self):
         with patch.dict("os.environ", {}, clear=False):
             import os
 
-            os.environ.pop("RESEND_API_KEY", None)
+            os.environ.pop("GMAIL_SMTP_USER", None)
+            os.environ.pop("GMAIL_SMTP_APP_PASSWORD", None)
             sent = email_delivery.send_report_email(
                 "founder@example.com", "Idea", {"summary": "Test"}
             )
         self.assertFalse(sent)
 
-    def test_send_rejects_invalid_recipient_even_with_key(self):
-        with patch.dict("os.environ", {"RESEND_API_KEY": "test-key"}):
+    def test_send_rejects_invalid_recipient_even_with_credentials(self):
+        with patch.dict(
+            "os.environ", {"GMAIL_SMTP_USER": "sender@gmail.com", "GMAIL_SMTP_APP_PASSWORD": "test-password"}
+        ):
             sent = email_delivery.send_report_email("not-an-email", "Idea", {"summary": "Test"})
+        self.assertFalse(sent)
+
+    @patch("agent.email_delivery.smtplib.SMTP")
+    def test_send_succeeds_with_credentials_and_valid_recipient(self, mock_smtp_cls):
+        mock_server = mock_smtp_cls.return_value.__enter__.return_value
+        with patch.dict(
+            "os.environ", {"GMAIL_SMTP_USER": "sender@gmail.com", "GMAIL_SMTP_APP_PASSWORD": "test-password"}
+        ):
+            sent = email_delivery.send_report_email("founder@example.com", "Idea", {"summary": "Test"})
+        self.assertTrue(sent)
+        mock_server.starttls.assert_called_once()
+        mock_server.login.assert_called_once_with("sender@gmail.com", "test-password")
+        mock_server.sendmail.assert_called_once()
+
+    @patch("agent.email_delivery.smtplib.SMTP", side_effect=OSError("connection refused"))
+    def test_send_failure_returns_false_not_raises(self, _mock_smtp_cls):
+        with patch.dict(
+            "os.environ", {"GMAIL_SMTP_USER": "sender@gmail.com", "GMAIL_SMTP_APP_PASSWORD": "test-password"}
+        ):
+            sent = email_delivery.send_report_email("founder@example.com", "Idea", {"summary": "Test"})
         self.assertFalse(sent)
 
     def test_report_html_includes_view_again_link_when_given(self):
