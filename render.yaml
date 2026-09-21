@@ -20,6 +20,10 @@ services:
         sync: false
       - key: TAVILY_API_KEY
         sync: false
+      - key: GMAIL_SMTP_USER
+        sync: false
+      - key: GMAIL_SMTP_APP_PASSWORD
+        sync: false
       - key: FRONTEND_ORIGIN
         value: https://startup-validator-frontend-5qcr.onrender.com
       - key: DATABASE_URL
