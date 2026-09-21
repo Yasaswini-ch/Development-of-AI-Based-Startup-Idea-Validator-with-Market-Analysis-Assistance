@@ -1,36 +1,33 @@
 """Email delivery for validation reports that take longer than the
 synchronous request threshold to finish (see main.py's async path).
 
-Uses Resend's HTTP API directly via urllib - consistent with tools.py's
-existing pattern of plain urllib calls rather than adding a new SDK
-dependency for one HTTP POST. Requires RESEND_API_KEY; if it isn't set,
-send_report_email logs a warning and returns False instead of raising, the
-same "degrade, don't crash" pattern used everywhere else a key is optional
-(see llm.py, tools.py). RESEND_FROM_EMAIL controls the sender address and
-must be a domain verified in the Resend account - Resend rejects sends
-from unverified domains, so this isn't optional once RESEND_API_KEY is set.
+Sends via Gmail's SMTP server (smtplib, standard library - no new
+dependency) authenticated as GMAIL_SMTP_USER using a Gmail App Password
+(GMAIL_SMTP_APP_PASSWORD; requires 2-Step Verification on that account,
+generated at myaccount.google.com -> Security -> App Passwords). Switched
+from Resend's HTTP API: Resend's free/sandbox sender can only deliver to
+the account owner's own address until a domain is verified, and this
+project has no domain - Gmail SMTP has no such restriction and can send
+to any recipient, using an account already on hand instead of a $ domain
+purchase. If either env var is missing, send_report_email logs a warning
+and returns False instead of raising, the same "degrade, don't crash"
+pattern used everywhere else a credential is optional (see llm.py,
+tools.py).
 """
 
-import base64
-import json
 import logging
 import os
 import re
-import urllib.request
+import smtplib
+from email.mime.application import MIMEApplication
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 logger = logging.getLogger(__name__)
 
-_RESEND_ENDPOINT = "https://api.resend.com/emails"
 _EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-
-# urllib.request's default User-Agent ("Python-urllib/3.x") gets a bare
-# HTTP 403 from Cloudflare (which fronts api.resend.com) with body
-# "error code: 1010" - a bot-signature block, not a Resend API rejection
-# (confirmed live: an otherwise-identical request succeeds the instant a
-# real User-Agent is set, and fails again the instant it's removed). Same
-# User-Agent value tools.py's Hacker News call already sets, for the same
-# reason, against a different Cloudflare-fronted API.
-_REQUEST_HEADERS_BASE = {"User-Agent": "StartupIdeaValidator/1.0", "Content-Type": "application/json"}
+_SMTP_HOST = "smtp.gmail.com"
+_SMTP_PORT = 587
 
 
 def is_valid_email(address: str) -> bool:
@@ -395,14 +392,72 @@ def _build_report_text(idea: str, report: dict, report_url: str | None = None) -
     return "\n".join(lines)
 
 
-def send_canonical_report_email(
-    to_email: str, report: dict, pdf_bytes: bytes, report_url: str | None = None
+def _send_via_gmail_smtp(
+    to_email: str,
+    subject: str,
+    html: str,
+    text: str | None = None,
+    attachment_bytes: bytes | None = None,
+    attachment_filename: str | None = None,
 ) -> bool:
+    """Shared SMTP transport for both send_report_email and
+    send_canonical_report_email below - never raises, returns False on any
+    missing credential or delivery failure so a failed/misconfigured email
+    is never confused with a failure to assemble the report itself (same
+    contract both callers already documented under the old Resend
+    transport).
+    """
+    user = os.environ.get("GMAIL_SMTP_USER")
+    app_password = os.environ.get("GMAIL_SMTP_APP_PASSWORD")
+    if not user or not app_password:
+        logger.warning("GMAIL_SMTP_USER/GMAIL_SMTP_APP_PASSWORD not set - skipping report email to %s", to_email)
+        return False
+
+    if not is_valid_email(to_email):
+        logger.warning("Refusing to send report email to invalid address")
+        return False
+
+    message = MIMEMultipart("mixed")
+    message["From"] = f"Affinity <{user}>"
+    message["To"] = to_email
+    message["Subject"] = subject
+
+    body = MIMEMultipart("alternative")
+    if text:
+        body.attach(MIMEText(text, "plain"))
+    body.attach(MIMEText(html, "html"))
+    message.attach(body)
+
+    if attachment_bytes:
+        attachment = MIMEApplication(attachment_bytes, Name=attachment_filename or "report.pdf")
+        attachment["Content-Disposition"] = f'attachment; filename="{attachment_filename or "report.pdf"}"'
+        message.attach(attachment)
+
+    try:
+        with smtplib.SMTP(_SMTP_HOST, _SMTP_PORT, timeout=15) as server:
+            server.starttls()
+            server.login(user, app_password)
+            server.sendmail(user, [to_email], message.as_string())
+        return True
+    except Exception:
+        # Never log the recipient address or report contents (see
+        # docs/unique-features-plan.md §7 email rules) - just that a send
+        # failed.
+        logger.exception("Failed to send report email via Gmail SMTP")
+        return False
+
+
+def send_canonical_report_email(to_email: str, report: dict, report_url: str | None = None) -> bool:
     """Send the Track D canonical report object (report_assembler.py) as a
-    PDF attachment, with a plain-text and HTML body summary. Distinct from
-    send_report_email above, which sends the smaller inline-HTML-only
-    summary used by the long-running-validation async path and predates
-    the canonical report object existing at all.
+    plain-text and HTML body summary. Distinct from send_report_email
+    above, which sends the smaller inline-HTML-only summary used by the
+    long-running-validation async path and predates the canonical report
+    object existing at all.
+
+    No longer attaches a PDF - GET /validate/{sessionId}/pdf covers direct
+    PDF download from the app's own UI ("Save as PDF" button) without also
+    needing to generate and email one, and the HTML/text bodies already
+    carry the full report content (see _build_report_html/_build_report_text).
 
     report_url, when given, is a link back to GET /reports/{sessionId} the
     email body includes as a "view again" button - the closest thing to
@@ -411,19 +466,8 @@ def send_canonical_report_email(
 
     Same "never crash the caller, return False" contract as
     send_report_email: a failed/misconfigured email must not be confused
-    with a failure to assemble or export the report itself.
+    with a failure to assemble the report itself.
     """
-    api_key = os.environ.get("RESEND_API_KEY")
-    if not api_key:
-        logger.warning("RESEND_API_KEY not set - skipping report email to %s", to_email)
-        return False
-
-    from_email = os.environ.get("RESEND_FROM_EMAIL", "Affinity <onboarding@resend.dev>")
-
-    if not is_valid_email(to_email):
-        logger.warning("Refusing to send report email to invalid address")
-        return False
-
     idea_summary = report.get("ideaSummary") or {}
     idea = idea_summary.get("idea", "")
     # _build_report_html/_build_report_text expect the /validate response
@@ -432,42 +476,17 @@ def send_canonical_report_email(
     # adapt rather than duplicate the HTML-building logic for this shape.
     html_input = {**report, "summary": idea_summary.get("summary", ""), "errors": report.get("sectionErrors")}
 
-    payload = json.dumps(
-        {
-            "from": from_email,
-            "to": [to_email],
-            "subject": "Your Affinity validation report is ready",
-            "html": _build_report_html(idea, html_input, report_url),
-            "text": _build_report_text(idea, report, report_url),
-            "attachments": [
-                {
-                    "filename": f"Affinity_Report_{report.get('reportId', 'report')}.pdf",
-                    "content": base64.b64encode(pdf_bytes).decode("ascii"),
-                }
-            ],
-        }
-    ).encode()
-
-    request = urllib.request.Request(
-        _RESEND_ENDPOINT,
-        data=payload,
-        method="POST",
-        headers={**_REQUEST_HEADERS_BASE, "Authorization": f"Bearer {api_key}"},
+    return _send_via_gmail_smtp(
+        to_email,
+        "Your Affinity validation report is ready",
+        _build_report_html(idea, html_input, report_url),
+        text=_build_report_text(idea, report, report_url),
     )
-    try:
-        with urllib.request.urlopen(request, timeout=15) as resp:
-            return 200 <= resp.status < 300
-    except Exception:
-        # Never log the recipient address or report contents (see
-        # docs/unique-features-plan.md §7 email rules) - just that a send
-        # failed, same as send_report_email above.
-        logger.exception("Failed to send canonical report email")
-        return False
 
 
 def send_report_email(to_email: str, idea: str, response: dict, report_url: str | None = None) -> bool:
     """Send the finished validation report by email. Returns True only on a
-    confirmed Resend acceptance; False on any missing config or delivery
+    confirmed SMTP acceptance; False on any missing config or delivery
     failure - callers should log/store that outcome, not raise on it, since
     a failed email must never take down an otherwise-successful validation
     run (the result is still available in the job store either way).
@@ -476,35 +495,8 @@ def send_report_email(to_email: str, idea: str, response: dict, report_url: str 
     send_canonical_report_email's docstring for why this is the closest
     thing to "history" this app has without a real login system.
     """
-    api_key = os.environ.get("RESEND_API_KEY")
-    if not api_key:
-        logger.warning("RESEND_API_KEY not set - skipping report email to %s", to_email)
-        return False
-
-    from_email = os.environ.get("RESEND_FROM_EMAIL", "Affinity <onboarding@resend.dev>")
-
-    if not is_valid_email(to_email):
-        logger.warning("Refusing to send report email to invalid address")
-        return False
-
-    payload = json.dumps(
-        {
-            "from": from_email,
-            "to": [to_email],
-            "subject": "Your Affinity validation report is ready",
-            "html": _build_report_html(idea, response, report_url),
-        }
-    ).encode()
-
-    request = urllib.request.Request(
-        _RESEND_ENDPOINT,
-        data=payload,
-        method="POST",
-        headers={**_REQUEST_HEADERS_BASE, "Authorization": f"Bearer {api_key}"},
+    return _send_via_gmail_smtp(
+        to_email,
+        "Your Affinity validation report is ready",
+        _build_report_html(idea, response, report_url),
     )
-    try:
-        with urllib.request.urlopen(request, timeout=10) as resp:
-            return 200 <= resp.status < 300
-    except Exception:
-        logger.exception("Failed to send report email")
-        return False
