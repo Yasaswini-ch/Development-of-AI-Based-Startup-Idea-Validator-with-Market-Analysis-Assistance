@@ -240,9 +240,9 @@ already-computed context — it never re-derives analysis or calls an LLM/search
 provider. `contradictions`/`experiments`/`actionPlan` (Tracks B/C, built separately)
 default to empty and populate automatically once those land in session context.
 `GET /reports/{sessionId}` returns it directly; `POST /reports/{sessionId}/email`
-generates a PDF from it (`agent/pdf_exporter.py`, via a small shape-adapter rather than
-changing that module's two existing call sites) and sends it through Resend with a
-plain-text + HTML body (`agent/email_delivery.py`).
+sends it as a plain-text + HTML body via SendGrid's HTTP API
+(`agent/email_delivery.py`) - no PDF attachment (see `GET /validate/{sessionId}/pdf`,
+which still uses `agent/pdf_exporter.py`, for a direct download instead).
 
 ## 3. Data Flow
 
@@ -401,10 +401,10 @@ company in the sources" outcome, not a failure.
 | Agents | CrewAI | Role/goal-based agent definitions for Market Opportunity, SWOT/Risk, MVP, GTM, and the advisor. Web Search summaries, Competitor Discovery, White-space, and both confidence nodes are local/deterministic instead — see §2. |
 | Search | Tavily API (primary), DuckDuckGo + Wikipedia + Hacker News (fallback chain) | Tavily gives a real, trained relevance score and reliable results. If it's missing or fails, the app falls back to the zero-cost chain (own computed relevance score) instead of erroring out. Academic/research-paper domains are filtered out — literature review material, not market/competitor signal. |
 | Competitor identification | Local NER (spaCy `en_core_web_sm`), not an LLM call | Reads competitor names directly off already-fetched search results — zero API cost, zero rate limit, frees the shared Groq quota. |
-| Reasoning LLM | Groq (via CrewAI/LiteLLM), three models on the same account — primary + a 2-tier same-provider fallback chain | Primary `groq/qwen/qwen3.8-27b`, fallbacks `groq/openai/gpt-oss-20b` then `groq/openai/gpt-oss-120b`. On a rate limit or `model_not_found`, `agent/llm.py`'s `kickoff_with_fallback()` switches models immediately instead of retrying the exhausted one. Every call's latency and token usage is logged. |
+| Reasoning LLM | Groq (via CrewAI/LiteLLM), primary + a 3-tier fallback chain | Primary `groq/qwen/qwen3.8-27b`, fallbacks `groq/openai/gpt-oss-20b`, `groq/openai/gpt-oss-120b`, then `gemini/gemini-3.6-flash` - a genuinely separate provider/quota pool, not just another Groq model, since heavy testing has exhausted both Groq fallback tiers' buckets in the same session. On a rate limit or `model_not_found`, `agent/llm.py`'s `kickoff_with_fallback()` switches models immediately instead of retrying the exhausted one. Every call's latency and token usage is logged. |
 | Database | Postgres in production, SQLite locally/in tests (SQLAlchemy, `agent/db.py`) | Sessions, background jobs, and the response cache used to be process-local dicts — didn't survive a restart, didn't work across more than one backend instance. Connection pool size/timeout/recycle are configurable via `DB_POOL_*` env vars for running multiple instances. |
 | API hardening | Per-IP sliding-window rate limiting + request-id tracing (`backend/main.py`) | `/validate`, `/chat`, PDF export, and report endpoints are all rate-limited; every request gets a short id logged with method/path/status/duration and echoed back as `X-Request-ID`. |
-| Report export | ReportLab PDF (`agent/pdf_exporter.py`) + Resend email (`agent/email_delivery.py`) | The canonical report (Track D) is exported as a PDF attachment with a plain-text + HTML body; email delivery only ever reads an already-assembled report, never reruns retrieval or any agent. |
+| Report export | ReportLab PDF direct download (`agent/pdf_exporter.py`, `GET /validate/{sessionId}/pdf`) + SendGrid HTML/text email (`agent/email_delivery.py`) | No PDF attachment on the email - the HTML/text bodies already carry the full report, and the PDF download is a separate, direct path. Email delivery only ever reads an already-assembled report, never reruns retrieval or any agent. |
 | Product UI | No framework/provider names shown | Footer/status text describes capability generically ("Multi-agent Pipeline," "Live Web Search") instead of naming the underlying tech. |
 | Hosting | Render | Two web services + a managed Postgres database, config in `render.yaml`. |
 
@@ -491,7 +491,7 @@ Blueprint-sync caveat and multi-instance guidance.
 │       ├── session_store.py          # Validation + chat sessions (database-backed)
 │       ├── job_store.py              # Background validation jobs for the async/email path (database-backed)
 │       ├── pdf_exporter.py           # ReportLab PDF dossier generation
-│       └── email_delivery.py         # Resend-based report email delivery
+│       └── email_delivery.py         # SendGrid-based report email delivery
 │   └── tests/                        # Unit, contract, async, and integration/concurrency tests
 ├── docs/
 │   ├── architecture.md        # this file
