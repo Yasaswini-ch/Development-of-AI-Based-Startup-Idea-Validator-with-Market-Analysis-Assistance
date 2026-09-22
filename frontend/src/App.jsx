@@ -3,9 +3,12 @@ import IdeaForm from './components/IdeaForm'
 import ValidationResults from './components/ValidationResults'
 import EmptyState from './components/EmptyState'
 import ErrorState from './components/ErrorState'
+import LandingPage from './components/LandingPage'
+import CompareIdeas from './components/CompareIdeas'
+import HistoryPanel from './components/HistoryPanel'
 import useCountUp from './hooks/useCountUp'
 import useLoadingSteps from './hooks/useLoadingSteps'
-import { mockExperiments, mockActionPlan } from './mocks/validationMock'
+import { addHistoryEntry } from './lib/history'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 const STORAGE_KEY = 'affinity:lastValidation'
@@ -60,6 +63,11 @@ function adaptReportToValidation(report) {
 
 export default function App() {
   const [persisted] = useState(loadPersisted)
+  // Skip the landing page when a session is already mid-flow (a persisted
+  // result from before a tab reload, per loadPersisted's own reasoning) -
+  // it should only greet a genuinely fresh visitor, not interrupt someone
+  // returning to their own results.
+  const [view, setView] = useState(persisted?.validation ? 'form' : 'landing')
   const [isLoading, setIsLoading] = useState(false)
   // The button already disables mid-request, but re-enables the instant a
   // response lands - nothing stopped someone from immediately firing another
@@ -106,6 +114,12 @@ export default function App() {
         const report = await res.json()
         setValidation(adaptReportToValidation(report))
         setUpdatedAt(report.generatedAt ? new Date(report.generatedAt) : new Date())
+        setView('form')
+        addHistoryEntry({
+          sessionId,
+          idea: report.ideaSummary?.idea,
+          targetCustomer: report.ideaSummary?.targetCustomer,
+        })
       } catch {
         // Link expired/invalid, or offline - fall back to the normal empty
         // form silently rather than showing an error for a background
@@ -155,6 +169,7 @@ export default function App() {
 
       setValidation(data)
       setUpdatedAt(new Date())
+      addHistoryEntry({ sessionId: data.sessionId, idea: payload.idea, targetCustomer: payload.targetCustomer })
     } catch {
       setErrorMessage('Could not reach the server. Please try again.')
     } finally {
@@ -179,6 +194,11 @@ export default function App() {
           setValidation(result)
           setUpdatedAt(new Date())
           setProcessingMessage('')
+          addHistoryEntry({
+            sessionId: result.sessionId,
+            idea: lastSubmission?.idea,
+            targetCustomer: lastSubmission?.targetCustomer,
+          })
           return
         }
 
@@ -198,6 +218,46 @@ export default function App() {
     setProcessingMessage('Still working on this in the background - check your email for the finished report.')
   }
 
+  // Resumes a session picked from HistoryPanel, reusing the same
+  // GET /reports/{sessionId} + adaptReportToValidation path as the
+  // ?session= email-link flow above.
+  async function openHistorySession(sessionId) {
+    setErrorMessage('')
+    setView('form')
+    try {
+      const res = await fetch(`${API_URL}/reports/${sessionId}`)
+      if (!res.ok) {
+        setErrorMessage('That session has expired or could not be found.')
+        return
+      }
+      const report = await res.json()
+      setValidation(adaptReportToValidation(report))
+      setUpdatedAt(report.generatedAt ? new Date(report.generatedAt) : new Date())
+    } catch {
+      setErrorMessage('Could not reach the server. Please try again.')
+    }
+  }
+
+  if (view === 'landing') {
+    return <LandingPage onStart={() => setView('form')} />
+  }
+
+  if (view === 'compare') {
+    return (
+      <div className="min-h-screen bg-surface px-4 py-10">
+        <CompareIdeas apiUrl={API_URL} onBack={() => setView('form')} />
+      </div>
+    )
+  }
+
+  if (view === 'history') {
+    return (
+      <div className="min-h-screen bg-surface px-4 py-10">
+        <HistoryPanel onBack={() => setView('form')} onOpen={openHistorySession} />
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-surface">
       <main className="mx-auto max-w-5xl px-4 pb-24 pt-10 sm:pt-14">
@@ -206,10 +266,26 @@ export default function App() {
             <p className="font-mono text-xs uppercase tracking-widest text-muted cursor-blink">
               Multi-agent · Live Web Search
             </p>
-            <span className="flex items-center gap-1.5 rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-accent">
-              <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-accent" />
-              Live
-            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setView('history')}
+                className="rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-muted transition-colors hover:border-accent hover:text-accent"
+              >
+                History
+              </button>
+              <button
+                type="button"
+                onClick={() => setView('compare')}
+                className="rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-muted transition-colors hover:border-accent hover:text-accent"
+              >
+                Compare ideas
+              </button>
+              <span className="flex items-center gap-1.5 rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-accent">
+                <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-accent" />
+                Live
+              </span>
+            </div>
           </div>
 
           <header className="mb-8">
@@ -258,12 +334,8 @@ export default function App() {
               gtm={validation.gtm}
               confidence={validation.confidence}
               contradictions={validation.contradictions}
-              // Tracks C/D (experiment_generator.py, action_plan.py) haven't
-              // shipped on the backend yet, so /validate never returns these -
-              // fall back to the local fixture so the tab isn't empty. Drop
-              // the `??` fallback once the backend starts returning them.
-              experiments={validation.experiments ?? mockExperiments}
-              actionPlan={validation.actionPlan ?? mockActionPlan}
+              experiments={validation.experiments}
+              actionPlan={validation.actionPlan}
               sessionId={validation.sessionId}
               apiUrl={API_URL}
               errors={validation.errors}

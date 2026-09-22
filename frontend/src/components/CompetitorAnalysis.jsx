@@ -27,18 +27,16 @@ function Badge({ label, value }) {
   )
 }
 
-function CompetitorCard({ competitor }) {
+function CompetitorHeroCard({ competitor }) {
   const { name, offering, url, gap, estimatedPrice, featureBreadth } = competitor
   return (
     <a
       href={url}
       target="_blank"
       rel="noreferrer"
-      className="block rounded-xl border border-border bg-surface p-5 transition-colors hover:border-accent"
+      className="block rounded-2xl border-[1.5px] border-accent bg-panel p-5 transition-shadow duration-200 hover:shadow-md hover:shadow-black/5"
     >
-      <div className="flex items-start justify-between gap-2">
-        <h4 className="text-sm font-semibold text-text">{name}</h4>
-      </div>
+      <h4 className="font-serif text-base font-semibold text-text">{name}</h4>
       <p className="mt-1.5 text-sm text-muted leading-relaxed">{offering}</p>
 
       <div className="mt-3 flex flex-wrap gap-1.5">
@@ -56,6 +54,33 @@ function CompetitorCard({ competitor }) {
           {hostnameOf(url)}
         </p>
       )}
+    </a>
+  )
+}
+
+function CompetitorRow({ competitor }) {
+  const { name, offering, url, gap, estimatedPrice, featureBreadth } = competitor
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      className="flex flex-col gap-2 py-3 transition-colors hover:bg-accent/5 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
+    >
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-text">{name}</p>
+        <p className="mt-0.5 text-xs leading-relaxed text-muted line-clamp-2">{offering}</p>
+        {gap && <p className="mt-1 text-xs leading-relaxed text-text/80 line-clamp-2">{gap}</p>}
+        {url && (
+          <p className="mt-1 font-mono text-[10px] uppercase tracking-wide text-muted/70">
+            {hostnameOf(url)}
+          </p>
+        )}
+      </div>
+      <div className="flex shrink-0 flex-wrap gap-1.5">
+        <Badge label="Price" value={estimatedPrice} />
+        <Badge label="Breadth" value={featureBreadth} />
+      </div>
     </a>
   )
 }
@@ -156,13 +181,19 @@ export default function CompetitorAnalysis({ data, error }) {
     )
   }
 
+  const [top, ...rest] = competitors
+
   return (
     <div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        {competitors.map((c, i) => (
-          <CompetitorCard key={i} competitor={c} />
-        ))}
-      </div>
+      <CompetitorHeroCard competitor={top} />
+
+      {rest.length > 0 && (
+        <div className="mt-1 flex flex-col divide-y divide-border border-t border-border">
+          {rest.map((c, i) => (
+            <CompetitorRow key={i} competitor={c} />
+          ))}
+        </div>
+      )}
 
       <PositioningGrid competitors={competitors} />
     </div>
