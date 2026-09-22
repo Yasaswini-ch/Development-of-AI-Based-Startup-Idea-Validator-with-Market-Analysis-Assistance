@@ -38,6 +38,7 @@ from crewai import Agent, Crew, Process, Task
 
 from .deterministic_fallback import deterministic_market_opportunity
 from .llm import get_llm, kickoff_with_fallback
+from .prompts.loader import load_prompt
 from .structured_output import compact_sources, extract_json_object, sanitize_source_ids, valid_source_ids
 
 logger = logging.getLogger(__name__)
@@ -89,12 +90,7 @@ def _build_market_crew(idea: str, target_customer: str, problem: str, context: s
             "growth, and customer segments with their pain points, "
             "motivations, and buying behavior"
         ),
-        backstory=(
-            "A market analyst who only reasons from the evidence provided, "
-            "never inventing statistics or segments that aren't supported by "
-            "the given sources. Writes for a founder who needs to act on this, "
-            "not a report that just restates what a segment is called."
-        ),
+        backstory=load_prompt("market_analysis_system"),
         # Rebalanced to 750 (was 900, briefly tried 250 then 550). Market's
         # JSON schema (marketSize sentence + trends array + multi-field
         # segments) is the most verbose of the four agents and was
@@ -108,69 +104,14 @@ def _build_market_crew(idea: str, target_customer: str, problem: str, context: s
     )
 
     task = Task(
-        description=(
-            f'Startup idea: "{idea}"\n'
-            f"Target customer: {target_customer or 'not specified'}\n"
-            f"Problem being solved: {problem or 'not specified'}\n\n"
-            "Here are real, current web search results about this idea's market. "
-            "Each one is tagged with a sourceId like [src-1]:\n"
-            f"{context}\n\n"
-            "Based only on the information above, analyze:\n"
-            "1. Market size (state whether the figures are global, regional, or "
-            "niche if the sources indicate this) and growth trend. Include TAM, "
-            "SAM, or CAGR only when the provided sources explicitly support those "
-            "figures; otherwise state that they are not clear from the sources.\n"
-            "1b. Separately, TAM (Total Addressable Market), SAM (Serviceable "
-            "Addressable Market), and SOM (Serviceable Obtainable Market) as three "
-            "distinct figures, each with a \"sourceIds\" array the same way as for "
-            "trends below. Set any of the three to null (not a guessed number) "
-            "whenever the sources don't explicitly support that specific figure - "
-            "never derive one tier's number from another or estimate a plausible-"
-            "looking value.\n"
-            "2. Up to 4 notable trends or adoption patterns. Each trend needs a "
-            "\"sourceIds\" array citing the sourceId(s) of the source(s) shown "
-            "above that it's grounded in - use an empty array only when a trend "
-            "is a structural observation not tied to a specific source, never "
-            "invent a sourceId that isn't shown above.\n"
-            "3. Up to 4 customer segments - for each, their pain points (what "
-            "problem they're trying to solve), motivations (what they care "
-            "about / why they'd buy), buying behavior (how they decide or "
-            "purchase, if the sources suggest anything about this), and a "
-            "\"sourceIds\" array the same way as for trends.\n"
-            "Do not invent statistics, segments, or behaviors that aren't "
-            "supported by the sources - if buying behavior isn't evident from "
-            "the sources, say so plainly rather than guessing.\n"
-            "Output strict JSON only: within JSON strings, never escape an "
-            "apostrophe with a backslash - write don't directly, not don\\'t."
+        description=load_prompt(
+            "market_analysis_task",
+            idea=idea,
+            target_customer=target_customer or "not specified",
+            problem=problem or "not specified",
+            context=context,
         ),
-        expected_output=(
-            "A single JSON object, and nothing else - no markdown code fences, no "
-            "explanation before or after it, no placeholder text. Fill in real "
-            "content from the sources above. For example, for a different idea "
-            "this might look like:\n"
-            '{"marketSize": "The global market was valued at $2.1 billion in 2024 '
-            'and is growing at 12% annually; TAM/SAM are not clear from the provided sources.", '
-            '"tam": {"text": "$2.1 billion global market (2024)", "sourceIds": ["src-1"]}, '
-            '"sam": null, '
-            '"som": null, '
-            '"trends": [{"text": "Rising demand for subscription-based delivery", "sourceIds": ["src-1"]}, '
-            '{"text": "Increased focus on eco-friendly packaging", "sourceIds": []}], '
-            '"segments": ['
-            '{"segment": "Urban millennials", '
-            '"painPoints": "Limited time to research and compare options", '
-            '"motivations": "Convenience and sustainability credentials", '
-            '"buyingBehavior": "Research online, prefer subscription models over one-off purchases", '
-            '"sourceIds": ["src-1"]}, '
-            '{"segment": "Budget-conscious families", '
-            '"painPoints": "Existing options are too expensive for regular use", '
-            '"motivations": "Value for money without sacrificing quality", '
-            '"buyingBehavior": "Not clear from the sources", '
-            '"sourceIds": []}'
-            "]}\n"
-            "Use at most 4 items in trends and 4 objects in segments, grounded "
-            "only in the sources given to you, and never cite a sourceId that "
-            "wasn't shown to you above."
-        ),
+        expected_output=load_prompt("market_analysis_output"),
         agent=analyst,
     )
 

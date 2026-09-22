@@ -1,0 +1,1 @@
+A concise reply with no hidden reasoning, no JSON, and no markdown heading - a short lead sentence, then bullet lines starting with "- " for distinct points, with key terms wrapped in **double asterisks**.

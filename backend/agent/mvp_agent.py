@@ -6,6 +6,7 @@ from crewai import Agent, Crew, Process, Task
 
 from .deterministic_fallback import deterministic_mvp
 from .llm import get_llm, kickoff_with_fallback
+from .prompts.loader import load_prompt
 from .structured_output import (
     compact_json,
     compact_sources,
@@ -39,7 +40,7 @@ def _build_crew(idea: str, problem: str, context: str, model: str) -> Crew:
     analyst = Agent(
         role="MVP Feature Recommendation Analyst",
         goal="Prioritize the smallest feature set that tests the startup's riskiest assumptions.",
-        backstory="A product strategist who resists feature bloat and ties every recommendation to validated customer evidence.",
+        backstory=load_prompt("mvp_system"),
         # Rebalanced to 450 (was 800, briefly tried 250) - see
         # market_agent.py for the full rationale; 250 was confirmed live to
         # truncate JSON output itself, not just hit the rate limit.
@@ -47,21 +48,8 @@ def _build_crew(idea: str, problem: str, context: str, model: str) -> Crew:
         verbose=False,
     )
     task = Task(
-        description=(
-            f'Startup idea: "{idea}"\nProblem: {problem or "not specified"}\n'
-            f"SWOT and customer context: {context}\n\n"
-            "The context's \"sources\" array lists sourceId values (e.g. \"src-1\"). "
-            "Recommend at most five ordered MVP features. Keep each feature testable and narrow. "
-            "Rate impact and effort as low, medium, high, or unknown. Every feature needs a "
-            "\"sourceIds\" array citing the sourceId(s) of the source(s) that support it - use an "
-            "empty array only when a feature isn't tied to a specific source, never invent a "
-            "sourceId that isn't in the context's sources list."
-        ),
-        expected_output=(
-            'One JSON object only: {"features":[{"feature":"...","rationale":"...",'
-            '"impact":"low|medium|high|unknown","effort":"low|medium|high|unknown",'
-            '"sourceIds":["src-1"]}]}.'
-        ),
+        description=load_prompt("mvp_task", idea=idea, problem=problem or "not specified", context=context),
+        expected_output=load_prompt("mvp_output"),
         agent=analyst,
     )
     return Crew(agents=[analyst], tasks=[task], process=Process.sequential, verbose=False)

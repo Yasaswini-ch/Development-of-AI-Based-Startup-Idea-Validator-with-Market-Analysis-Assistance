@@ -6,6 +6,7 @@ from crewai import Agent, Crew, Process, Task
 
 from .deterministic_fallback import deterministic_swot
 from .llm import get_llm, kickoff_with_fallback
+from .prompts.loader import load_prompt
 from .structured_output import (
     compact_json,
     compact_sources,
@@ -62,7 +63,7 @@ def _build_crew(idea: str, context: str, model: str) -> Crew:
     analyst = Agent(
         role="SWOT and Risk Analyst",
         goal="Produce concise, evidence-grounded strategic strengths, weaknesses, opportunities, threats, and risks.",
-        backstory="A skeptical startup analyst who separates evidence from assumptions and never invents unsupported facts.",
+        backstory=load_prompt("swot_system"),
         # Rebalanced to 750 (was 900, briefly tried 250 then 550) - see
         # market_agent.py for the full rationale; SWOT's schema (4 list
         # fields plus per-item sourceIds plus per-risk severity/likelihood)
@@ -71,24 +72,8 @@ def _build_crew(idea: str, context: str, model: str) -> Crew:
         verbose=False,
     )
     task = Task(
-        description=(
-            f'Startup idea: "{idea}"\n'
-            f"Validated pipeline context: {context}\n\n"
-            "The context's \"sources\" array lists sourceId values (e.g. \"src-1\"). "
-            "Use only this context. Return up to four concise items in each SWOT category and up to four risks. "
-            "Every item and risk needs a \"sourceIds\" array citing the sourceId(s) of the source(s) it's grounded "
-            "in - use an empty array only when a claim is a structural observation not tied to a specific source, "
-            "never invent a sourceId that isn't in the context's sources list. "
-            "Rate severity and likelihood as low, medium, high, or unknown. Use unknown when evidence is insufficient."
-        ),
-        expected_output=(
-            'One JSON object only: {"strengths":[{"text":"...","sourceIds":["src-1"]}],'
-            '"weaknesses":[{"text":"...","sourceIds":[]}],'
-            '"opportunities":[{"text":"...","sourceIds":["src-2"]}],'
-            '"threats":[{"text":"...","sourceIds":["src-3"]}],"risks":['
-            '{"risk":"...","severity":"low|medium|high|unknown",'
-            '"likelihood":"low|medium|high|unknown","sourceIds":["src-1"]}]}.'
-        ),
+        description=load_prompt("swot_task", idea=idea, context=context),
+        expected_output=load_prompt("swot_output"),
         agent=analyst,
     )
     return Crew(agents=[analyst], tasks=[task], process=Process.sequential, verbose=False)
