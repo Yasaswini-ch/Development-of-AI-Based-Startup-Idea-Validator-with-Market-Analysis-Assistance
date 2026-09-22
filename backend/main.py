@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from agent import metrics
 from agent.auth import AuthError, login as auth_login, optional_user, require_user, signup as auth_signup
 from agent.chat_graph import ChatRateLimitError, run_chat_turn
 from agent.db import cache_table, get_engine
@@ -476,6 +477,17 @@ def my_history(current_user: dict = Depends(require_user)):
     return {"entries": list_sessions_for_user(current_user["id"])}
 
 
+@app.get("/metrics")
+def get_metrics():
+    """Raw counters - cache hit/miss and per-LLM-node success/failure
+    counts (agent/metrics.py) - answering the "Open Metrics" questions
+    docs/api-cost-accuracy-performance-metrics.md's §7 flagged as not yet
+    measured. In-process only: resets on restart, not a persisted
+    time-series, same trade-off agent/metrics.py's own docstring explains.
+    """
+    return metrics.snapshot()
+
+
 class PipelineStateError(Exception):
     """The pipeline completed but recorded a hard failure in state['error']
     (e.g. every search source failed for every angle) - a 502 to the
@@ -529,6 +541,7 @@ def _run_pipeline_and_build_response(payload: ValidateRequest, cache_key: str) -
         _set_cached(cache_key, response)
         logger.info("Validation result cached")
 
+    metrics.increment("cache.miss")
     return response
 
 
@@ -601,6 +614,7 @@ async def validate_idea(payload: ValidateRequest, request: Request, current_user
         logger.info(
             "Cache hit - skipping pipeline"
         )
+        metrics.increment("cache.hit")
 
         session_id = _create_validation_session(payload, cached, user_id=user_id)
 
