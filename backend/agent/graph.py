@@ -5,7 +5,7 @@ from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from . import retrieval
+from . import metrics, retrieval
 from .action_plan import generate_action_plan
 from .competitor_agent import analyze_competitors
 from .contradiction_detector import detect_contradictions
@@ -306,6 +306,7 @@ def market_opportunity_node(state: PipelineState) -> PipelineState:
         )
 
         logger.info("[market_opportunity] COMPLETE")
+        metrics.increment("node.market_opportunity.success")
 
         return {
             **state,
@@ -314,6 +315,7 @@ def market_opportunity_node(state: PipelineState) -> PipelineState:
 
     except Exception as exc:
         logger.exception("[market_opportunity] FAILED")
+        metrics.increment("node.market_opportunity.failure")
 
         errors = {
             **state.get("errors", {}),
@@ -356,6 +358,7 @@ def competitor_discovery_node(state: PipelineState) -> PipelineState:
         )
 
         logger.info("[competitor_discovery] COMPLETE")
+        metrics.increment("node.competitor_discovery.success")
 
         return {
             **state,
@@ -364,6 +367,7 @@ def competitor_discovery_node(state: PipelineState) -> PipelineState:
 
     except Exception as exc:
         logger.exception("[competitor_discovery] FAILED")
+        metrics.increment("node.competitor_discovery.failure")
 
         errors = {
             **state.get("errors", {}),
@@ -495,12 +499,14 @@ def swot_node(state: PipelineState) -> PipelineState:
         )
     except Exception as exc:
         logger.exception("[swot] FAILED")
+        metrics.increment("node.swot.failure")
         return {
             **state,
             "swot": None,
             "errors": {**state.get("errors", {}), "swot": _friendly_error_message(exc)},
         }
     logger.info("[swot] COMPLETE")
+    metrics.increment("node.swot.success")
     return {**state, "swot": value}
 
 
@@ -538,12 +544,14 @@ def mvp_node(state: PipelineState) -> PipelineState:
         )
     except Exception as exc:
         logger.exception("[mvp] FAILED")
+        metrics.increment("node.mvp.failure")
         return {
             **state,
             "mvp": None,
             "errors": {**state.get("errors", {}), "mvp": _friendly_error_message(exc)},
         }
     logger.info("[mvp] COMPLETE")
+    metrics.increment("node.mvp.success")
     return {**state, "mvp": value}
 
 
@@ -562,12 +570,14 @@ def gtm_node(state: PipelineState) -> PipelineState:
         )
     except Exception as exc:
         logger.exception("[gtm] FAILED")
+        metrics.increment("node.gtm.failure")
         return {
             **state,
             "gtm": None,
             "errors": {**state.get("errors", {}), "gtm": _friendly_error_message(exc)},
         }
     logger.info("[gtm] COMPLETE")
+    metrics.increment("node.gtm.success")
     return {**state, "gtm": value}
 
 
