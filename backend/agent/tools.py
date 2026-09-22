@@ -10,6 +10,7 @@ a computed relevance score instead: word-overlap between the query and each
 result's title+snippet, normalized to 0-1.
 """
 
+import html
 import json
 import logging
 import os
@@ -180,6 +181,17 @@ def _from_wikipedia(query: str, max_results: int) -> list[dict]:
     ]
 
 
+_HTML_TAG = re.compile(r"<[^>]+>")
+
+
+def _strip_html(text: str) -> str:
+    """HN's story_text is raw HTML (paragraph tags, escaped entities like
+    &#x27; and &amp;) since it's the post body, not a search-engine snippet
+    like every other source here - shown as-is it leaks markup into the UI.
+    """
+    return html.unescape(_HTML_TAG.sub(" ", text)).strip()
+
+
 def _hn_timestamp(hit: dict) -> str | None:
     """Algolia's HN search returns both a "created_at" ISO string and a
     "created_at_i" unix int - prefer the int since it needs no parsing and
@@ -203,7 +215,11 @@ def _from_hackernews(query: str, max_results: int) -> list[dict]:
     return [
         {
             "title": h.get("title") or h.get("story_title") or "",
-            "snippet": h.get("story_text") or f"{h.get('points', 0)} points, {h.get('num_comments', 0)} comments on Hacker News",
+            "snippet": (
+                _strip_html(h["story_text"])
+                if h.get("story_text")
+                else f"{h.get('points', 0)} points, {h.get('num_comments', 0)} comments on Hacker News"
+            ),
             "url": h.get("url") or h.get("story_url") or f"https://news.ycombinator.com/item?id={h.get('objectID')}",
             # Algolia's HN API reliably returns this (a real post timestamp,
             # unlike the other free providers) - the one free source that
@@ -229,8 +245,14 @@ def _free_fallback(query: str, max_results: int) -> list[dict]:
 
     scored = [
         {
-            "title": r["title"],
-            "snippet": r["snippet"],
+            # Wikipedia's excerpt and HN's story_text carry raw HTML entities
+            # (e.g. "&#039;", "&quot;") straight from their APIs - unescaped
+            # once here, at the single point every free-fallback source
+            # funnels through, rather than per-source (DuckDuckGo's `body`
+            # is already plain text, but unescaping twice is a no-op, so
+            # this is safe to apply uniformly rather than special-casing).
+            "title": html.unescape(r["title"]),
+            "snippet": html.unescape(r["snippet"]),
             "url": r["url"],
             "score": _relevance_score(query, r["title"], r["snippet"]),
             "publishedAt": r.get("publishedAt"),
