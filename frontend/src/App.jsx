@@ -306,6 +306,24 @@ export default function App() {
     )
   }
 
+  // History/Compare/Analytics are account-only (no nav button reaches them
+  // while signed out) - this only matters for the edge case of signing out
+  // while already on one of these screens, so it doesn't hang around
+  // showing a signed-in-only view to a now-signed-out user.
+  if (['compare', 'history', 'analytics'].includes(view) && !currentUser) {
+    return (
+      <LandingPage
+        onStart={() => setView('form')}
+        currentUser={currentUser}
+        onSignIn={() => {
+          setPreAuthView('landing')
+          setView('account')
+        }}
+        onSignOut={handleSignOut}
+      />
+    )
+  }
+
   if (view === 'compare') {
     return (
       <div className="min-h-screen bg-surface px-4 py-10">
@@ -347,27 +365,31 @@ export default function App() {
               Multi-agent · Live Web Search
             </p>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setView('history')}
-                className="rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-muted transition-colors hover:border-accent hover:text-accent"
-              >
-                History
-              </button>
-              <button
-                type="button"
-                onClick={() => setView('compare')}
-                className="rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-muted transition-colors hover:border-accent hover:text-accent"
-              >
-                Compare ideas
-              </button>
-              <button
-                type="button"
-                onClick={() => setView('analytics')}
-                className="rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-muted transition-colors hover:border-accent hover:text-accent"
-              >
-                Analytics
-              </button>
+              {currentUser && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setView('history')}
+                    className="rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-muted transition-colors hover:border-accent hover:text-accent"
+                  >
+                    History
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setView('compare')}
+                    className="rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-muted transition-colors hover:border-accent hover:text-accent"
+                  >
+                    Compare ideas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setView('analytics')}
+                    className="rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-muted transition-colors hover:border-accent hover:text-accent"
+                  >
+                    Analytics
+                  </button>
+                </>
+              )}
               {currentUser ? (
                 <button
                   type="button"

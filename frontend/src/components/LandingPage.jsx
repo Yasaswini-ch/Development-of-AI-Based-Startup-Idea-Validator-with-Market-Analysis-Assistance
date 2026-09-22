@@ -49,7 +49,7 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut 
         <div className="mb-14 flex items-center justify-between">
           <p className="font-mono text-xs uppercase tracking-widest text-accent">Affinity</p>
           <div className="flex items-center gap-2">
-            {currentUser ? (
+            {currentUser && (
               <button
                 type="button"
                 onClick={onSignOut}
@@ -58,14 +58,6 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut 
               >
                 <IconUser className="h-3 w-3 text-accent" />
                 <span className="max-w-[9rem] truncate normal-case">{currentUser.email}</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={onSignIn}
-                className="rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-muted transition-colors hover:border-accent hover:text-accent"
-              >
-                Sign in
               </button>
             )}
             <span className="flex items-center gap-1.5 rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-accent">
@@ -91,15 +83,26 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut 
           </p>
 
           <div className="mt-8 flex flex-col items-center gap-2.5">
-            <button
-              type="button"
-              onClick={onStart}
-              className="rounded-full bg-accent px-7 py-3 font-mono text-sm font-semibold uppercase tracking-wide text-white shadow-sm transition-transform hover:-translate-y-0.5 hover:bg-accent-hover"
-            >
-              Test it out →
-            </button>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={onStart}
+                className="rounded-full bg-accent px-7 py-3 font-mono text-sm font-semibold uppercase tracking-wide text-white shadow-sm transition-transform hover:-translate-y-0.5 hover:bg-accent-hover"
+              >
+                Test it out →
+              </button>
+              {!currentUser && (
+                <button
+                  type="button"
+                  onClick={onSignIn}
+                  className="rounded-full border border-border bg-panel px-7 py-3 font-mono text-sm font-semibold uppercase tracking-wide text-text shadow-sm transition-colors hover:border-accent hover:text-accent"
+                >
+                  Sign in
+                </button>
+              )}
+            </div>
             <p className="font-mono text-[11px] uppercase tracking-widest text-muted">
-              No signup · Free to try
+              {currentUser ? 'Signed in · Your validations are saved to your account' : 'No signup required to try · Sign in to save your history'}
             </p>
           </div>
         </section>
