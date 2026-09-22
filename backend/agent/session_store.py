@@ -13,6 +13,7 @@ import uuid
 from sqlalchemy import delete, select
 
 from .db import get_engine, now, sessions_table
+from .decision_history import append_decision as _append_decision
 
 _SESSION_TTL_SECONDS = 7 * 24 * 60 * 60
 _MAX_SESSIONS = 200
@@ -38,6 +39,7 @@ def _row_to_session(row) -> dict:
         "chatRequestTimes": row.chat_request_times,
         "createdAt": row.created_at,
         "updatedAt": row.updated_at,
+        "decisions": row.decisions or [],
     }
 
 
@@ -56,6 +58,7 @@ def create_session(context: dict, user_id: str | None = None) -> str:
                 created_at=timestamp,
                 updated_at=timestamp,
                 user_id=user_id,
+                decisions=[],
             )
         )
     return session_id
@@ -100,6 +103,11 @@ def get_session(session_id: str) -> dict | None:
 
 
 def append_turn(session_id: str, message: str, reply: str) -> bool:
+    """Also runs the message through decision_history.append_decision -
+    the "lightweight pass over the chat transcript" Track G.1 calls for,
+    done inline here rather than as a separate pass so a pivot is recorded
+    in the same transaction as the turn that contained it.
+    """
     engine = get_engine()
     with engine.begin() as conn:
         row = conn.execute(select(sessions_table).where(sessions_table.c.id == session_id)).first()
@@ -107,10 +115,11 @@ def append_turn(session_id: str, message: str, reply: str) -> bool:
             return False
         history = (row.history or []) + [{"message": message, "reply": reply}]
         history = history[-_MAX_TURNS:]
+        decisions = _append_decision(row.decisions or [], message, now())
         conn.execute(
             sessions_table.update()
             .where(sessions_table.c.id == session_id)
-            .values(history=history, updated_at=now())
+            .values(history=history, decisions=decisions, updated_at=now())
         )
         return True
 

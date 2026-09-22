@@ -7,6 +7,7 @@ from crewai import Agent, Crew, Process, Task
 from langgraph.graph import END, START, StateGraph
 
 from . import retrieval
+from .decision_history import summarize_decisions
 from .llm import get_llm, kickoff_with_fallback
 from .output_guard import strip_reasoning
 from .prompts.loader import load_prompt
@@ -30,6 +31,7 @@ class ChatState(TypedDict, total=False):
     message: str
     context: dict
     history: list
+    decisions: list
     needsSearch: bool
     searchQuery: str
     freshResults: list
@@ -54,7 +56,7 @@ def chat_search_node(state: ChatState) -> ChatState:
     return {**state, "freshResults": results}
 
 
-def _build_response_crew(message: str, context: str, history: str, fresh: str, model: str) -> Crew:
+def _build_response_crew(message: str, context: str, history: str, decisions: str, fresh: str, model: str) -> Crew:
     advisor = Agent(
         role="Conversational Startup Advisor",
         goal="Answer founder follow-up questions using validated session evidence and clearly label uncertainty.",
@@ -64,7 +66,7 @@ def _build_response_crew(message: str, context: str, history: str, fresh: str, m
     )
     task = Task(
         description=load_prompt(
-            "chat_advisor_task", context=context, history=history, fresh=fresh, message=message
+            "chat_advisor_task", context=context, history=history, decisions=decisions, fresh=fresh, message=message
         ),
         expected_output=load_prompt("chat_advisor_output"),
         agent=advisor,
@@ -75,9 +77,13 @@ def _build_response_crew(message: str, context: str, history: str, fresh: str, m
 def respond_node(state: ChatState) -> ChatState:
     context = compact_json(state.get("context", {}), max_chars=6500)
     history = compact_json(state.get("history", [])[-6:], max_chars=2500)
+    # Recorded pivots/decisions (agent/decision_history.py) give the advisor
+    # persistent memory of what changed before the last-6-turns window
+    # above, without resending the full transcript to the model.
+    decisions = summarize_decisions(state.get("decisions", []))
     fresh = compact_json(compact_sources(state.get("freshResults", []), limit=5), max_chars=2200)
     output = kickoff_with_fallback(
-        lambda model: _build_response_crew(state["message"], context, history, fresh, model),
+        lambda model: _build_response_crew(state["message"], context, history, decisions, fresh, model),
         primary="gemini/gemini-3.6-flash",
     )
     reply = strip_reasoning(output.raw).strip()
@@ -121,6 +127,7 @@ def run_chat_turn(session_id: str, message: str) -> str:
             "message": message,
             "context": session["context"],
             "history": session["history"],
+            "decisions": session.get("decisions", []),
         }
     )
     reply = state["reply"]

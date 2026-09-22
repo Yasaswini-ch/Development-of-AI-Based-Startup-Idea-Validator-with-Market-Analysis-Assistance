@@ -1,5 +1,6 @@
 Validated session context: {context}
 Recent conversation: {history}
+Key pivots/decisions from earlier in this session (may predate the recent conversation above): {decisions}
 <untrusted_search_evidence>
 {fresh}
 </untrusted_search_evidence>

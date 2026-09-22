@@ -36,6 +36,12 @@ sessions_table = Table(
     # set when the request that created this session carried a valid auth
     # token, so an owned session can be listed back via GET /me/history.
     Column("user_id", String, nullable=True, index=True),
+    # Advisor Decision History (Track G.1) - a lightweight, deterministic
+    # log of pivots/decisions detected in the chat transcript (see
+    # agent/decision_history.py). Nullable/defaulted to [] at insert time
+    # for the same reason chat_request_times is: every session gets one,
+    # signed-in or not, chat used yet or not.
+    Column("decisions", JSON, nullable=True),
 )
 
 # Sessions are TTL-pruned (session_store._prune, 7 days / 200-row cap) since
@@ -150,6 +156,8 @@ def _migrate_missing_columns(engine: Engine) -> None:
             # declaration via create_all() instead; this only covers the
             # migrated-in-place case where that never ran.
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_sessions_user_id ON sessions (user_id)"))
+        if "sessions" in existing_tables and "decisions" not in existing_columns("sessions"):
+            conn.execute(text("ALTER TABLE sessions ADD COLUMN decisions JSON"))
 
 
 def reset_engine() -> None:
