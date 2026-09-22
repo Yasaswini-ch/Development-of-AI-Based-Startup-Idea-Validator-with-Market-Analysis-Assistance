@@ -391,6 +391,61 @@ The following metrics would be valuable additions to this document but have not 
 
 ---
 
+## 9. Milestone 4 Update — Live-Measured Pipeline Metrics
+
+Everything above this section predates Milestone 3/4 and documents the *original* single-LLM-call pipeline. By Milestone 4 the pipeline makes **four** LLM calls per request, not one (`market_opportunity`, `swot`, `mvp`, `gtm` — `contradiction_detector`, `viability_score`, `experiment_generator`, and `action_plan` all stay deterministic, zero-cost, matching the pattern `opportunity_score`/`white_space` already established). This section replaces the stale "1 LLM call per request" framing with one real, timestamped measurement of the actual current 15-node graph, rather than leaving §5.1's 6-node table as the only latency reference.
+
+**Method:** one live `pipeline.invoke()` call against the real Tavily + Groq APIs (no mocking), idea = "A subscription box for eco-friendly cleaning products", captured 2026-09-22 via `agent/graph.py`'s existing per-node `elapsed_ms` logging plus `agent/llm.py`'s `llm_call` token logging. A single sample, not an average — treat as one real data point, not a statistically robust benchmark.
+
+### 9.1 Per-node latency (real run)
+
+| Node | Elapsed | Notes |
+|---|---|---|
+| `web_search` | 10.04 s | Tavily, 5 angles, returned 49 sources — the dominant cost, same conclusion §5.1 already drew |
+| `confidence_indicator` | 0 ms | unchanged — zero-cost |
+| `market_opportunity` (LLM) | 3.07 s | `groq/openai/gpt-oss-20b`, 3,536 prompt + 1,446 completion = 4,982 tokens |
+| `competitor_discovery` | 2.68 s | local spaCy NER, not zero as §2's table implies at this idea's snippet volume — worth revisiting that "Zero" cost-class label to distinguish $0 spend from 0 ms latency |
+| `opportunity_score` | 1 ms | unchanged |
+| `white_space` | 0 ms | unchanged |
+| `swot` (LLM) | 1.12 s | `groq/openai/gpt-oss-20b`, 1,557 + 593 = 2,150 tokens |
+| `viability_score` | 1 ms | deterministic, as designed |
+| `mvp` (LLM) | 4.43 s | `groq/openai/gpt-oss-120b`, 2,398 + 803 = 3,201 tokens |
+| `gtm` (LLM) | 3.36 s | `groq/openai/gpt-oss-120b`, 2,796 + 900 = 3,696 tokens |
+| `contradiction_detector` | 0 ms | deterministic |
+| `experiment_generator` | 0 ms | deterministic, generated 1 experiment from the run's 1 high-severity risk |
+| `action_plan` | 0 ms | deterministic |
+| `confidence_dashboard` | 0 ms | deterministic |
+| **Total (measured)** | **24.74 s** | vs. §5.1's old "7-25 s, dominated by 1 LLM call" — now dominated by 4 sequential LLM calls plus search |
+
+### 9.2 Token usage (real run)
+
+| LLM call | Model | Prompt tokens | Completion tokens | Total |
+|---|---|---|---|---|
+| `market_opportunity` | gpt-oss-20b | 3,536 | 1,446 | 4,982 |
+| `swot` | gpt-oss-20b | 1,557 | 593 | 2,150 |
+| `mvp` | gpt-oss-120b | 2,398 | 803 | 3,201 |
+| `gtm` | gpt-oss-120b | 2,796 | 900 | 3,696 |
+| **Total per request** | | **10,287** | **3,742** | **14,029** |
+
+This is roughly **7x** the ~1,900-token estimate §3.2.2 gives for the old 1-call pipeline — expected, since three more agents were added, but not previously measured or written down anywhere. At the fallback-model pricing in §3.2.1 ($0.075/$0.30 per 1M for gpt-oss-20b, $0.59/$1.18 for gpt-oss-120b), this single request's LLM spend is approximately:
+
+$$(3{,}536{+}1{,}557) \times \$0.075/1M + (1{,}446{+}593) \times \$0.30/1M + (2{,}398{+}2{,}796) \times \$0.59/1M + (803{+}900) \times \$1.18/1M \approx \$0.0084\text{ per request}$$
+
+— still effectively $0 on the free tier, but roughly **12x** §3.5's old ~$0.00067/request estimate, since that figure only ever accounted for one LLM call.
+
+### 9.3 What this changes about quota management (§6.1)
+
+Four separate Groq quota buckets are now consumed per request instead of one (`market_opportunity`+`swot` share `gpt-oss-20b`'s bucket; `mvp`+`gtm` share `gpt-oss-120b`'s bucket — both are **already** exhausted twice as fast per request as when only `market_opportunity` used them). This is the concrete mechanism behind the Groq rate-limit pressure observed repeatedly during concurrent live testing this milestone — not a new problem, but this is the first time it's tied to an actual measured token count rather than asserted qualitatively.
+
+### 9.4 Not yet measured
+
+Everything in the old §7 table remains genuinely unmeasured (still no aggregate logging/counters), plus, newly relevant at M4 scale:
+- Latency/token distribution across `swot`/`mvp`/`gtm` specifically (this section is one sample per node, not a distribution)
+- Whether `competitor_discovery`'s NER latency (2.68 s here) scales with source count in a way that matters at higher `web_search` result volumes
+- Real success/failure rate of `experiment_generator`/`action_plan` across ideas with zero high-severity risks (this sample happened to have exactly one)
+
+---
+
 ## 8. Document Provenance
 
 All figures in this document are derived directly from the source code as of commit `8334bdb` (September 6, 2026). No figures are estimated or sourced from external benchmarks unless explicitly stated.
