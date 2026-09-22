@@ -6,6 +6,7 @@ from crewai import Agent, Crew, Process, Task
 
 from .deterministic_fallback import deterministic_gtm
 from .llm import get_llm, kickoff_with_fallback
+from .prompts.loader import load_prompt
 from .structured_output import (
     compact_json,
     compact_sources,
@@ -50,7 +51,7 @@ def _build_crew(idea: str, target_customer: str, context: str, model: str) -> Cr
     analyst = Agent(
         role="Go-to-Market Strategy Analyst",
         goal="Create a focused positioning and early acquisition plan grounded in validated customer and competitor evidence.",
-        backstory="An early-stage growth strategist who recommends a few testable channels instead of generic marketing lists.",
+        backstory=load_prompt("gtm_system"),
         # Rebalanced to 450 (was 800, briefly tried 250) - see
         # market_agent.py for the full rationale; 250 was confirmed live to
         # truncate JSON output itself, not just hit the rate limit.
@@ -58,22 +59,10 @@ def _build_crew(idea: str, target_customer: str, context: str, model: str) -> Cr
         verbose=False,
     )
     task = Task(
-        description=(
-            f'Startup idea: "{idea}"\nTarget customer: {target_customer or "not specified"}\n'
-            f"Validated strategy context: {context}\n\n"
-            "The context's \"sources\" array lists sourceId values (e.g. \"src-1\"). "
-            "Write one differentiated positioning statement, up to four specific acquisition channels, "
-            "and one practical early-customer approach. Do not invent traction or partnerships. "
-            "Give the positioning statement a \"positioningSourceIds\" array, each channel a "
-            "\"sourceIds\" array, and the early-customer approach an \"earlyCustomerApproachSourceIds\" "
-            "array - citing the sourceId(s) each is grounded in, empty only when not tied to a "
-            "specific source, never inventing a sourceId that isn't in the context's sources list."
+        description=load_prompt(
+            "gtm_task", idea=idea, target_customer=target_customer or "not specified", context=context
         ),
-        expected_output=(
-            'One JSON object only: {"positioning":"...","positioningSourceIds":["src-1"],'
-            '"channels":[{"text":"...","sourceIds":["src-2"]}],'
-            '"earlyCustomerApproach":"...","earlyCustomerApproachSourceIds":[]}.'
-        ),
+        expected_output=load_prompt("gtm_output"),
         agent=analyst,
     )
     return Crew(agents=[analyst], tasks=[task], process=Process.sequential, verbose=False)
