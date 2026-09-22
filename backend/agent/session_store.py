@@ -41,7 +41,7 @@ def _row_to_session(row) -> dict:
     }
 
 
-def create_session(context: dict) -> str:
+def create_session(context: dict, user_id: str | None = None) -> str:
     session_id = str(uuid.uuid4())
     timestamp = now()
     engine = get_engine()
@@ -55,9 +55,37 @@ def create_session(context: dict) -> str:
                 chat_request_times=[],
                 created_at=timestamp,
                 updated_at=timestamp,
+                user_id=user_id,
             )
         )
     return session_id
+
+
+def list_sessions_for_user(user_id: str, limit: int = 50) -> list[dict]:
+    """Powers GET /me/history - the signed-in equivalent of the device-local
+    history frontend/src/lib/history.js keeps for anonymous use. Only
+    surfaces the fields a history list needs (idea/targetCustomer/dates),
+    not the full context, since callers who want the rest already have
+    GET /reports/{sessionId} for that.
+    """
+    engine = get_engine()
+    with engine.begin() as conn:
+        _prune(conn)
+        rows = conn.execute(
+            select(sessions_table)
+            .where(sessions_table.c.user_id == user_id)
+            .order_by(sessions_table.c.created_at.desc())
+            .limit(limit)
+        ).all()
+    return [
+        {
+            "sessionId": row.id,
+            "idea": (row.context or {}).get("idea", ""),
+            "targetCustomer": (row.context or {}).get("targetCustomer", ""),
+            "createdAt": row.created_at,
+        }
+        for row in rows
+    ]
 
 
 def get_session(session_id: str) -> dict | None:

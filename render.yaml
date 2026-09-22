@@ -26,6 +26,14 @@ services:
         sync: false
       - key: SENDGRID_FROM_EMAIL
         sync: false
+      # Signs the JWT auth tokens issued by agent/auth.py - Render generates
+      # and stores a random value for this on first deploy (rather than
+      # `sync: false`, which would require someone to paste one in by hand)
+      # since there's no external account to create a matching key on.
+      # Rotating it invalidates every signed-in session, so it isn't
+      # regenerated on later deploys.
+      - key: AUTH_SECRET_KEY
+        generateValue: true
       - key: FRONTEND_ORIGIN
         value: https://startup-validator-frontend-5qcr.onrender.com
       - key: DATABASE_URL

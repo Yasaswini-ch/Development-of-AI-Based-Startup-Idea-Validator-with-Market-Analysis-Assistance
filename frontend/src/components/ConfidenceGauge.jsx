@@ -1,7 +1,7 @@
 const RADIUS = 46
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS
 
-export default function ConfidenceGauge({ percent, size = 104 }) {
+export default function ConfidenceGauge({ percent, size = 104, label = 'CONFIDENCE' }) {
   const offset = CIRCUMFERENCE - (CIRCUMFERENCE * percent) / 100
 
   return (
@@ -11,7 +11,7 @@ export default function ConfidenceGauge({ percent, size = 104 }) {
       viewBox="0 0 112 112"
       className="shrink-0"
       role="img"
-      aria-label={`Confidence score ${percent}%`}
+      aria-label={`${label.toLowerCase()} ${percent}%`}
     >
       <circle cx="56" cy="56" r={RADIUS} fill="none" stroke="var(--color-border)" strokeWidth="10" />
       <circle
@@ -37,7 +37,7 @@ export default function ConfidenceGauge({ percent, size = 104 }) {
         className="font-mono"
         style={{ fontSize: 8, letterSpacing: '0.08em', fill: 'var(--color-muted)' }}
       >
-        CONFIDENCE
+        {label}
       </text>
     </svg>
   )

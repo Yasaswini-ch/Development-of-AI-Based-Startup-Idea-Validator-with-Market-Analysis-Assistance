@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { IconLink, IconX } from './icons'
 import { getHistory, removeHistoryEntry, clearHistory } from '../lib/history'
+import { authHeaders } from '../lib/auth'
 
 function formatDate(iso) {
   try {
@@ -40,8 +41,38 @@ function CopyLinkButton({ sessionId }) {
 // onOpen is optional - when the host page (App.jsx) can resume a session
 // in place, pass a callback; otherwise this still works as a read-only,
 // copy-the-link list.
-export default function HistoryPanel({ onOpen, onBack }) {
-  const [entries, setEntries] = useState(getHistory)
+//
+// With a `token` (signed in), this lists GET /me/history - the account's
+// own board, server-side. Without one, it falls back to the device-local
+// list (lib/history.js) exactly as before accounts existed. The server
+// list has no per-entry delete yet (no DELETE /me/history/{id} endpoint) -
+// "Remove"/"Clear" only apply to the local list, since a signed-in board is
+// meant to be the durable record, not something to prune from this screen.
+export default function HistoryPanel({ apiUrl, token, onOpen, onBack }) {
+  const [entries, setEntries] = useState(token ? [] : getHistory)
+  const [isLoading, setIsLoading] = useState(Boolean(token))
+  const [loadError, setLoadError] = useState('')
+
+  useEffect(() => {
+    if (!token) return
+    let cancelled = false
+    setIsLoading(true)
+    setLoadError('')
+    fetch(`${apiUrl}/me/history`, { headers: authHeaders(token) })
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((data) => {
+        if (!cancelled) setEntries(data.entries || [])
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError('Could not load your account history. Please try again.')
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [apiUrl, token])
 
   function handleRemove(sessionId) {
     removeHistoryEntry(sessionId)
@@ -72,14 +103,20 @@ export default function HistoryPanel({ onOpen, onBack }) {
       </div>
 
       <p className="mb-4 text-sm leading-relaxed text-muted">
-        Saved on this device only - there's no account system, so switching browsers or clearing
-        site data loses this list. Use "Copy link" to save a session somewhere durable (your email,
-        notes) before that happens. The same links also work as input for Compare.
+        {token
+          ? "Saved to your account - these validations follow you across devices as long as you're signed in with this email."
+          : 'Saved on this device only - there\'s no account system, so switching browsers or clearing site data loses this list. Use "Copy link" to save a session somewhere durable (your email, notes) before that happens. The same links also work as input for Compare.'}
       </p>
 
-      {entries.length === 0 ? (
+      {isLoading ? (
+        <div className="rounded-2xl border border-border bg-panel p-8 text-center font-mono text-xs uppercase tracking-widest text-muted cursor-blink">
+          Loading your history
+        </div>
+      ) : loadError ? (
+        <div className="rounded-2xl border border-danger/30 bg-panel p-8 text-center text-sm text-danger">{loadError}</div>
+      ) : entries.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border bg-panel p-8 text-center text-sm text-muted">
-          No validations yet on this device. Run one and it'll show up here.
+          {token ? 'No validations yet on this account. Run one and it\'ll show up here.' : 'No validations yet on this device. Run one and it\'ll show up here.'}
         </div>
       ) : (
         <div className="space-y-2">
@@ -106,21 +143,23 @@ export default function HistoryPanel({ onOpen, onBack }) {
                   </button>
                 )}
                 <CopyLinkButton sessionId={entry.sessionId} />
-                <button
-                  type="button"
-                  onClick={() => handleRemove(entry.sessionId)}
-                  aria-label="Remove from history"
-                  className="shrink-0 rounded-full p-1.5 text-muted transition-colors hover:bg-surface hover:text-danger"
-                >
-                  <IconX className="h-3.5 w-3.5" />
-                </button>
+                {!token && (
+                  <button
+                    type="button"
+                    onClick={() => handleRemove(entry.sessionId)}
+                    aria-label="Remove from history"
+                    className="shrink-0 rounded-full p-1.5 text-muted transition-colors hover:bg-surface hover:text-danger"
+                  >
+                    <IconX className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {entries.length > 0 && (
+      {!token && entries.length > 0 && (
         <button
           type="button"
           onClick={handleClear}
