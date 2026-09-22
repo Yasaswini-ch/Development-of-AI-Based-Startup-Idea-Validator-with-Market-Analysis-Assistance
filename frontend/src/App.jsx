@@ -6,9 +6,13 @@ import ErrorState from './components/ErrorState'
 import LandingPage from './components/LandingPage'
 import CompareIdeas from './components/CompareIdeas'
 import HistoryPanel from './components/HistoryPanel'
+import AnalyticsDashboard from './components/AnalyticsDashboard'
+import AuthPanel from './components/AuthPanel'
+import { IconUser } from './components/icons'
 import useCountUp from './hooks/useCountUp'
 import useLoadingSteps from './hooks/useLoadingSteps'
 import { addHistoryEntry } from './lib/history'
+import { authHeaders, clearAuth, getStoredUser, getToken, setAuth } from './lib/auth'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 const STORAGE_KEY = 'affinity:lastValidation'
@@ -80,8 +84,58 @@ export default function App() {
   const [processingMessage, setProcessingMessage] = useState('')
   const [lastSubmission, setLastSubmission] = useState(persisted?.lastSubmission ?? null)
   const [updatedAt, setUpdatedAt] = useState(persisted?.updatedAt ?? null)
+  const [authToken, setAuthToken] = useState(getToken)
+  const [currentUser, setCurrentUser] = useState(getStoredUser)
+  // Remembers where "Sign in" was opened from (landing vs. the main form)
+  // purely so its own "Back" button returns there instead of always
+  // dropping onto the form - cosmetic, not auth state.
+  const [preAuthView, setPreAuthView] = useState('form')
   const loadingStep = useLoadingSteps(isLoading)
   const sourceCount = useCountUp(validation?.results?.length ?? 0)
+
+  // Verifies the token on mount rather than trusting whatever's cached in
+  // localStorage - a 30-day-old token could be expired, or a password
+  // change could have invalidated it, and showing "signed in as..." for an
+  // account the server no longer honors is worse than a beat of extra
+  // latency before falling back to signed-out. Only an actual 401 from the
+  // server clears the stored credentials - a network-level failure (offline,
+  // backend mid-restart) leaves them alone, since that's not evidence the
+  // token itself is bad, just that this one check couldn't complete.
+  useEffect(() => {
+    if (!authToken) return
+    let cancelled = false
+    fetch(`${API_URL}/auth/me`, { headers: authHeaders(authToken) })
+      .then((res) => {
+        if (cancelled) return
+        if (res.ok) return res.json().then((user) => setCurrentUser(user))
+        if (res.status === 401) {
+          clearAuth()
+          setAuthToken(null)
+          setCurrentUser(null)
+        }
+      })
+      .catch(() => {
+        // Network-level failure, not a server-confirmed invalid token -
+        // nothing to do; the cached credentials stay as they were.
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function handleAuthenticated({ token, user }) {
+    setAuth({ token, user })
+    setAuthToken(token)
+    setCurrentUser(user)
+    setView('form')
+  }
+
+  function handleSignOut() {
+    clearAuth()
+    setAuthToken(null)
+    setCurrentUser(null)
+  }
 
   useEffect(() => {
     try {
@@ -147,7 +201,7 @@ export default function App() {
     try {
       const res = await fetch(`${API_URL}/validate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders(authToken) },
         body: JSON.stringify(payload),
       })
       const data = await res.json()
@@ -239,7 +293,17 @@ export default function App() {
   }
 
   if (view === 'landing') {
-    return <LandingPage onStart={() => setView('form')} />
+    return (
+      <LandingPage
+        onStart={() => setView('form')}
+        currentUser={currentUser}
+        onSignIn={() => {
+          setPreAuthView('landing')
+          setView('account')
+        }}
+        onSignOut={handleSignOut}
+      />
+    )
   }
 
   if (view === 'compare') {
@@ -253,7 +317,23 @@ export default function App() {
   if (view === 'history') {
     return (
       <div className="min-h-screen bg-surface px-4 py-10">
-        <HistoryPanel onBack={() => setView('form')} onOpen={openHistorySession} />
+        <HistoryPanel apiUrl={API_URL} token={authToken} onBack={() => setView('form')} onOpen={openHistorySession} />
+      </div>
+    )
+  }
+
+  if (view === 'analytics') {
+    return (
+      <div className="min-h-screen bg-surface px-4 py-10">
+        <AnalyticsDashboard apiUrl={API_URL} token={authToken} onBack={() => setView('form')} />
+      </div>
+    )
+  }
+
+  if (view === 'account') {
+    return (
+      <div className="min-h-screen bg-surface px-4 py-10">
+        <AuthPanel apiUrl={API_URL} onAuthenticated={handleAuthenticated} onBack={() => setView(preAuthView)} />
       </div>
     )
   }
@@ -261,7 +341,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-surface">
       <main className="mx-auto max-w-5xl px-4 pb-24 pt-10 sm:pt-14">
-        <div className="mx-auto max-w-xl">
+        <div className="mx-auto max-w-3xl">
           <div className="mb-8 flex items-center justify-between">
             <p className="font-mono text-xs uppercase tracking-widest text-muted cursor-blink">
               Multi-agent · Live Web Search
@@ -281,6 +361,35 @@ export default function App() {
               >
                 Compare ideas
               </button>
+              <button
+                type="button"
+                onClick={() => setView('analytics')}
+                className="rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-muted transition-colors hover:border-accent hover:text-accent"
+              >
+                Analytics
+              </button>
+              {currentUser ? (
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  title={`Signed in as ${currentUser.email} - click to sign out`}
+                  className="flex items-center gap-1.5 rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-text transition-colors hover:border-accent hover:text-accent"
+                >
+                  <IconUser className="h-3 w-3 text-accent" />
+                  <span className="max-w-[9rem] truncate normal-case">{currentUser.email}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPreAuthView('form')
+                    setView('account')
+                  }}
+                  className="rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-muted transition-colors hover:border-accent hover:text-accent"
+                >
+                  Sign in
+                </button>
+              )}
               <span className="flex items-center gap-1.5 rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-accent">
                 <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-accent" />
                 Live

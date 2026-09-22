@@ -8,11 +8,12 @@ import time
 import uuid
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from agent.auth import AuthError, login as auth_login, optional_user, require_user, signup as auth_signup
 from agent.chat_graph import ChatRateLimitError, run_chat_turn
 from agent.db import cache_table, get_engine
 from agent.email_delivery import is_valid_email, send_canonical_report_email, send_report_email
@@ -20,7 +21,7 @@ from agent.graph import pipeline
 from agent.job_store import complete_job, create_job, fail_job, get_job
 from agent.pdf_exporter import generate_dossier_pdf
 from agent.report_assembler import assemble_report, report_to_pdf_input
-from agent.session_store import create_session, get_session
+from agent.session_store import create_session, get_session, list_sessions_for_user
 from agent.structured_output import compact_sources
 from sqlalchemy import delete, select
 
@@ -188,6 +189,10 @@ _VALIDATE_RATE_LIMIT = int(os.environ.get("VALIDATE_RATE_LIMIT_PER_MINUTE", "10"
 _CHAT_RATE_LIMIT = int(os.environ.get("CHAT_RATE_LIMIT_PER_MINUTE", "30"))
 _EXPORT_PDF_RATE_LIMIT = int(os.environ.get("EXPORT_PDF_RATE_LIMIT_PER_MINUTE", "10"))
 _REPORT_EMAIL_RATE_LIMIT = int(os.environ.get("REPORT_EMAIL_RATE_LIMIT_PER_MINUTE", "5"))
+# Tighter than the other limits on purpose - signup/login are the one pair
+# of endpoints where the request itself (repeated password guesses) is the
+# abuse, not just request volume.
+_AUTH_RATE_LIMIT = int(os.environ.get("AUTH_RATE_LIMIT_PER_MINUTE", "8"))
 
 _rate_limit_lock = threading.Lock()
 _rate_limit_hits: dict[str, list[float]] = {}
@@ -260,6 +265,24 @@ def _response_is_partial(response: dict) -> bool:
 # --------------------------------------------------
 # REQUEST MODEL
 # --------------------------------------------------
+
+class SignupRequest(BaseModel):
+    email: str
+    password: str
+
+    @field_validator("email")
+    @classmethod
+    def _validate_email(cls, value: str) -> str:
+        value = value.strip()
+        if not value or not is_valid_email(value):
+            raise ValueError("email must be a valid email address")
+        return value
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
 
 class ValidateRequest(BaseModel):
     idea: str
@@ -354,7 +377,7 @@ class CompareReportsRequest(BaseModel):
         return deduped
 
 
-def _create_validation_session(payload: ValidateRequest, response: dict) -> str:
+def _create_validation_session(payload: ValidateRequest, response: dict, user_id: str | None = None) -> str:
     return create_session(
         {
             "idea": payload.idea.strip(),
@@ -376,7 +399,8 @@ def _create_validation_session(payload: ValidateRequest, response: dict) -> str:
             "contradictions": response.get("contradictions"),
             "experiments": response.get("experiments"),
             "actionPlan": response.get("actionPlan"),
-        }
+        },
+        user_id=user_id,
     )
 
 
@@ -407,6 +431,49 @@ def health():
         "status": "ok",
         "service": "Affinity API",
     }
+
+
+# --------------------------------------------------
+# AUTH
+# --------------------------------------------------
+#
+# Stateless JWT bearer tokens (agent/auth.py) - a signed-in user's own
+# validations get tagged with their user id at creation time (see
+# _create_validation_session's user_id param) so GET /me/history can list
+# them back. No password reset / email verification flow yet - out of
+# scope for a first pass at "my own board," and both are separable
+# follow-ups (email verification needs the same email-sending path
+# email_delivery.py already has; reset needs a short-lived, single-use
+# token distinct from the long-lived session JWT here).
+
+@app.post("/auth/signup")
+def auth_signup_route(payload: SignupRequest, request: Request):
+    if _is_rate_limited(f"auth:{_client_ip(request)}", _AUTH_RATE_LIMIT):
+        return _rate_limit_response("Too many attempts. Please wait a minute and try again.")
+    try:
+        return auth_signup(payload.email, payload.password)
+    except AuthError as exc:
+        return JSONResponse(status_code=400, content={"error": str(exc)})
+
+
+@app.post("/auth/login")
+def auth_login_route(payload: LoginRequest, request: Request):
+    if _is_rate_limited(f"auth:{_client_ip(request)}", _AUTH_RATE_LIMIT):
+        return _rate_limit_response("Too many attempts. Please wait a minute and try again.")
+    try:
+        return auth_login(payload.email, payload.password)
+    except AuthError as exc:
+        return JSONResponse(status_code=401, content={"error": str(exc)})
+
+
+@app.get("/auth/me")
+def auth_me(current_user: dict = Depends(require_user)):
+    return current_user
+
+
+@app.get("/me/history")
+def my_history(current_user: dict = Depends(require_user)):
+    return {"entries": list_sessions_for_user(current_user["id"])}
 
 
 class PipelineStateError(Exception):
@@ -465,7 +532,9 @@ def _run_pipeline_and_build_response(payload: ValidateRequest, cache_key: str) -
     return response
 
 
-async def _finish_async_validation(task: "asyncio.Task[dict]", job_id: str, payload: ValidateRequest) -> None:
+async def _finish_async_validation(
+    task: "asyncio.Task[dict]", job_id: str, payload: ValidateRequest, user_id: str | None = None
+) -> None:
     """Awaits the still-running pipeline task after /validate has already
     responded with a "processing" status, stores the outcome in the job
     store for polling, and emails the report on success. Runs as a detached
@@ -478,7 +547,7 @@ async def _finish_async_validation(task: "asyncio.Task[dict]", job_id: str, payl
         fail_job(job_id, str(exc))
         return
 
-    session_id = _create_validation_session(payload, response)
+    session_id = _create_validation_session(payload, response, user_id=user_id)
     complete_job(job_id, {**response, "sessionId": session_id})
 
     if payload.email:
@@ -492,7 +561,8 @@ async def _finish_async_validation(task: "asyncio.Task[dict]", job_id: str, payl
 # --------------------------------------------------
 
 @app.post("/validate")
-async def validate_idea(payload: ValidateRequest, request: Request):
+async def validate_idea(payload: ValidateRequest, request: Request, current_user: dict | None = Depends(optional_user)):
+    user_id = current_user["id"] if current_user else None
 
     # ----------------------------------------------
     # Rate limit
@@ -532,7 +602,7 @@ async def validate_idea(payload: ValidateRequest, request: Request):
             "Cache hit - skipping pipeline"
         )
 
-        session_id = _create_validation_session(payload, cached)
+        session_id = _create_validation_session(payload, cached, user_id=user_id)
 
         if payload.email and _response_is_partial(cached):
             sent = send_report_email(payload.email, payload.idea, cached, _report_url(session_id))
@@ -558,7 +628,7 @@ async def validate_idea(payload: ValidateRequest, request: Request):
 
         if task not in done:
             job_id = create_job()
-            asyncio.create_task(_finish_async_validation(task, job_id, payload))
+            asyncio.create_task(_finish_async_validation(task, job_id, payload, user_id=user_id))
             return JSONResponse(
                 status_code=202,
                 content={
@@ -589,7 +659,7 @@ async def validate_idea(payload: ValidateRequest, request: Request):
     # Return response
     # ----------------------------------------------
 
-    session_id = _create_validation_session(payload, response)
+    session_id = _create_validation_session(payload, response, user_id=user_id)
 
     if payload.email and _response_is_partial(response):
         # Finished within the synchronous window, but part of it degraded

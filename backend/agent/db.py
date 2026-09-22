@@ -30,6 +30,27 @@ sessions_table = Table(
     Column("chat_request_times", JSON, nullable=False),
     Column("created_at", Float, nullable=False),
     Column("updated_at", Float, nullable=False, index=True),
+    # Nullable: a validation is still allowed with no signed-in user (the
+    # app's whole prior history had no accounts at all - see main.py's own
+    # "no accounts to scope one to" comment on CompareReportsRequest). Only
+    # set when the request that created this session carried a valid auth
+    # token, so an owned session can be listed back via GET /me/history.
+    Column("user_id", String, nullable=True, index=True),
+)
+
+# Sessions are TTL-pruned (session_store._prune, 7 days / 200-row cap) since
+# they were designed as a bounded cache, not permanent storage - a signed-in
+# user's "board" is therefore only as durable as that TTL today. Extending
+# retention for owned sessions specifically is a deliberate follow-up, not
+# done here, since it's a real resource/cost tradeoff (unbounded per-user
+# storage) rather than a pure auth concern.
+users_table = Table(
+    "users",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("email", String, nullable=False, unique=True, index=True),
+    Column("password_hash", String, nullable=False),
+    Column("created_at", Float, nullable=False),
 )
 
 jobs_table = Table(
@@ -124,4 +145,5 @@ __all__ = [
     "now",
     "reset_engine",
     "sessions_table",
+    "users_table",
 ]

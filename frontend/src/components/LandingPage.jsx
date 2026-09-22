@@ -6,6 +6,7 @@ import {
   IconGlobe,
   IconCheckCircle,
   IconMessageCircle,
+  IconUser,
 } from './icons'
 
 const EXAMPLE_IDEAS = [
@@ -38,7 +39,7 @@ const STEPS = [
   },
 ]
 
-export default function LandingPage({ onStart }) {
+export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut }) {
   const { text, settled } = useTypewriter(EXAMPLE_IDEAS)
   const confidence = useCountUp(settled ? 84 : 0, 900)
 
@@ -47,10 +48,31 @@ export default function LandingPage({ onStart }) {
       <main className="mx-auto max-w-3xl px-4 pb-24 pt-10 sm:pt-14">
         <div className="mb-14 flex items-center justify-between">
           <p className="font-mono text-xs uppercase tracking-widest text-accent">Affinity</p>
-          <span className="flex items-center gap-1.5 rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-accent">
-            <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-accent" />
-            Live
-          </span>
+          <div className="flex items-center gap-2">
+            {currentUser ? (
+              <button
+                type="button"
+                onClick={onSignOut}
+                title={`Signed in as ${currentUser.email} - click to sign out`}
+                className="flex items-center gap-1.5 rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-text transition-colors hover:border-accent hover:text-accent"
+              >
+                <IconUser className="h-3 w-3 text-accent" />
+                <span className="max-w-[9rem] truncate normal-case">{currentUser.email}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onSignIn}
+                className="rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-muted transition-colors hover:border-accent hover:text-accent"
+              >
+                Sign in
+              </button>
+            )}
+            <span className="flex items-center gap-1.5 rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-accent">
+              <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-accent" />
+              Live
+            </span>
+          </div>
         </div>
 
         <section className="fade-in-up text-center">
