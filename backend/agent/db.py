@@ -14,7 +14,7 @@ never could be.
 import os
 import time
 
-from sqlalchemy import JSON, Column, Float, MetaData, String, Table, create_engine
+from sqlalchemy import JSON, Column, Float, MetaData, String, Table, create_engine, inspect, text
 from sqlalchemy.engine import Engine
 
 _DEFAULT_SQLITE_URL = "sqlite:///./affinity.db"
@@ -120,7 +120,36 @@ def get_engine() -> Engine:
 
     _engine = create_engine(url, connect_args=connect_args, pool_pre_ping=True, **pool_kwargs)
     metadata.create_all(_engine)
+    _migrate_missing_columns(_engine)
     return _engine
+
+
+# `metadata.create_all()` only creates tables that don't exist yet - it never
+# alters a table that's already there, so adding `sessions.user_id` to the
+# Table() definition above did nothing to Render's existing production
+# `sessions` table (or anyone's pre-existing local affinity.db). Without
+# this, every /validate call - not just authenticated ones, since
+# _create_validation_session always writes a user_id column now - would
+# start failing in any environment with a pre-auth database. This is a
+# minimal, hand-rolled substitute for a real migration tool (no Alembic in
+# this project): it only ever adds a column that's missing, on the two
+# tables that changed shape after already shipping, and is a no-op (one
+# cheap introspection query) once a database is up to date.
+def _migrate_missing_columns(engine: Engine) -> None:
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+
+    def existing_columns(table_name: str) -> set[str]:
+        return {col["name"] for col in inspector.get_columns(table_name)}
+
+    with engine.begin() as conn:
+        if "sessions" in existing_tables and "user_id" not in existing_columns("sessions"):
+            conn.execute(text("ALTER TABLE sessions ADD COLUMN user_id VARCHAR"))
+            # IF NOT EXISTS is supported by both SQLite (3.8+) and Postgres -
+            # a fresh database gets this index from the Column(index=True)
+            # declaration via create_all() instead; this only covers the
+            # migrated-in-place case where that never ran.
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_sessions_user_id ON sessions (user_id)"))
 
 
 def reset_engine() -> None:
