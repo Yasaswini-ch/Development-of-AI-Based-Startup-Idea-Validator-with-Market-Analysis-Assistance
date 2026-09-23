@@ -514,7 +514,12 @@ def viability_score_node(state: PipelineState) -> PipelineState:
     """Deterministic - no LLM call, same "don't generate a fake score if
     upstream failed" rule opportunity_score_node follows: skipped entirely
     when marketOpportunity is None rather than scoring nothing as if it
-    were real data.
+    were real data. Still wrapped in the same try/except-per-node pattern
+    every other node in this file uses - "no LLM call" made a crash here
+    unlikely, not impossible, and this node used to be the one exception to
+    that pattern, able to take the whole request down on any bug in
+    viability_score.py despite everything upstream having already
+    succeeded.
     """
     logger.info("[viability_score] START")
     if state.get("error"):
@@ -525,7 +530,16 @@ def viability_score_node(state: PipelineState) -> PipelineState:
         logger.warning("[viability_score] Skipped because marketOpportunity is None")
         return state
 
-    value = calculate_market_viability(market_opportunity, state.get("swot"))
+    try:
+        value = calculate_market_viability(market_opportunity, state.get("swot"))
+    except Exception as exc:
+        logger.exception("[viability_score] FAILED")
+        return {
+            **state,
+            "marketViability": None,
+            "errors": {**state.get("errors", {}), "marketViability": _friendly_error_message(exc)},
+        }
+
     logger.info("[viability_score] COMPLETE - score=%s", value["score"])
     return {**state, "marketViability": value}
 

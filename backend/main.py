@@ -286,10 +286,24 @@ class LoginRequest(BaseModel):
 
 
 class ValidateRequest(BaseModel):
-    idea: str
-    targetCustomer: str = ""
-    problem: str = ""
+    # Unlike ChatRequest.message below, idea previously had no length
+    # bound at all - an empty/whitespace-only idea passed straight through
+    # to retrieval.collect() and built degenerate search queries (e.g. a
+    # bare " market size" with no actual subject) against real external
+    # search APIs instead of being rejected up front. max_length guards the
+    # same prompt-bloat concern ChatRequest.message already has.
+    idea: str = Field(max_length=500)
+    targetCustomer: str = Field(default="", max_length=200)
+    problem: str = Field(default="", max_length=500)
     email: str = ""
+
+    @field_validator("idea")
+    @classmethod
+    def _validate_idea(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("idea must not be empty or blank")
+        return value
 
     @field_validator("email")
     @classmethod
