@@ -191,6 +191,35 @@ function SectionDivider({ label }) {
   )
 }
 
+function SectionNav({ sections }) {
+  function scrollTo(id) {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+  return (
+    <div className="mb-5 flex flex-wrap gap-2">
+      {sections.map((s, i) => (
+        <button
+          key={s.id}
+          onClick={() => scrollTo(s.id)}
+          className="flex items-center gap-1.5 rounded-full border border-border bg-panel px-3 py-1 font-mono text-[10px] uppercase tracking-wide text-muted transition-colors hover:border-accent hover:text-accent"
+        >
+          <span className="font-bold text-accent">§{String(i + 1).padStart(2, '0')}</span>
+          {s.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function GroundingNotice({ message }) {
+  return (
+    <div className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
+      <span className="mt-0.5 shrink-0 text-amber-500">⚠</span>
+      <p className="text-sm leading-relaxed text-amber-800">{message}</p>
+    </div>
+  )
+}
+
 // Copies a ?session=... link (same format the emailed "view this report
 // again" link uses, and what CompareIdeas.jsx's inputs accept) to the
 // clipboard - the only way to get a session id into Compare without
@@ -261,6 +290,11 @@ export default function ValidationResults({
 
   const segments = marketOpportunity?.segments ?? []
 
+  // Thin-data signals — used to surface grounding notices in context
+  const totalConfidenceSources =
+    (confidence?.marketGrowth?.total ?? 0) + (confidence?.competitivePressure?.total ?? 0)
+  const veryThinData = totalConfidenceSources < 2 && results.length < 4
+
   return (
     <div className="mt-6 space-y-4">
       {/* Idea dossier — shows back what was submitted so founders can verify interpretation */}
@@ -303,6 +337,10 @@ export default function ValidationResults({
       <div>
         <ConfidenceDashboard data={confidence} />
       </div>
+
+      {veryThinData && (
+        <GroundingNotice message="Fewer than 4 sources were retrieved for this idea — some sections may be inferred rather than grounded in real market data. Try rephrasing the idea or problem statement for a deeper result." />
+      )}
 
       <div>
         <ContradictionsBanner data={contradictions} sourceMap={sourceMap} />
@@ -357,11 +395,12 @@ export default function ValidationResults({
 
         {activeTab === 'market' && (
           <div className="space-y-8">
-            <div className="rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
+            <SectionNav sections={[{ id: 'sec-market', label: 'Market signal' }, { id: 'sec-competitors', label: 'Competitive field' }]} />
+            <div id="sec-market" className="scroll-mt-16 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
               <SectionDivider label="Market signal" />
               <MarketOpportunity data={marketOpportunity} error={errors?.marketOpportunity} sourceMap={sourceMap} />
             </div>
-            <div className="rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
+            <div id="sec-competitors" className="scroll-mt-16 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
               <SectionDivider label="Competitive field" />
               <CompetitorAnalysis data={competitors} error={errors?.competitors} />
             </div>
@@ -369,24 +408,30 @@ export default function ValidationResults({
         )}
 
         {activeTab === 'customers' && (
-          <div className="rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
-            {segments.length > 0 ? (
-              <CustomerPersonas segments={segments} />
-            ) : (
-              <p className="rounded-xl border border-dashed border-border bg-surface p-6 text-center text-sm text-muted">
-                Customer segments were not produced for this run.
-              </p>
+          <div className="space-y-4">
+            {segments.length === 0 && (
+              <GroundingNotice message="No customer demand sources were collected — customer segments couldn't be grounded in real data for this run. Results may reflect general assumptions about your target customer." />
             )}
+            <div className="rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
+              {segments.length > 0 ? (
+                <CustomerPersonas segments={segments} />
+              ) : (
+                <p className="rounded-xl border border-dashed border-border bg-surface p-6 text-center text-sm text-muted">
+                  Customer segments were not produced for this run.
+                </p>
+              )}
+            </div>
           </div>
         )}
 
         {activeTab === 'opportunity' && (
           <div className="space-y-8">
-            <div className="rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
+            <SectionNav sections={[{ id: 'sec-whitespace', label: 'Whitespace gaps' }, { id: 'sec-swot', label: 'Strengths & exposure' }]} />
+            <div id="sec-whitespace" className="scroll-mt-16 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
               <SectionDivider label="Whitespace gaps" />
               <WhiteSpaceAnalysis data={whiteSpace} />
             </div>
-            <div className="rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
+            <div id="sec-swot" className="scroll-mt-16 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
               <SectionDivider label="Strengths & exposure" />
               <SwotAnalysis data={swot} error={errors?.swot} sourceMap={sourceMap} />
             </div>
@@ -395,11 +440,12 @@ export default function ValidationResults({
 
         {activeTab === 'build' && (
           <div className="space-y-8">
-            <div className="rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
+            <SectionNav sections={[{ id: 'sec-mvp', label: 'MVP blueprint' }, { id: 'sec-gtm', label: 'Go-to-market' }]} />
+            <div id="sec-mvp" className="scroll-mt-16 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
               <SectionDivider label="MVP blueprint" />
               <MvpRecommendations data={mvp} error={errors?.mvp} sourceMap={sourceMap} />
             </div>
-            <div className="rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
+            <div id="sec-gtm" className="scroll-mt-16 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
               <SectionDivider label="Go-to-market playbook" />
               <GtmStrategy data={gtm} error={errors?.gtm} sourceMap={sourceMap} />
             </div>
