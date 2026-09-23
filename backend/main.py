@@ -133,6 +133,11 @@ def _cache_key(payload: "ValidateRequest") -> str:
             "idea": payload.idea.strip().lower(),
             "targetCustomer": payload.targetCustomer.strip().lower(),
             "problem": payload.problem.strip().lower(),
+            # Included so a "quick" response is never served for a "deep"
+            # request or vice versa - otherwise identical idea/targetCustomer/
+            # problem across two different mode requests would collide on
+            # the same cache key and hand back the wrong shape of report.
+            "mode": payload.mode,
         },
         sort_keys=True,
     )
@@ -290,6 +295,10 @@ class ValidateRequest(BaseModel):
     targetCustomer: str = ""
     problem: str = ""
     email: str = ""
+    # Track G.2 - "quick" runs only market/competitor/white-space analysis
+    # (no SWOT/MVP/GTM/contradictions/experiments/action-plan); "deep" is
+    # the full pipeline, unchanged default behavior.
+    mode: str = "deep"
 
     @field_validator("email")
     @classmethod
@@ -297,6 +306,14 @@ class ValidateRequest(BaseModel):
         value = value.strip()
         if value and not is_valid_email(value):
             raise ValueError("email must be a valid email address")
+        return value
+
+    @field_validator("mode")
+    @classmethod
+    def _validate_mode(cls, value: str) -> str:
+        value = value.strip().lower() or "deep"
+        if value not in ("quick", "deep"):
+            raise ValueError('mode must be "quick" or "deep"')
         return value
 
 
@@ -510,6 +527,7 @@ def _run_pipeline_and_build_response(payload: ValidateRequest, cache_key: str) -
             "idea": payload.idea,
             "targetCustomer": payload.targetCustomer,
             "problem": payload.problem,
+            "mode": payload.mode,
         }
     )
 
@@ -535,6 +553,7 @@ def _run_pipeline_and_build_response(payload: ValidateRequest, cache_key: str) -
         "actionPlan": state.get("actionPlan"),
         "marketViability": state.get("marketViability"),
         "errors": state.get("errors", {}),
+        "mode": state.get("mode", "deep"),
     }
 
     if not any(response["errors"].values()):

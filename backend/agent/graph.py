@@ -64,6 +64,13 @@ class PipelineState(TypedDict, total=False):
     targetCustomer: str
     problem: str
 
+    # Track G.2 - "quick" skips every Milestone 3/4 strategy node (SWOT,
+    # viability, MVP, GTM, contradictions, experiments, action plan) and
+    # returns only core market validation; "deep" (the default) runs the
+    # full pipeline unchanged. Checked node-by-node, same pattern each node
+    # already uses to skip itself when state.get("error") is set.
+    mode: str
+
     summary: str
     results: list
 
@@ -489,6 +496,9 @@ def swot_node(state: PipelineState) -> PipelineState:
     logger.info("[swot] START")
     if state.get("error"):
         return state
+    if state.get("mode") == "quick":
+        logger.info("[swot] Skipped - quick mode")
+        return state
     try:
         value = analyze_swot(
             state["idea"],
@@ -519,6 +529,9 @@ def viability_score_node(state: PipelineState) -> PipelineState:
     logger.info("[viability_score] START")
     if state.get("error"):
         return state
+    if state.get("mode") == "quick":
+        logger.info("[viability_score] Skipped - quick mode")
+        return state
 
     market_opportunity = state.get("marketOpportunity")
     if market_opportunity is None:
@@ -533,6 +546,9 @@ def viability_score_node(state: PipelineState) -> PipelineState:
 def mvp_node(state: PipelineState) -> PipelineState:
     logger.info("[mvp] START")
     if state.get("error"):
+        return state
+    if state.get("mode") == "quick":
+        logger.info("[mvp] Skipped - quick mode")
         return state
     try:
         value = analyze_mvp(
@@ -558,6 +574,9 @@ def mvp_node(state: PipelineState) -> PipelineState:
 def gtm_node(state: PipelineState) -> PipelineState:
     logger.info("[gtm] START")
     if state.get("error"):
+        return state
+    if state.get("mode") == "quick":
+        logger.info("[gtm] Skipped - quick mode")
         return state
     try:
         value = analyze_gtm(
@@ -596,6 +615,9 @@ def contradiction_detector_node(state: PipelineState) -> PipelineState:
     if state.get("error"):
         logger.warning("[contradiction_detector] Skipped because web search failed")
         return state
+    if state.get("mode") == "quick":
+        logger.info("[contradiction_detector] Skipped - quick mode")
+        return state
 
     try:
         contradictions = detect_contradictions(
@@ -631,6 +653,9 @@ def experiment_generator_node(state: PipelineState) -> PipelineState:
     if state.get("error"):
         logger.warning("[experiment_generator] Skipped because web search failed")
         return state
+    if state.get("mode") == "quick":
+        logger.info("[experiment_generator] Skipped - quick mode")
+        return state
 
     try:
         experiments = generate_experiments(
@@ -658,6 +683,9 @@ def action_plan_node(state: PipelineState) -> PipelineState:
 
     if state.get("error"):
         logger.warning("[action_plan] Skipped because web search failed")
+        return state
+    if state.get("mode") == "quick":
+        logger.info("[action_plan] Skipped - quick mode")
         return state
 
     try:
