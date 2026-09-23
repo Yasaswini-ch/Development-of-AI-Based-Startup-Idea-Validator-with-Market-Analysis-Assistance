@@ -11,6 +11,7 @@ from .competitor_agent import analyze_competitors
 from .contradiction_detector import detect_contradictions
 from .experiment_generator import generate_experiments
 from .gtm_agent import analyze_gtm
+from .llm import NeedsDeepAnalysisError
 from .market_agent import MAX_SOURCES_IN_CONTEXT, analyze_market_opportunity
 from .mvp_agent import analyze_mvp
 from .opportunity_score import calculate_opportunity_score
@@ -20,6 +21,12 @@ from .viability_score import calculate_market_viability
 from .white_space import analyze_white_space
 
 logger = logging.getLogger(__name__)
+
+# state["error"] value set by any strategy node that catches
+# NeedsDeepAnalysisError - main.py checks for this exact string to decide
+# whether to ask for an email instead of returning a normal 502, since it
+# means "every cloud model is exhausted," not "the request itself failed."
+NEEDS_DEEP_ANALYSIS = "NEEDS_DEEP_ANALYSIS"
 
 
 # --------------------------------------------------
@@ -70,6 +77,13 @@ class PipelineState(TypedDict, total=False):
     # full pipeline unchanged. Checked node-by-node, same pattern each node
     # already uses to skip itself when state.get("error") is set.
     mode: str
+
+    # True only once an email address is on file for this request (see
+    # main.py's /validate) - lets every LLM-backed strategy node retry via
+    # the local Ollama model instead of raising NeedsDeepAnalysisError when
+    # every cloud model is exhausted. False on a request's first attempt,
+    # before main.py knows whether deep analysis will even be needed.
+    allowLocalLlm: bool
 
     summary: str
     results: list
@@ -310,6 +324,7 @@ def market_opportunity_node(state: PipelineState) -> PipelineState:
             target_customer,
             problem,
             results,
+            allow_local=state.get("allowLocalLlm", False),
         )
 
         logger.info("[market_opportunity] COMPLETE")
@@ -319,6 +334,10 @@ def market_opportunity_node(state: PipelineState) -> PipelineState:
             **state,
             "marketOpportunity": market_opportunity,
         }
+
+    except NeedsDeepAnalysisError:
+        logger.warning("[market_opportunity] Needs deep analysis - short-circuiting pipeline")
+        return {**state, "error": NEEDS_DEEP_ANALYSIS}
 
     except Exception as exc:
         logger.exception("[market_opportunity] FAILED")
@@ -506,7 +525,11 @@ def swot_node(state: PipelineState) -> PipelineState:
             state.get("competitors"),
             state.get("whiteSpace"),
             state.get("results", []),
+            allow_local=state.get("allowLocalLlm", False),
         )
+    except NeedsDeepAnalysisError:
+        logger.warning("[swot] Needs deep analysis - short-circuiting pipeline")
+        return {**state, "error": NEEDS_DEEP_ANALYSIS}
     except Exception as exc:
         logger.exception("[swot] FAILED")
         metrics.increment("node.swot.failure")
@@ -571,7 +594,11 @@ def mvp_node(state: PipelineState) -> PipelineState:
             state.get("swot"),
             state.get("marketOpportunity"),
             state.get("results", []),
+            allow_local=state.get("allowLocalLlm", False),
         )
+    except NeedsDeepAnalysisError:
+        logger.warning("[mvp] Needs deep analysis - short-circuiting pipeline")
+        return {**state, "error": NEEDS_DEEP_ANALYSIS}
     except Exception as exc:
         logger.exception("[mvp] FAILED")
         metrics.increment("node.mvp.failure")
@@ -600,7 +627,11 @@ def gtm_node(state: PipelineState) -> PipelineState:
             state.get("competitors"),
             state.get("swot"),
             state.get("results", []),
+            allow_local=state.get("allowLocalLlm", False),
         )
+    except NeedsDeepAnalysisError:
+        logger.warning("[gtm] Needs deep analysis - short-circuiting pipeline")
+        return {**state, "error": NEEDS_DEEP_ANALYSIS}
     except Exception as exc:
         logger.exception("[gtm] FAILED")
         metrics.increment("node.gtm.failure")

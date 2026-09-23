@@ -8,6 +8,27 @@ import time
 import uuid
 
 from dotenv import load_dotenv
+
+# --------------------------------------------------
+# ENVIRONMENT
+# --------------------------------------------------
+
+# Must run before any `agent.*` import below - those transitively import
+# crewai/litellm, which read provider API keys (GROQ_API_KEY etc.) from
+# os.environ at import time in places.
+#
+# Explicit path, not load_dotenv()'s default upward search from the
+# process's CWD - confirmed live that this matters: launched with a CWD
+# other than backend/ (e.g. `uvicorn --app-dir backend main:app` run from
+# the project root, which only adds backend/ to sys.path, not CWD),
+# find_dotenv()'s search never reaches backend/.env at all, so a freshly
+# updated key there was silently never loaded - GROQ_API_KEY stayed
+# whatever the parent process's environment already had (usually unset),
+# and every call failed with Groq's own "Invalid API Key" response,
+# indistinguishable from a genuinely bad key. The same key, loaded
+# explicitly from this exact path in isolation, worked immediately.
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -18,20 +39,13 @@ from agent.auth import AuthError, login as auth_login, optional_user, require_us
 from agent.chat_graph import ChatRateLimitError, run_chat_turn
 from agent.db import cache_table, get_engine
 from agent.email_delivery import is_valid_email, send_canonical_report_email, send_report_email
-from agent.graph import pipeline
+from agent.graph import NEEDS_DEEP_ANALYSIS, pipeline
 from agent.job_store import complete_job, create_job, fail_job, get_job
 from agent.pdf_exporter import generate_dossier_pdf
 from agent.report_assembler import assemble_report, report_to_pdf_input
 from agent.session_store import create_session, get_session, list_sessions_for_user
 from agent.structured_output import compact_sources
 from sqlalchemy import delete, select
-
-
-# --------------------------------------------------
-# ENVIRONMENT
-# --------------------------------------------------
-
-load_dotenv()
 
 
 # --------------------------------------------------
@@ -527,14 +541,29 @@ class PipelineStateError(Exception):
     """
 
 
-def _run_pipeline_and_build_response(payload: ValidateRequest, cache_key: str) -> dict:
+class NeedsDeepAnalysisRequired(Exception):
+    """Raised when the pipeline short-circuited because a strategy node hit
+    NeedsDeepAnalysisError (backend/agent/llm.py) - every cloud model was
+    exhausted, and this request had no email on file yet to route through
+    the slower local-model retry. /validate catches this specifically and
+    asks the caller for an email instead of returning a 502 or silently
+    serving the weaker deterministic-fallback result.
+    """
+
+
+def _run_pipeline_and_build_response(payload: ValidateRequest, cache_key: str, allow_local: bool = False) -> dict:
     """Runs the full LangGraph pipeline and returns the same response shape
     /validate has always returned (minus sessionId, added by the caller).
-    Raises PipelineStateError for a recorded pipeline-state failure, or the
-    original exception for anything unexpected - the caller decides how to
-    report either, depending on whether it's still inside the synchronous
-    request/response cycle or already running in the background for the
-    async/email path.
+    Raises NeedsDeepAnalysisRequired or PipelineStateError for a recorded
+    pipeline-state failure, or the original exception for anything
+    unexpected - the caller decides how to report either, depending on
+    whether it's still inside the synchronous request/response cycle or
+    already running in the background for the async/email path.
+
+    `allow_local` is True only once an email is on file (see /validate) -
+    it lets every LLM-backed strategy node retry via the local Ollama model
+    instead of raising NeedsDeepAnalysisError the moment cloud models are
+    exhausted.
     """
     state = pipeline.invoke(
         {
@@ -542,8 +571,12 @@ def _run_pipeline_and_build_response(payload: ValidateRequest, cache_key: str) -
             "targetCustomer": payload.targetCustomer,
             "problem": payload.problem,
             "mode": payload.mode,
+            "allowLocalLlm": allow_local,
         }
     )
+
+    if state.get("error") == NEEDS_DEEP_ANALYSIS:
+        raise NeedsDeepAnalysisRequired()
 
     if state.get("error"):
         raise PipelineStateError(state["error"])
@@ -579,7 +612,7 @@ def _run_pipeline_and_build_response(payload: ValidateRequest, cache_key: str) -
 
 
 async def _finish_async_validation(
-    task: "asyncio.Task[dict]", job_id: str, payload: ValidateRequest, user_id: str | None = None
+    task: "asyncio.Task[dict]", job_id: str, payload: ValidateRequest, user_id: str | None = None, effective_email: str | None = None
 ) -> None:
     """Awaits the still-running pipeline task after /validate has already
     responded with a "processing" status, stores the outcome in the job
@@ -596,8 +629,8 @@ async def _finish_async_validation(
     session_id = _create_validation_session(payload, response, user_id=user_id)
     complete_job(job_id, {**response, "sessionId": session_id})
 
-    if payload.email:
-        sent = send_report_email(payload.email, payload.idea, response, _report_url(session_id))
+    if effective_email:
+        sent = send_report_email(effective_email, payload.idea, response, _report_url(session_id))
         if not sent:
             logger.warning("Report email was not delivered for job %s", job_id)
 
@@ -609,6 +642,9 @@ async def _finish_async_validation(
 @app.post("/validate")
 async def validate_idea(payload: ValidateRequest, request: Request, current_user: dict | None = Depends(optional_user)):
     user_id = current_user["id"] if current_user else None
+    # Use the logged-in user's account email as a fallback so reports are
+    # delivered even when the user didn't toggle the email field in the form.
+    effective_email = payload.email or (current_user["email"] if current_user else None)
 
     # ----------------------------------------------
     # Rate limit
@@ -651,8 +687,8 @@ async def validate_idea(payload: ValidateRequest, request: Request, current_user
 
         session_id = _create_validation_session(payload, cached, user_id=user_id)
 
-        if payload.email and _response_is_partial(cached):
-            sent = send_report_email(payload.email, payload.idea, cached, _report_url(session_id))
+        if effective_email and _response_is_partial(cached):
+            sent = send_report_email(effective_email, payload.idea, cached, _report_url(session_id))
             if not sent:
                 logger.warning("Partial-result report email was not delivered for session %s", session_id)
 
@@ -663,11 +699,15 @@ async def validate_idea(payload: ValidateRequest, request: Request, current_user
     # CPU/IO-bound crew + search work)
     # ----------------------------------------------
 
+    # An email on file lets a strategy node fall through to the (much
+    # slower) local Ollama model instead of raising NeedsDeepAnalysisRequired
+    # the moment cloud models are exhausted - see _run_pipeline_and_build_response.
+    allow_local = bool(effective_email)
     task = asyncio.create_task(
-        asyncio.to_thread(_run_pipeline_and_build_response, payload, cache_key)
+        asyncio.to_thread(_run_pipeline_and_build_response, payload, cache_key, allow_local)
     )
 
-    if payload.email:
+    if effective_email:
         # asyncio.wait (unlike wait_for) does not cancel the task on
         # timeout, so the pipeline keeps running in the background if it's
         # not done in time - that's the whole point of this path.
@@ -675,7 +715,7 @@ async def validate_idea(payload: ValidateRequest, request: Request, current_user
 
         if task not in done:
             job_id = create_job()
-            asyncio.create_task(_finish_async_validation(task, job_id, payload, user_id=user_id))
+            asyncio.create_task(_finish_async_validation(task, job_id, payload, user_id=user_id, effective_email=effective_email))
             return JSONResponse(
                 status_code=202,
                 content={
@@ -683,13 +723,26 @@ async def validate_idea(payload: ValidateRequest, request: Request, current_user
                     "jobId": job_id,
                     "message": (
                         "This is taking longer than usual. We'll email your report to "
-                        f"{payload.email} as soon as it's ready."
+                        f"{effective_email} as soon as it's ready."
                     ),
                 },
             )
 
     try:
         response = await task
+    except NeedsDeepAnalysisRequired:
+        # allow_local is False here (no email was on file - see above), so
+        # this means every cloud model was exhausted and the only remaining
+        # option is the slower local model. Ask for an email instead of
+        # silently serving the weaker deterministic-fallback result.
+        return {
+            "needsEmailForDeepAnalysis": True,
+            "message": (
+                "This idea needs deeper reasoning to analyze accurately, which takes a few minutes "
+                "on our local model instead of the usual cloud services. Enter your email and we'll "
+                "send the full report as soon as it's ready."
+            ),
+        }
     except PipelineStateError as exc:
         return JSONResponse(
             status_code=502,
@@ -708,12 +761,12 @@ async def validate_idea(payload: ValidateRequest, request: Request, current_user
 
     session_id = _create_validation_session(payload, response, user_id=user_id)
 
-    if payload.email and _response_is_partial(response):
+    if effective_email and _response_is_partial(response):
         # Finished within the synchronous window, but part of it degraded
         # or failed outright - email the complete (still-shown-in-browser)
         # results anyway, same as the slow/async path, since "fast but
         # partial" is still worth the report link, not just "slow."
-        sent = send_report_email(payload.email, payload.idea, response, _report_url(session_id))
+        sent = send_report_email(effective_email, payload.idea, response, _report_url(session_id))
         if not sent:
             logger.warning("Partial-result report email was not delivered for session %s", session_id)
 

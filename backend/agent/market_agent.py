@@ -37,7 +37,8 @@ import logging
 from crewai import Agent, Crew, Process, Task
 
 from .deterministic_fallback import deterministic_market_opportunity
-from .llm import get_llm, kickoff_with_fallback
+from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback
+from .verification import strip_unsupported, verify_claims
 from .prompts.loader import load_prompt
 from .structured_output import compact_sources, extract_json_object, sanitize_source_ids, valid_source_ids
 
@@ -175,22 +176,24 @@ def _is_valid_shape(data: dict) -> bool:
 
 
 def analyze_market_opportunity(
-    idea: str, target_customer: str, problem: str, results: list
+    idea: str, target_customer: str, problem: str, results: list, allow_local: bool = False
 ) -> dict:
     """Falls back to a deterministic, evidence-based summary (see
-    deterministic_fallback.py) whenever the LLM call itself fails (e.g. no
-    API key configured, every fallback model rate limited) or its output
-    doesn't parse into a valid shape, instead of raising and leaving this
-    section entirely blank. The fallback result carries `"degraded": True`
-    so callers/UI can distinguish it from a full AI-reasoned result - it is
-    never silently indistinguishable from one.
+    deterministic_fallback.py) only once a local-model retry has also been
+    tried (allow_local True) - before that, raises NeedsDeepAnalysisError so
+    the caller can ask for an email instead of silently serving the weaker
+    result. The fallback result carries `"degraded": True` so callers/UI
+    can distinguish it from a full AI-reasoned result - it is never
+    silently indistinguishable from one.
     """
     context, sources = _build_context(results)
     valid_ids = {source["sourceId"] for source in sources}
 
     try:
         crew_output = kickoff_with_fallback(
-            lambda model: _build_market_crew(idea, target_customer, problem, context, model)
+            lambda model: _build_market_crew(idea, target_customer, problem, context, model),
+            allow_local=allow_local,
+            validate=lambda output: extract_json_object(output.raw, _is_valid_shape) is not None,
         )
 
         # Search for valid JSON directly rather than rejecting the whole
@@ -223,11 +226,40 @@ def analyze_market_opportunity(
             {**segment, "sourceIds": sanitize_source_ids(segment.get("sourceIds"), valid_ids)}
             for segment in data["segments"][:_MAX_SEGMENTS]
         ]
+
+        # Grounding verification (see verification.py) - sanitize above only
+        # confirmed a cited sourceId exists; this confirms the cited source
+        # actually supports the claim, and strips the citation (not the
+        # claim) when it doesn't.
+        snippets = {s["sourceId"]: s["snippet"] for s in sources}
+        flat = (
+            ([{"text": data["tam"]["text"], "sourceIds": data["tam"]["sourceIds"]}] if data.get("tam") else [])
+            + ([{"text": data["sam"]["text"], "sourceIds": data["sam"]["sourceIds"]}] if data.get("sam") else [])
+            + ([{"text": data["som"]["text"], "sourceIds": data["som"]["sourceIds"]}] if data.get("som") else [])
+            + data["trends"]
+            + [{"text": s["painPoints"], "sourceIds": s["sourceIds"]} for s in data["segments"]]
+        )
+        supported = verify_claims(idea, flat, snippets, allow_local=allow_local)
+        verified = strip_unsupported(flat, supported)
+        cursor = 0
+        for tier in ("tam", "sam", "som"):
+            if data.get(tier):
+                data[tier]["sourceIds"] = verified[cursor]["sourceIds"]
+                cursor += 1
+        for trend in data["trends"]:
+            trend["sourceIds"] = verified[cursor]["sourceIds"]
+            cursor += 1
+        for segment in data["segments"]:
+            segment["sourceIds"] = verified[cursor]["sourceIds"]
+            cursor += 1
+
         # Phase 2 stretch feature - filled in by the opportunity_score graph node
         # after this agent returns, so stub it here for a stable shape.
         data.setdefault("opportunityScore", 0)
         return data
-    except Exception:
+    except Exception as exc:
+        if not allow_local:
+            raise NeedsDeepAnalysisError(str(exc)) from exc
         logger.warning(
             "Market opportunity: LLM analysis unavailable, using deterministic evidence-based fallback",
             exc_info=True,

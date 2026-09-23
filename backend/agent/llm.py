@@ -53,6 +53,35 @@ _LLM_CALL_TIMEOUT_SECONDS = float(os.environ.get("LLM_CALL_TIMEOUT_SECONDS", "30
 FALLBACK_MODELS = ("groq/openai/gpt-oss-20b", "groq/openai/gpt-oss-120b", "gemini/gemini-3.6-flash")
 _MAX_RETRY_WAIT_SECONDS = 30
 
+# Last-resort tier, tried only when a caller opts in via
+# kickoff_with_fallback(..., allow_local=True) - i.e. only once an email is
+# on file to send the (slower) result to, since local inference on
+# consumer hardware genuinely takes minutes, not seconds. Runs through
+# Ollama (confirmed installed locally with this model pulled) rather than a
+# fourth cloud quota, so it has zero dependency on any provider's rate
+# limits - the whole point is a tier that's never "also exhausted."
+LOCAL_MODEL = os.environ.get("LOCAL_LLM_MODEL", "ollama/qwen2.5:7b")
+_OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+# Confirmed via manual timing: a 7b model on typical dev hardware can take
+# well over a minute per call, several times _LLM_CALL_TIMEOUT_SECONDS'
+# 30s cloud budget - this tier needs its own, much longer ceiling rather
+# than inheriting the cloud one and failing before local inference even
+# finishes a single call.
+_LOCAL_LLM_TIMEOUT_SECONDS = float(os.environ.get("LOCAL_LLM_TIMEOUT_SECONDS", "240"))
+
+
+class NeedsDeepAnalysisError(Exception):
+    """Raised by kickoff_with_fallback (allow_local=False) when every cloud
+    model is exhausted, and by each analyze_* agent when its output still
+    doesn't parse even after that - the signal that this request's result
+    would otherwise be the deterministic fallback wearing a "degraded" flag
+    nobody asked to see. Callers with an email on file retry with
+    allow_local=True instead of catching this; graph.py's nodes catch it
+    from callers that don't (no email yet) and short-circuit the whole
+    pipeline via state["error"], so main.py can ask for an email up front
+    instead of silently serving the weaker result.
+    """
+
 # The actual cause of most "Request too large... exceeds the enforced limit"
 # failures all session: by default, qwen3.6-27b reserves an output-token
 # budget for its own hidden <think> reasoning that alone exceeds Groq's 1000
@@ -113,7 +142,10 @@ def get_llm(max_tokens: int | None = None, model: str | None = None):
     reasoning_effort value it was never confirmed to accept.
     """
     model = model or os.environ.get("LLM_MODEL", DEFAULT_MODEL)
-    kwargs = {"timeout": _LLM_CALL_TIMEOUT_SECONDS}
+    is_local = model.startswith("ollama/")
+    kwargs = {"timeout": _LOCAL_LLM_TIMEOUT_SECONDS if is_local else _LLM_CALL_TIMEOUT_SECONDS}
+    if is_local:
+        kwargs["api_base"] = _OLLAMA_BASE_URL
     if max_tokens is not None:
         kwargs["max_tokens"] = max_tokens
     reasoning_effort = _REASONING_EFFORT.get(model)
@@ -196,7 +228,36 @@ def _kickoff_with_metrics(model: str, build_crew):
     return output
 
 
-def kickoff_with_fallback(build_crew, primary: str | None = None):
+def kickoff_with_fallback(build_crew, primary: str | None = None, allow_local: bool = False, validate=None):
+    """Run a CrewAI crew against the cloud fallback chain; when every cloud
+    model is exhausted, either raise NeedsDeepAnalysisError (allow_local
+    False - the default, used on a request's first attempt before an email
+    address is known) or try LOCAL_MODEL as one final attempt (allow_local
+    True - only once an email is on file, since this can take minutes).
+    See NeedsDeepAnalysisError's docstring for the full flow.
+
+    `validate`, if given, is called with the raw CrewOutput and should
+    return True for a usable response. A cloud model that responds but
+    fails validation (e.g. no parseable JSON in the expected shape) is
+    treated the same as a cloud model that errored outright - it's just as
+    much a "wrong result" as a rate limit, so it gets the same local-model
+    retry (or the same NeedsDeepAnalysisError signal) rather than silently
+    reaching the caller's own except-block and going straight to the
+    deterministic fallback without ever trying the local model.
+    """
+    try:
+        output = _kickoff_cloud_chain(build_crew, primary)
+        if validate is not None and not validate(output):
+            raise ValueError("Cloud model response failed validation (unparseable or wrong shape).")
+        return output
+    except Exception as exc:
+        if not allow_local:
+            raise NeedsDeepAnalysisError(str(exc)) from exc
+        logger.warning("Cloud path exhausted or invalid, trying local model %s", LOCAL_MODEL)
+        return _kickoff_with_metrics(LOCAL_MODEL, build_crew)
+
+
+def _kickoff_cloud_chain(build_crew, primary: str | None = None):
     """Run a CrewAI crew built against the primary model; on a rate limit,
     switch to the next model in FALLBACK_MODELS immediately (no wait - each
     is a separate quota bucket, so there's nothing to wait out) instead of

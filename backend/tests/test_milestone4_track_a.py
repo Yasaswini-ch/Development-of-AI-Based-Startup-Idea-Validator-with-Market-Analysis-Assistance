@@ -220,8 +220,17 @@ class DeterministicFallbackTests(unittest.TestCase):
         # a real GROQ_API_KEY present at test time would otherwise make
         # this call out to the live Groq API - slow, network-dependent, and
         # liable to fail this assertion outright if the real call succeeds.
+        #
+        # allow_local=True here - without an email on file (allow_local
+        # False, the default), a cloud failure now raises
+        # NeedsDeepAnalysisError instead of falling back (see
+        # agent/llm.py's NeedsDeepAnalysisError) - this test is specifically
+        # about the deterministic-fallback safety net, which still exists,
+        # just gated behind allow_local now.
         mock_kickoff.side_effect = RuntimeError("LLM call failed")
-        result = market_agent.analyze_market_opportunity("An idea", "Target customer", "A problem", _RESULTS)
+        result = market_agent.analyze_market_opportunity(
+            "An idea", "Target customer", "A problem", _RESULTS, allow_local=True
+        )
         mock_kickoff.assert_called_once()
         self.assertTrue(result.get("degraded"))
         self.assertTrue(all(isinstance(t, dict) and "sourceIds" in t for t in result["trends"]))
@@ -234,10 +243,17 @@ class DeterministicFallbackTests(unittest.TestCase):
         self.assertIsNone(result["sam"])
         self.assertIsNone(result["som"])
 
+    @patch("agent.market_agent.verify_claims", side_effect=lambda *a, **k: [True] * len(a[1]))
     @patch("agent.market_agent.kickoff_with_fallback")
-    def test_hallucinated_tier_source_id_is_dropped(self, mock_kickoff):
+    def test_hallucinated_tier_source_id_is_dropped(self, mock_kickoff, _verify_claims):
         # A tam/sam/som citing a sourceId that was never actually shown to
-        # the model must be sanitized away, same as trends/segments.
+        # the model must be sanitized away, same as trends/segments. This
+        # is specifically about that sanitize step, not the separate
+        # grounding-verification pass (agent/verification.py) - the mock
+        # above keeps verification a no-op so a real (correctly negative)
+        # grounding check on this test's fake "$2.1 billion" / "Evidence"
+        # pairing doesn't also strip src-1 and confuse what this test is
+        # actually checking.
         import json
         from types import SimpleNamespace
 
