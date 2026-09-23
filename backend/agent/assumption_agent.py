@@ -36,6 +36,9 @@ def _valid_assumption(item) -> bool:
         and item.get("uncertainty") in _UNCERTAINTIES
         and isinstance(item.get("howToValidate"), str)
         and item.get("howToValidate").strip()
+        # riskIfWrong and timeToValidate are optional for backward compatibility
+        and (item.get("riskIfWrong") is None or isinstance(item.get("riskIfWrong"), str))
+        and (item.get("timeToValidate") is None or isinstance(item.get("timeToValidate"), str))
         and valid_source_ids(item.get("sourceIds", []))
     )
 
@@ -58,7 +61,7 @@ def _build_crew(
         role="Startup Assumption Analyst",
         goal="Identify and rank the riskiest hidden assumptions a startup plan rests on.",
         backstory=load_prompt("assumption_system"),
-        llm=get_llm(max_tokens=500, model=model),
+        llm=get_llm(max_tokens=650, model=model),
         verbose=False,
     )
     task = Task(
@@ -107,7 +110,12 @@ def analyze_assumptions(
             logger.warning("Assumption agent returned no valid JSON")
             raise ValueError("Assumption analysis did not return a valid result.")
         data["assumptions"] = [
-            {**item, "sourceIds": sanitize_source_ids(item.get("sourceIds"), valid_ids)}
+            {
+                **item,
+                "riskIfWrong": (item.get("riskIfWrong") or "").strip() or None,
+                "timeToValidate": (item.get("timeToValidate") or "").strip() or None,
+                "sourceIds": sanitize_source_ids(item.get("sourceIds"), valid_ids),
+            }
             for item in data["assumptions"][:_MAX_ASSUMPTIONS]
         ]
         return data
