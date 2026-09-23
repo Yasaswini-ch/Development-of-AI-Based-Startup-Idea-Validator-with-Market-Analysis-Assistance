@@ -1,1 +1,1 @@
-One JSON object only: {"positioning":"...","positioningSourceIds":["src-1"],"channels":[{"text":"...","sourceIds":["src-2"]}],"earlyCustomerApproach":"...","earlyCustomerApproachSourceIds":[]}.
+One JSON object only: {"positioning":"...","positioningSourceIds":["src-1"],"channels":[{"text":"...","tactics":["specific action 1","specific action 2"],"fitScore":"high|medium|low","sourceIds":["src-2"]}],"earlyCustomerApproach":"...","earlyCustomerApproachSourceIds":[]}.

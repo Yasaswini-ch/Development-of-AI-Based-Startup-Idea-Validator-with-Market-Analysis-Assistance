@@ -40,7 +40,7 @@ function buildPhases(data) {
         phase1Ch.length > 0 && {
           icon: IconGlobe,
           heading: 'Priority channels',
-          chips: phase1Ch,
+          channels: phase1Ch,
         },
       ].filter(Boolean),
     },
@@ -52,11 +52,50 @@ function buildPhases(data) {
         {
           icon: IconGlobe,
           heading: 'Expand channels',
-          chips: phase2Ch,
+          channels: phase2Ch,
         },
       ],
     }] : []),
   ]
+}
+
+const FIT_STYLES = {
+  high:   'bg-success/10 text-success border-success/30',
+  medium: 'bg-accent/10 text-accent border-accent/30',
+  low:    'bg-border text-muted-strong border-border-strong',
+}
+
+function ChannelCard({ ch, sourceMap }) {
+  const text = typeof ch === 'string' ? ch : ch.text
+  const tactics = Array.isArray(ch.tactics) ? ch.tactics : []
+  const fitScore = ch.fitScore
+  const sourceIds = typeof ch !== 'string' ? ch.sourceIds : undefined
+
+  return (
+    <div className="rounded-xl border border-border bg-surface p-4">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-sm font-medium leading-snug text-text">
+          {text}
+          {sourceMap && <Citation sourceIds={sourceIds} sourceMap={sourceMap} />}
+        </p>
+        {fitScore && (
+          <span className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[9px] uppercase tracking-wide ${FIT_STYLES[fitScore] ?? FIT_STYLES.medium}`}>
+            {fitScore} fit
+          </span>
+        )}
+      </div>
+      {tactics.length > 0 && (
+        <ul className="mt-3 space-y-1.5 border-t border-border pt-3">
+          {tactics.map((t, i) => (
+            <li key={i} className="flex items-start gap-2 text-xs leading-relaxed text-muted">
+              <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-accent/50" />
+              {t}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
 }
 
 function PhaseSection({ section, sourceMap }) {
@@ -73,13 +112,10 @@ function PhaseSection({ section, sourceMap }) {
           {sourceMap && <Citation sourceIds={section.sourceIds} sourceMap={sourceMap} />}
         </p>
       )}
-      {section.chips && (
-        <div className="flex flex-wrap gap-2">
-          {section.chips.map((ch, i) => (
-            <span key={i} className="rounded-full border border-border bg-panel px-3 py-1 text-sm text-text">
-              {typeof ch === 'string' ? ch : ch.text}
-              {typeof ch !== 'string' && sourceMap && <Citation sourceIds={ch.sourceIds} sourceMap={sourceMap} />}
-            </span>
+      {section.channels && (
+        <div className="space-y-2">
+          {section.channels.map((ch, i) => (
+            <ChannelCard key={i} ch={ch} sourceMap={sourceMap} />
           ))}
         </div>
       )}

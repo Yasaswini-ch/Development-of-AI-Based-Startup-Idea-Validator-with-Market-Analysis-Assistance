@@ -1,1 +1,1 @@
-One JSON object only: {"features":[{"feature":"...","rationale":"...","impact":"low|medium|high|unknown","effort":"low|medium|high|unknown","sourceIds":["src-1"]}]}.
+One JSON object only: {"features":[{"feature":"...","rationale":"...","impact":"low|medium|high|unknown","effort":"low|medium|high|unknown","sourceIds":["src-1"]}],"niceToHave":[{"feature":"...","rationale":"...","sourceIds":[]}],"deferred":[{"feature":"...","rationale":"...","sourceIds":[]}]}.

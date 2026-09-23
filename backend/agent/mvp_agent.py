@@ -19,14 +19,28 @@ from .structured_output import (
 logger = logging.getLogger(__name__)
 
 _LEVELS = {"low", "medium", "high", "unknown"}
-_MAX_FEATURES = 5
+_MAX_FEATURES = 4
+_MAX_EXTRA = 2
+
+
+def _valid_extra_list(value) -> bool:
+    """niceToHave/deferred items: {feature: str, rationale: str, sourceIds: [...]}"""
+    if not isinstance(value, list):
+        return False
+    return all(
+        isinstance(item, dict)
+        and isinstance(item.get("feature"), str)
+        and isinstance(item.get("rationale"), str)
+        and valid_source_ids(item.get("sourceIds", []))
+        for item in value
+    )
 
 
 def _valid_shape(value: dict) -> bool:
     features = value.get("features")
     if not isinstance(features, list) or not features:
         return False
-    return all(
+    if not all(
         isinstance(item, dict)
         and isinstance(item.get("feature"), str)
         and isinstance(item.get("rationale"), str)
@@ -34,7 +48,14 @@ def _valid_shape(value: dict) -> bool:
         and item.get("effort") in _LEVELS
         and valid_source_ids(item.get("sourceIds", []))
         for item in features
-    )
+    ):
+        return False
+    # niceToHave and deferred are optional
+    for key in ("niceToHave", "deferred"):
+        extra = value.get(key)
+        if extra is not None and not _valid_extra_list(extra):
+            return False
+    return True
 
 
 def _build_crew(idea: str, problem: str, context: str, model: str) -> Crew:
@@ -42,10 +63,10 @@ def _build_crew(idea: str, problem: str, context: str, model: str) -> Crew:
         role="MVP Feature Recommendation Analyst",
         goal="Prioritize the smallest feature set that tests the startup's riskiest assumptions.",
         backstory=load_prompt("mvp_system"),
-        # Rebalanced to 450 (was 800, briefly tried 250) - see
-        # market_agent.py for the full rationale; 250 was confirmed live to
-        # truncate JSON output itself, not just hit the rate limit.
-        llm=get_llm(max_tokens=450, model=model),
+        # Bumped to 600 (was 450) to accommodate niceToHave[] and deferred[]
+        # arrays added to the MVP prompt. 450 was the confirmed safe floor for
+        # JSON completeness; 600 leaves headroom for the extra feature lists.
+        llm=get_llm(max_tokens=600, model=model),
         verbose=False,
     )
     task = Task(
@@ -88,6 +109,12 @@ def analyze_mvp(
             {**item, "sourceIds": sanitize_source_ids(item.get("sourceIds"), valid_ids)}
             for item in data["features"][:_MAX_FEATURES]
         ]
+        for key in ("niceToHave", "deferred"):
+            extra = data.get(key) or []
+            data[key] = [
+                {**item, "sourceIds": sanitize_source_ids(item.get("sourceIds"), valid_ids)}
+                for item in extra[:_MAX_EXTRA]
+            ]
 
         # Grounding verification (see verification.py) - the rationale is
         # the actual evidence-backed claim per feature; the feature name
