@@ -28,6 +28,19 @@ _llm_semaphore = threading.Semaphore(_MAX_CONCURRENT_LLM_CALLS)
 # the quota fix below was validated against.
 DEFAULT_MODEL = "groq/qwen/qwen3.8-27b"
 
+# Track F end-to-end pass: no per-call timeout was set anywhere in this
+# file - a genuinely slow (not rate-limited, not erroring) provider
+# response had nothing bounding it, unlike kickoff_with_fallback's own
+# rate-limit retry wait (_MAX_RETRY_WAIT_SECONDS below). 30s per attempt
+# keeps real Groq/Gemini calls (confirmed live at well under 2s - see
+# get_llm's docstring) comfortably clear of any false-positive timeout,
+# while still bounding the worst case: main.py's own
+# VALIDATE_ASYNC_THRESHOLD_SECONDS (default 60s) already treats a /validate
+# request over a minute as needing the async/email path, so a single stuck
+# call capped well under that keeps the synchronous path from hanging past
+# what the rest of the system already assumes is possible.
+_LLM_CALL_TIMEOUT_SECONDS = float(os.environ.get("LLM_CALL_TIMEOUT_SECONDS", "30"))
+
 # Two models hosted on the *same* Groq account, each with its own rate-limit
 # bucket - confirmed via `GET /openai/v1/models` against our own key and a
 # direct latency test (all respond in under a second). In practice, active
@@ -90,22 +103,22 @@ def get_llm(max_tokens: int | None = None, model: str | None = None):
     that fix applied, Gemini is a genuine third fallback tier on a wholly
     separate quota pool from Groq - see FALLBACK_MODELS.
 
-    Returns an `LLM` object with the model's known-good reasoning_effort
-    applied whenever the model is one of the ones in _REASONING_EFFORT
-    above; falls back to a plain model string for anything else (e.g. a
-    manual LLM_MODEL override to an untested model), so an unrecognized
-    model doesn't get a reasoning_effort value it was never confirmed to
-    accept.
+    Always returns an `LLM` object, never a plain model string - every call
+    gets _LLM_CALL_TIMEOUT_SECONDS applied (override with
+    LLM_CALL_TIMEOUT_SECONDS) regardless of whether max_tokens or a known
+    reasoning_effort also apply, and the model's known-good reasoning_effort
+    is added on top whenever the model is one of the ones in
+    _REASONING_EFFORT above; an unrecognized model (e.g. a manual LLM_MODEL
+    override) just skips that one kwarg rather than getting a
+    reasoning_effort value it was never confirmed to accept.
     """
     model = model or os.environ.get("LLM_MODEL", DEFAULT_MODEL)
-    kwargs = {}
+    kwargs = {"timeout": _LLM_CALL_TIMEOUT_SECONDS}
     if max_tokens is not None:
         kwargs["max_tokens"] = max_tokens
     reasoning_effort = _REASONING_EFFORT.get(model)
     if reasoning_effort is not None:
         kwargs["reasoning_effort"] = reasoning_effort
-    if not kwargs:
-        return model
     return LLM(model=model, **kwargs)
 
 
