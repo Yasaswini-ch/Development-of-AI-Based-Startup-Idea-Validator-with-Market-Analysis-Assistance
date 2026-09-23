@@ -5,7 +5,8 @@ import logging
 from crewai import Agent, Crew, Process, Task
 
 from .deterministic_fallback import deterministic_gtm
-from .llm import get_llm, kickoff_with_fallback
+from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback
+from .verification import strip_unsupported, verify_claims
 from .prompts.loader import load_prompt
 from .structured_output import (
     compact_json,
@@ -75,6 +76,7 @@ def analyze_gtm(
     competitors: dict | None,
     swot: dict | None,
     results: list,
+    allow_local: bool = False,
 ) -> dict:
     sources = compact_sources(results)
     valid_ids = {source["sourceId"] for source in sources}
@@ -88,7 +90,11 @@ def analyze_gtm(
         max_chars=4000,
     )
     try:
-        output = kickoff_with_fallback(lambda model: _build_crew(idea, target_customer, context, model))
+        output = kickoff_with_fallback(
+            lambda model: _build_crew(idea, target_customer, context, model),
+            allow_local=allow_local,
+            validate=lambda o: extract_json_object(o.raw, _valid_shape) is not None,
+        )
         data = extract_json_object(output.raw, _valid_shape)
         if data is None:
             logger.warning("GTM agent returned no valid JSON")
@@ -101,8 +107,25 @@ def analyze_gtm(
             {"text": item["text"].strip(), "sourceIds": sanitize_source_ids(item.get("sourceIds"), valid_ids)}
             for item in data["channels"][:_MAX_CHANNELS]
         ]
+
+        # Grounding verification (see verification.py).
+        snippets = {s["sourceId"]: s["snippet"] for s in sources}
+        flat = (
+            [{"text": data["positioning"], "sourceIds": data["positioningSourceIds"]}]
+            + [{"text": data["earlyCustomerApproach"], "sourceIds": data["earlyCustomerApproachSourceIds"]}]
+            + data["channels"]
+        )
+        supported = verify_claims(idea, flat, snippets, allow_local=allow_local)
+        verified = strip_unsupported(flat, supported)
+        data["positioningSourceIds"] = verified[0]["sourceIds"]
+        data["earlyCustomerApproachSourceIds"] = verified[1]["sourceIds"]
+        for channel, result in zip(data["channels"], verified[2:]):
+            channel["sourceIds"] = result["sourceIds"]
+
         return data
-    except Exception:
+    except Exception as exc:
+        if not allow_local:
+            raise NeedsDeepAnalysisError(str(exc)) from exc
         logger.warning(
             "GTM: LLM analysis unavailable, using deterministic evidence-based fallback",
             exc_info=True,

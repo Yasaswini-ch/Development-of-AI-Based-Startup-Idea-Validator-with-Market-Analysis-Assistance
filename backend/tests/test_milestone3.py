@@ -58,8 +58,9 @@ class MilestoneThreeTests(unittest.TestCase):
         value = extract_json_object(text, lambda item: "trends" in item)
         self.assertEqual(value["marketSize"], "The market is growing.")
 
+    @patch("agent.swot_agent.verify_claims", side_effect=lambda *a, **k: [True] * len(a[1]))
     @patch("agent.swot_agent.kickoff_with_fallback")
-    def test_swot_contract(self, kickoff):
+    def test_swot_contract(self, kickoff, _verify_claims):
         kickoff.return_value = SimpleNamespace(
             raw=(
                 '{"strengths":[{"text":"Focused niche","sourceIds":["src-1"]}],'
@@ -80,11 +81,16 @@ class MilestoneThreeTests(unittest.TestCase):
         self.assertEqual(result["strengths"][0]["text"], "Focused niche")
         self.assertEqual(result["strengths"][0]["sourceIds"], ["src-1"])
 
+    @patch("agent.swot_agent.verify_claims", side_effect=lambda *a, **k: [True] * len(a[1]))
     @patch("agent.swot_agent.kickoff_with_fallback")
-    def test_swot_drops_hallucinated_source_ids(self, kickoff):
+    def test_swot_drops_hallucinated_source_ids(self, kickoff, _verify_claims):
         """A sourceId the model invents that isn't in the sources it was
         actually given must never reach the caller - see
         structured_output.sanitize_source_ids (shared by all four agents).
+        This test is specifically about that sanitize step, not the
+        separate grounding-verification pass (agent/verification.py) - the
+        mock above keeps verification a no-op so this stays a test of one
+        thing.
         """
         kickoff.return_value = SimpleNamespace(
             raw=(
@@ -104,9 +110,11 @@ class MilestoneThreeTests(unittest.TestCase):
         )
         self.assertEqual(result["strengths"][0]["sourceIds"], ["src-1"])
 
+    @patch("agent.mvp_agent.verify_claims", side_effect=lambda *a, **k: [True] * len(a[1]))
+    @patch("agent.gtm_agent.verify_claims", side_effect=lambda *a, **k: [True] * len(a[1]))
     @patch("agent.mvp_agent.kickoff_with_fallback")
     @patch("agent.gtm_agent.kickoff_with_fallback")
-    def test_mvp_and_gtm_contracts(self, gtm_kickoff, mvp_kickoff):
+    def test_mvp_and_gtm_contracts(self, gtm_kickoff, mvp_kickoff, _gtm_verify, _mvp_verify):
         mvp_kickoff.return_value = SimpleNamespace(
             raw=(
                 '{"features":[{"feature":"Landing page","rationale":"Test demand",'
