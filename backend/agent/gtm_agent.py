@@ -19,12 +19,12 @@ from .structured_output import (
 logger = logging.getLogger(__name__)
 
 _MAX_CHANNELS = 4
+_FIT_SCORES = {"high", "medium", "low"}
 
 
 def _valid_channel_list(value) -> bool:
-    """Each channel is {"text": str, "sourceIds": [str]}, same claim shape
-    swot_agent.py uses, so a recommended channel can cite the source(s) it's
-    grounded in.
+    """Each channel is {"text": str, "sourceIds": [str]} with optional
+    "tactics": [str] and "fitScore": "high"|"medium"|"low".
     """
     if not isinstance(value, list):
         return False
@@ -34,6 +34,12 @@ def _valid_channel_list(value) -> bool:
         if not isinstance(item.get("text"), str) or not item["text"].strip():
             return False
         if not valid_source_ids(item.get("sourceIds", [])):
+            return False
+        tactics = item.get("tactics")
+        if tactics is not None and not (isinstance(tactics, list) and all(isinstance(t, str) for t in tactics)):
+            return False
+        fit = item.get("fitScore")
+        if fit is not None and fit not in _FIT_SCORES:
             return False
     return True
 
@@ -53,10 +59,11 @@ def _build_crew(idea: str, target_customer: str, context: str, model: str) -> Cr
         role="Go-to-Market Strategy Analyst",
         goal="Create a focused positioning and early acquisition plan grounded in validated customer and competitor evidence.",
         backstory=load_prompt("gtm_system"),
-        # Rebalanced to 450 (was 800, briefly tried 250) - see
-        # market_agent.py for the full rationale; 250 was confirmed live to
-        # truncate JSON output itself, not just hit the rate limit.
-        llm=get_llm(max_tokens=450, model=model),
+        # Bumped to 600 (was 450) to accommodate per-channel tactics[] array
+        # added in the GTM prompt update. 450 is the confirmed safe floor for
+        # JSON completeness; 600 leaves headroom for 2-3 tactics per channel
+        # without risk of truncation.
+        llm=get_llm(max_tokens=600, model=model),
         verbose=False,
     )
     task = Task(
@@ -104,7 +111,12 @@ def analyze_gtm(
             data.get("earlyCustomerApproachSourceIds"), valid_ids
         )
         data["channels"] = [
-            {"text": item["text"].strip(), "sourceIds": sanitize_source_ids(item.get("sourceIds"), valid_ids)}
+            {
+                "text": item["text"].strip(),
+                "tactics": [t.strip() for t in (item.get("tactics") or [])[:3] if isinstance(t, str) and t.strip()],
+                "fitScore": item.get("fitScore") if item.get("fitScore") in _FIT_SCORES else None,
+                "sourceIds": sanitize_source_ids(item.get("sourceIds"), valid_ids),
+            }
             for item in data["channels"][:_MAX_CHANNELS]
         ]
 

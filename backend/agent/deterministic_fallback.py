@@ -278,7 +278,7 @@ def deterministic_mvp(idea: str, problem: str, swot: dict | None, market_opportu
             }
         )
 
-    return {"features": features[:5], "degraded": True}
+    return {"features": features[:4], "niceToHave": [], "deferred": [], "degraded": True}
 
 
 def deterministic_gtm(
@@ -311,7 +311,7 @@ def deterministic_gtm(
     return {
         "positioning": positioning,
         "positioningSourceIds": [],
-        "channels": [{"text": channel, "sourceIds": []} for channel in channels[:4]],
+        "channels": [{"text": channel, "tactics": [], "fitScore": "medium", "sourceIds": []} for channel in channels[:4]],
         "earlyCustomerApproach": (
             f"Directly recruit and interview a small group of {audience} to "
             "validate the problem before investing in wider marketing spend."

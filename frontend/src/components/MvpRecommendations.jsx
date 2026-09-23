@@ -75,6 +75,30 @@ function FeatureCard({ item, meta, sourceMap }) {
   )
 }
 
+function ExtraFeatureRow({ item, tier, sourceMap }) {
+  return (
+    <div className="flex items-start gap-3 rounded-xl border border-border bg-surface p-4">
+      <span className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 font-mono text-[9px] font-bold ${tier.badge}`}>
+        {tier.key}
+      </span>
+      <div className="min-w-0">
+        <p className="text-sm font-medium leading-snug text-text">
+          {item.feature}
+          {sourceMap && <Citation sourceIds={item.sourceIds} sourceMap={sourceMap} />}
+        </p>
+        {item.rationale && (
+          <p className="mt-1 text-xs leading-relaxed text-muted">{item.rationale}</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+const EXTRA_META = {
+  niceToHave: { key: 'N2H', label: 'Nice to have', badge: 'border border-info/40 bg-info/10 text-info', dot: 'bg-info' },
+  deferred:   { key: 'V2',  label: 'Deferred v2',  badge: 'border border-border-strong bg-panel text-muted-strong', dot: 'bg-border-strong' },
+}
+
 export default function MvpRecommendations({ data, error, sourceMap }) {
   if (data === null || data === undefined) {
     return (
@@ -100,6 +124,10 @@ export default function MvpRecommendations({ data, error, sourceMap }) {
     meta: PHASE_META[p],
     items: tagged.filter((f) => f._priority === p),
   })).filter((ph) => ph.items.length > 0)
+
+  const niceToHave = Array.isArray(data.niceToHave) ? data.niceToHave : []
+  const deferred = Array.isArray(data.deferred) ? data.deferred : []
+  const hasExtra = niceToHave.length > 0 || deferred.length > 0
 
   return (
     <div>
@@ -141,6 +169,18 @@ export default function MvpRecommendations({ data, error, sourceMap }) {
           </div>
         ))}
       </div>
+
+      {/* Nice to have + Deferred v2 */}
+      {hasExtra && (
+        <div className="mt-8 space-y-4">
+          <div className="flex items-center gap-2 border-t border-border pt-6">
+            <span className="font-mono text-[11px] uppercase tracking-widest text-muted">Out of scope for MVP</span>
+          </div>
+          {[...niceToHave.map((f) => ({ ...f, _tier: 'niceToHave' })), ...deferred.map((f) => ({ ...f, _tier: 'deferred' }))].map((item, i) => (
+            <ExtraFeatureRow key={i} item={item} tier={EXTRA_META[item._tier]} sourceMap={sourceMap} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
