@@ -8,6 +8,7 @@ import CompareIdeas from './components/CompareIdeas'
 import HistoryPanel from './components/HistoryPanel'
 import AnalyticsDashboard from './components/AnalyticsDashboard'
 import AuthPanel from './components/AuthPanel'
+import DeepAnalysisPrompt from './components/DeepAnalysisPrompt'
 import { IconUser } from './components/icons'
 import useCountUp from './hooks/useCountUp'
 import useLoadingSteps from './hooks/useLoadingSteps'
@@ -82,6 +83,7 @@ export default function App() {
   const [validation, setValidation] = useState(persisted?.validation ?? null)
   const [errorMessage, setErrorMessage] = useState('')
   const [processingMessage, setProcessingMessage] = useState('')
+  const [deepAnalysisMessage, setDeepAnalysisMessage] = useState('')
   const [lastSubmission, setLastSubmission] = useState(persisted?.lastSubmission ?? null)
   const [updatedAt, setUpdatedAt] = useState(persisted?.updatedAt ?? null)
   const [authToken, setAuthToken] = useState(getToken)
@@ -90,7 +92,7 @@ export default function App() {
   // purely so its own "Back" button returns there instead of always
   // dropping onto the form - cosmetic, not auth state.
   const [preAuthView, setPreAuthView] = useState('form')
-  const loadingStep = useLoadingSteps(isLoading)
+  const loadingProgress = useLoadingSteps(isLoading)
   const sourceCount = useCountUp(validation?.results?.length ?? 0)
 
   // Verifies the token on mount rather than trusting whatever's cached in
@@ -197,6 +199,7 @@ export default function App() {
     setValidation(null)
     setLastSubmission(payload)
     setProcessingMessage('')
+    setDeepAnalysisMessage('')
 
     try {
       const res = await fetch(`${API_URL}/validate`, {
@@ -205,6 +208,15 @@ export default function App() {
         body: JSON.stringify(payload),
       })
       const data = await res.json()
+
+      if (data.needsEmailForDeepAnalysis) {
+        // Every cloud model was exhausted for this idea and no email was on
+        // file yet to route the slower local-model retry through - ask for
+        // one instead of silently showing the weaker deterministic result.
+        setDeepAnalysisMessage(data.message || 'This idea needs deeper analysis. Enter your email to continue.')
+        setIsLoading(false)
+        return
+      }
 
       if (res.status === 202 && data.status === 'processing') {
         // Taking longer than the server's threshold - it keeps working in
@@ -335,7 +347,13 @@ export default function App() {
   if (view === 'history') {
     return (
       <div className="min-h-screen bg-surface px-4 py-10">
-        <HistoryPanel apiUrl={API_URL} token={authToken} onBack={() => setView('form')} onOpen={openHistorySession} />
+        <HistoryPanel
+          apiUrl={API_URL}
+          token={authToken}
+          onBack={() => setView('form')}
+          onOpen={openHistorySession}
+          onGoToCompare={() => setView('compare')}
+        />
       </div>
     )
   }
@@ -412,8 +430,8 @@ export default function App() {
                   Sign in
                 </button>
               )}
-              <span className="flex items-center gap-1.5 rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-accent">
-                <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-accent" />
+              <span className="flex items-center gap-1.5 rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-info">
+                <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-info" />
                 Live
               </span>
             </div>
@@ -433,7 +451,14 @@ export default function App() {
             </p>
           </header>
 
-          <IdeaForm onSubmit={validateIdea} isLoading={isLoading} loadingStep={loadingStep} disabled={cooldown} />
+          <IdeaForm onSubmit={validateIdea} isLoading={isLoading} loadingProgress={loadingProgress} disabled={cooldown} />
+
+          {deepAnalysisMessage && (
+            <DeepAnalysisPrompt
+              message={deepAnalysisMessage}
+              onSubmit={(email) => validateIdea({ ...lastSubmission, email })}
+            />
+          )}
 
           {errorMessage && (
             <ErrorState
@@ -443,8 +468,8 @@ export default function App() {
           )}
 
           {processingMessage && !validation && (
-            <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-accent/30 bg-accent/5 p-4 text-sm text-text">
-              <span className="pulse-dot mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+            <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-info/30 bg-info/5 p-4 text-sm text-text">
+              <span className="pulse-dot mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-info" />
               <span>{processingMessage}</span>
             </div>
           )}

@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { IconAlertTriangle, IconX } from './icons'
+import { clearCompareList, getCompareList } from '../lib/compareList'
 
 const MAX_SESSIONS = 5
 const MIN_SESSIONS = 2
@@ -39,8 +40,20 @@ function MetricRow({ label, values, render }) {
   )
 }
 
+// Seeds from the "add to compare" basket (lib/compareList.js, built up from
+// HistoryPanel) so arriving here already has real session ids instead of
+// two empty inputs - pads up to MIN_SESSIONS with blanks so there's always
+// room to add one more by hand.
+function seedInputs() {
+  const seeded = getCompareList()
+  if (seeded.length === 0) return ['', '']
+  const padded = [...seeded]
+  while (padded.length < MIN_SESSIONS) padded.push('')
+  return padded
+}
+
 export default function CompareIdeas({ apiUrl, onBack }) {
-  const [inputs, setInputs] = useState(['', ''])
+  const [inputs, setInputs] = useState(seedInputs)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [reports, setReports] = useState(null)
@@ -60,9 +73,7 @@ export default function CompareIdeas({ apiUrl, onBack }) {
     setInputs((current) => current.filter((_, i) => i !== index))
   }
 
-  async function handleCompare(event) {
-    event.preventDefault()
-    const sessionIds = inputs.map(extractSessionId).filter(Boolean)
+  async function runCompare(sessionIds) {
     if (sessionIds.length < MIN_SESSIONS) {
       setError(`Enter at least ${MIN_SESSIONS} session ids or "view report" links to compare.`)
       return
@@ -96,6 +107,23 @@ export default function CompareIdeas({ apiUrl, onBack }) {
     }
   }
 
+  function handleCompare(event) {
+    event.preventDefault()
+    runCompare(inputs.map(extractSessionId).filter(Boolean))
+  }
+
+  // Auto-runs once, only when arriving with a full basket from HistoryPanel
+  // ("directly added" per that flow) - then clears the basket so revisiting
+  // this screen later doesn't keep re-comparing the same stale set.
+  useEffect(() => {
+    const seeded = getCompareList()
+    if (seeded.length >= MIN_SESSIONS) {
+      runCompare(seeded)
+      clearCompareList()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   return (
     <div className="mx-auto max-w-5xl">
       <div className="mb-6 flex items-center justify-between">
@@ -114,8 +142,8 @@ export default function CompareIdeas({ apiUrl, onBack }) {
 
       <p className="mb-4 text-sm leading-relaxed text-muted">
         Paste session ids (or full "view report" links from an email) for 2 to {MAX_SESSIONS}{' '}
-        past validations to see them side by side. There's no account system, so you need to
-        already have these - either from your own browser history or an emailed link.
+        past validations to see them side by side, or use "Add to compare" from History to bring
+        them here directly.
       </p>
 
       <form onSubmit={handleCompare} className="rounded-2xl border border-border bg-panel p-5 shadow-sm">

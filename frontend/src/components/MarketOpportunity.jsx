@@ -3,27 +3,55 @@ import useCountUp from '../hooks/useCountUp'
 import DegradedBanner from './DegradedBanner'
 import Citation from './Citation'
 
-function SegmentCard({ segment, sourceMap }) {
+// Segment fields (painPoints/motivations/buyingBehavior) are single prose
+// strings from the backend, not arrays - splitting on sentence boundaries
+// gets a scannable bullet list out of them without needing a backend
+// schema change. Falls back to one bullet (the whole string) when there's
+// nothing to split on, so short answers still render cleanly.
+function toBullets(text) {
+  if (!text) return []
+  const parts = text
+    .split(/(?<=[.;])\s+(?=[A-Z0-9])/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+  return parts.length > 0 ? parts : [text]
+}
+
+function BulletField({ label, text }) {
+  const bullets = toBullets(text)
+  if (bullets.length === 0) return null
+  return (
+    <div>
+      <dt className="font-mono text-[10px] uppercase tracking-widest text-muted">{label}</dt>
+      <dd className="mt-1.5">
+        <ul className="space-y-1.5">
+          {bullets.map((bullet, i) => (
+            <li key={i} className="flex gap-2 text-sm leading-relaxed text-text">
+              <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-accent" />
+              <span>{bullet}</span>
+            </li>
+          ))}
+        </ul>
+      </dd>
+    </div>
+  )
+}
+
+function SegmentCard({ segment, index, sourceMap }) {
   const { segment: name, painPoints, motivations, buyingBehavior, sourceIds } = segment
   return (
-    <div className="rounded-xl border border-border bg-surface p-5">
-      <h4 className="text-sm font-semibold text-text">
+    <div className="rounded-xl border border-border-strong bg-surface p-5">
+      <p className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-accent">
+        Segment {String(index + 1).padStart(2, '0')}
+      </p>
+      <h4 className="font-serif text-base font-semibold text-text">
         {name}
         {sourceMap && <Citation sourceIds={sourceIds} sourceMap={sourceMap} />}
       </h4>
       <dl className="mt-3 space-y-3">
-        <div>
-          <dt className="font-mono text-[10px] uppercase tracking-widest text-muted">Pain points</dt>
-          <dd className="mt-1 text-sm text-text leading-relaxed">{painPoints}</dd>
-        </div>
-        <div>
-          <dt className="font-mono text-[10px] uppercase tracking-widest text-muted">Motivations</dt>
-          <dd className="mt-1 text-sm text-text leading-relaxed">{motivations}</dd>
-        </div>
-        <div>
-          <dt className="font-mono text-[10px] uppercase tracking-widest text-muted">Buying behavior</dt>
-          <dd className="mt-1 text-sm text-text leading-relaxed">{buyingBehavior}</dd>
-        </div>
+        <BulletField label="Pain points" text={painPoints} />
+        <BulletField label="Motivations" text={motivations} />
+        <BulletField label="Buying behavior" text={buyingBehavior} />
       </dl>
     </div>
   )
@@ -135,7 +163,7 @@ export default function MarketOpportunity({ data, error, sourceMap }) {
               column this used to sit in. */}
           <div className="grid gap-3 sm:grid-cols-2">
             {segments.map((s, i) => (
-              <SegmentCard key={i} segment={s} sourceMap={sourceMap} />
+              <SegmentCard key={i} segment={s} index={i} sourceMap={sourceMap} />
             ))}
           </div>
         </div>

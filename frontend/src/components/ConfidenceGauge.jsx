@@ -1,8 +1,14 @@
 const RADIUS = 46
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS
+const TONE_COLORS = {
+  accent: 'var(--color-accent)',
+  success: 'var(--color-success)',
+  danger: 'var(--color-danger)',
+}
 
-export default function ConfidenceGauge({ percent, size = 104, label = 'CONFIDENCE' }) {
+export default function ConfidenceGauge({ percent, size = 104, label = 'CONFIDENCE', tone = 'accent' }) {
   const offset = CIRCUMFERENCE - (CIRCUMFERENCE * percent) / 100
+  const stroke = TONE_COLORS[tone] || TONE_COLORS.accent
 
   return (
     <svg
@@ -19,7 +25,7 @@ export default function ConfidenceGauge({ percent, size = 104, label = 'CONFIDEN
         cy="56"
         r={RADIUS}
         fill="none"
-        stroke="var(--color-accent)"
+        stroke={stroke}
         strokeWidth="10"
         strokeLinecap="round"
         strokeDasharray={CIRCUMFERENCE}

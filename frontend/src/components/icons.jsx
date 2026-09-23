@@ -185,3 +185,13 @@ export function IconLogOut(props) {
     </svg>
   )
 }
+
+export function IconColumns(props) {
+  return (
+    <svg {...base} {...props}>
+      <rect x="3" y="4" width="18" height="16" rx="1.5" />
+      <path d="M9 4v16" />
+      <path d="M15 4v16" />
+    </svg>
+  )
+}
