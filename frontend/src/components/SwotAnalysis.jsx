@@ -1,9 +1,4 @@
-import {
-  IconAlertTriangle,
-  IconCheckCircle,
-  IconShield,
-  IconTrendingUp,
-} from './icons'
+import { IconAlertTriangle, IconCheckCircle, IconShield, IconTrendingUp } from './icons'
 import DegradedBanner from './DegradedBanner'
 import Citation from './Citation'
 
@@ -11,35 +6,45 @@ const QUADRANTS = [
   {
     key: 'strengths',
     label: 'Strengths',
+    sub: 'What you have going for you',
     Icon: IconCheckCircle,
-    accent: 'border-accent/30 bg-accent/5',
+    dot: 'bg-success',
+    itemDot: 'bg-success',
   },
   {
     key: 'weaknesses',
     label: 'Weaknesses',
+    sub: 'Gaps to address early',
     Icon: IconAlertTriangle,
-    accent: 'border-border bg-surface',
+    dot: 'bg-amber-400',
+    itemDot: 'bg-amber-400',
   },
   {
     key: 'opportunities',
     label: 'Opportunities',
+    sub: 'External tailwinds to ride',
     Icon: IconTrendingUp,
-    accent: 'border-accent/30 bg-accent/5',
+    dot: 'bg-info',
+    itemDot: 'bg-info',
   },
   {
     key: 'threats',
     label: 'Threats',
+    sub: 'Risks that could block growth',
     Icon: IconShield,
-    accent: 'border-border bg-surface',
+    dot: 'bg-danger',
+    itemDot: 'bg-danger',
   },
 ]
 
-const SEVERITY_STYLES = {
-  low: 'border-accent/40 bg-accent/10 text-accent font-semibold',
-  medium: 'border-amber-400 bg-amber-100 text-amber-800 font-semibold',
-  high: 'border-danger/50 bg-danger/10 text-danger font-semibold',
-  unknown: 'border-border-strong bg-panel text-muted-strong font-semibold',
+const SEV = {
+  low:     { label: 'Low',     style: 'bg-success/10 text-success border-success/30' },
+  medium:  { label: 'Medium',  style: 'bg-amber-100 text-amber-700 border-amber-300' },
+  high:    { label: 'High',    style: 'bg-danger/10 text-danger border-danger/30' },
+  unknown: { label: '—',       style: 'bg-panel text-muted-strong border-border-strong' },
 }
+
+function sev(val) { return SEV[val] ?? SEV.unknown }
 
 function Unavailable({ error }) {
   return (
@@ -61,75 +66,88 @@ export default function SwotAnalysis({ data, error, sourceMap }) {
   return (
     <div className="space-y-6">
       {data.degraded && <DegradedBanner />}
-      <div className="grid gap-3 sm:grid-cols-2">
-        {QUADRANTS.map(({ key, label, Icon, accent }) => {
+
+      {/* 2×2 SWOT matrix */}
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border-strong bg-border-strong">
+        {QUADRANTS.map(({ key, label, sub, Icon, dot, itemDot }) => {
           const items = Array.isArray(data[key]) ? data[key] : []
           return (
-            <section key={key} className={`rounded-xl border p-5 ${accent}`}>
-              <h3 className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-widest text-muted">
-                <Icon className="h-4 w-4 text-accent" />
-                {label}
-              </h3>
+            <div key={key} className="flex flex-col bg-surface p-5">
+              {/* Quadrant header */}
+              <div className="mb-4 flex items-center gap-2.5">
+                <span className={`h-2.5 w-2.5 rounded-full ${dot}`} />
+                <div>
+                  <p className="font-mono text-[11px] font-semibold uppercase tracking-widest text-text">{label}</p>
+                  <p className="font-mono text-[9px] text-muted">{sub}</p>
+                </div>
+              </div>
+
+              {/* Items as mini-cards */}
               {items.length > 0 ? (
-                <ul className="mt-3 space-y-2">
-                  {items.map((item, index) => (
-                    <li key={index} className="flex gap-2 text-sm leading-relaxed text-text">
-                      <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-accent" />
-                      {/* Each item is {text, sourceIds} (see docs/unique-features-plan.md
-                          §5.1) - typeof-check covers any older/cached plain-string data
-                          so this never crashes on a stale cached response either. */}
-                      <span>
-                        {typeof item === 'string' ? item : item.text}
-                        {typeof item !== 'string' && sourceMap && (
-                          <Citation sourceIds={item.sourceIds} sourceMap={sourceMap} />
-                        )}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                <div className="flex flex-col gap-2">
+                  {items.map((item, i) => {
+                    const text = typeof item === 'string' ? item : item.text
+                    return (
+                      <div key={i} className="flex items-start gap-2.5 rounded-lg border border-white/60 bg-white/50 p-3 shadow-sm">
+                        <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${itemDot}`} />
+                        <span className="text-sm leading-relaxed text-text">
+                          {text}
+                          {typeof item !== 'string' && sourceMap && (
+                            <Citation sourceIds={item.sourceIds} sourceMap={sourceMap} />
+                          )}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
               ) : (
-                <p className="mt-3 text-sm text-muted">No {label.toLowerCase()} identified.</p>
+                <p className="text-sm text-muted">No {label.toLowerCase()} identified.</p>
               )}
-            </section>
+            </div>
           )
         })}
       </div>
 
-      <section>
-        <h3 className="mb-3 flex items-center gap-2 font-mono text-[11px] uppercase tracking-widest text-muted">
-          <IconAlertTriangle className="h-4 w-4 text-accent" />
-          Key risks
-        </h3>
-        {risks.length > 0 ? (
-          <div className="space-y-2">
-            {risks.map((item, index) => {
-              const severity = SEVERITY_STYLES[item.severity] ? item.severity : 'unknown'
-              const likelihood = SEVERITY_STYLES[item.likelihood] ? item.likelihood : 'unknown'
+      {/* Risk register */}
+      {risks.length > 0 && (
+        <div>
+          <h3 className="mb-3 flex items-center gap-2 font-mono text-[11px] uppercase tracking-widest text-muted">
+            <IconAlertTriangle className="h-4 w-4 text-accent" />
+            Risk register
+          </h3>
+          <div className="overflow-hidden rounded-2xl border border-border-strong">
+            {/* Header row */}
+            <div className="grid grid-cols-[1fr_auto_auto] gap-4 border-b border-border bg-surface px-5 py-2.5">
+              <span className="font-mono text-[9px] uppercase tracking-widest text-muted">Risk</span>
+              <span className="font-mono text-[9px] uppercase tracking-widest text-muted">Severity</span>
+              <span className="font-mono text-[9px] uppercase tracking-widest text-muted">Likelihood</span>
+            </div>
+            {risks.map((item, i) => {
+              const s = sev(item.severity)
+              const l = sev(item.likelihood)
               return (
                 <div
-                  key={index}
-                  className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4 sm:flex-row sm:items-start sm:justify-between"
+                  key={i}
+                  className={`grid grid-cols-[1fr_auto_auto] items-center gap-4 px-5 py-4 ${
+                    i < risks.length - 1 ? 'border-b border-border' : ''
+                  }`}
                 >
                   <p className="text-sm leading-relaxed text-text">
                     {item.risk}
                     {sourceMap && <Citation sourceIds={item.sourceIds} sourceMap={sourceMap} />}
                   </p>
-                  <div className="flex shrink-0 flex-wrap gap-1.5">
-                    <span className={`w-fit rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide ${SEVERITY_STYLES[severity]}`}>
-                      Severity: {severity}
-                    </span>
-                    <span className={`w-fit rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide ${SEVERITY_STYLES[likelihood]}`}>
-                      Likelihood: {likelihood}
-                    </span>
-                  </div>
+                  <span className={`shrink-0 rounded-full border px-2.5 py-1 font-mono text-[9px] uppercase tracking-wide ${s.style}`}>
+                    {s.label}
+                  </span>
+                  <span className={`shrink-0 rounded-full border px-2.5 py-1 font-mono text-[9px] uppercase tracking-wide ${l.style}`}>
+                    {l.label}
+                  </span>
                 </div>
               )
             })}
           </div>
-        ) : (
-          <p className="text-sm text-muted">No specific risks identified.</p>
-        )}
-      </section>
+        </div>
+      )}
     </div>
   )
 }

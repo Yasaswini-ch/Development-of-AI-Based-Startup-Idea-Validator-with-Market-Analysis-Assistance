@@ -456,6 +456,7 @@ export default function App() {
           {deepAnalysisMessage && (
             <DeepAnalysisPrompt
               message={deepAnalysisMessage}
+              defaultEmail={currentUser?.email ?? ''}
               onSubmit={(email) => validateIdea({ ...lastSubmission, email })}
             />
           )}
@@ -480,6 +481,9 @@ export default function App() {
         {validation && (
           <>
             <ValidationResults
+              idea={lastSubmission?.idea}
+              targetCustomer={lastSubmission?.targetCustomer}
+              problem={lastSubmission?.problem}
               summary={validation.summary}
               results={validation.results ?? []}
               marketOpportunity={validation.marketOpportunity}

@@ -1,80 +1,128 @@
-import { IconFlask, IconListChecks, IconAlertTriangle } from './icons'
+import { IconFlask, IconListChecks, IconAlertTriangle, IconLightbulb, IconUsers, IconTrendingUp, IconGlobe, IconNewspaper } from './icons'
 
-const BUDGET_STYLES = {
-  low: 'border-border bg-panel text-muted',
-  medium: 'border-amber-300 bg-amber-50 text-amber-700',
-  high: 'border-accent/30 bg-accent/5 text-accent',
-  unknown: 'border-border bg-panel text-muted',
+const ACTION_CATEGORIES = [
+  { label: 'Build',    icon: IconLightbulb,  keys: ['build','ship','develop','create','implement','code','deploy','publish page','landing'], style: 'bg-accent/10 text-accent border-accent/30' },
+  { label: 'Market',   icon: IconTrendingUp, keys: ['launch','product hunt','reddit','twitter','post','email','newsletter','content','article'], style: 'bg-info/10 text-info border-info/30' },
+  { label: 'Research', icon: IconFlask,      keys: ['interview','survey','test','analyse','audit','measure','validate','feedback','nps'], style: 'bg-amber-100 text-amber-700 border-amber-300' },
+  { label: 'Outreach', icon: IconUsers,      keys: ['recruit','users','beta','partner','apply','reach','onboard'], style: 'bg-success/10 text-success border-success/30' },
+  { label: 'Content',  icon: IconNewspaper,  keys: ['write','publish','content','piece','blog','seo','article','video'], style: 'bg-purple-100 text-purple-700 border-purple-300' },
+]
+
+function inferCategory(text = '') {
+  const lower = text.toLowerCase()
+  return ACTION_CATEGORIES.find((c) => c.keys.some((k) => lower.includes(k)))
+    ?? { label: 'Task', icon: IconListChecks, style: 'bg-panel text-muted-strong border-border-strong' }
 }
 
-function BudgetBadge({ budget }) {
-  const level = BUDGET_STYLES[budget] ? budget : 'unknown'
+function ActionCard({ text, index }) {
+  const cat = inferCategory(text)
+  const Icon = cat.icon
   return (
-    <span className={`rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide ${BUDGET_STYLES[level]}`}>
-      Budget: {level}
-    </span>
-  )
-}
-
-function ExperimentCard({ item }) {
-  const relatedRiskIds = Array.isArray(item.relatedRiskIds) ? item.relatedRiskIds : []
-  return (
-    <article className="rounded-xl border border-border bg-surface p-5">
-      <div className="flex items-start gap-2">
-        <IconFlask className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
-        <h4 className="text-sm font-semibold leading-snug text-text">{item.hypothesis}</h4>
+    <div className="rounded-xl border border-border bg-surface p-4">
+      <div className="flex items-start gap-2.5">
+        <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border font-mono text-[9px] font-bold ${cat.style}`}>
+          {index + 1}
+        </span>
+        <p className="text-sm leading-relaxed text-text">{text}</p>
       </div>
-      <dl className="mt-3 space-y-2">
-        <div>
-          <dt className="font-mono text-[10px] uppercase tracking-widest text-muted">Method</dt>
-          <dd className="mt-1 text-sm leading-relaxed text-text">{item.method}</dd>
-        </div>
-        <div>
-          <dt className="font-mono text-[10px] uppercase tracking-widest text-muted">Success metric</dt>
-          <dd className="mt-1 text-sm leading-relaxed text-text">{item.successMetric}</dd>
-        </div>
-      </dl>
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        {item.duration && (
-          <span className="rounded-full border border-border bg-panel px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-muted">
-            {item.duration}
-          </span>
-        )}
-        <BudgetBadge budget={item.budget} />
-        {relatedRiskIds.map((riskId) => (
-          <span
-            key={riskId}
-            className="rounded-full border border-danger/30 bg-danger/5 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-danger"
-          >
-            {riskId}
-          </span>
-        ))}
+      <div className="mt-3 flex items-center gap-1.5">
+        <Icon className="h-3 w-3 text-muted" />
+        <span className={`rounded-full border px-2 py-0.5 font-mono text-[9px] uppercase tracking-wide ${cat.style}`}>
+          {cat.label}
+        </span>
       </div>
-    </article>
-  )
-}
-
-function PlanColumn({ title, heading, items }) {
-  const list = Array.isArray(items) ? items : []
-  return (
-    <div className="rounded-xl border border-border bg-surface p-5">
-      <h4 className="font-mono text-[11px] uppercase tracking-widest text-accent">{title}</h4>
-      {heading && <p className="mt-1 text-sm font-medium text-text">{heading}</p>}
-      {list.length > 0 ? (
-        <ul className="mt-3 space-y-2">
-          {list.map((entry, index) => (
-            <li key={index} className="flex gap-2 text-sm leading-relaxed text-text">
-              <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-accent" />
-              <span>{typeof entry === 'string' ? entry : entry.text}</span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="mt-3 text-sm text-muted">No action items yet.</p>
-      )}
     </div>
   )
 }
+
+function ExperimentCard({ item, index }) {
+  if (typeof item === 'string') {
+    return (
+      <div className="rounded-xl border border-border bg-surface p-4">
+        <div className="flex items-start gap-2.5">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-accent/30 bg-accent/10 font-mono text-[9px] font-bold text-accent">
+            {index + 1}
+          </span>
+          <p className="text-sm leading-relaxed text-text">{item}</p>
+        </div>
+        <div className="mt-3 flex items-center gap-1.5">
+          <IconFlask className="h-3 w-3 text-muted" />
+          <span className="rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wide text-accent">Experiment</span>
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div className="rounded-xl border border-border bg-surface p-4">
+      <div className="flex items-start gap-2.5">
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-accent/30 bg-accent/10 font-mono text-[9px] font-bold text-accent">
+          {index + 1}
+        </span>
+        <h4 className="font-serif text-sm font-semibold leading-snug text-text">{item.hypothesis}</h4>
+      </div>
+      <dl className="mt-3 space-y-2">
+        {item.method && (
+          <div className="rounded-lg border border-border bg-panel p-2.5">
+            <dt className="mb-0.5 font-mono text-[9px] uppercase tracking-widest text-muted">Method</dt>
+            <dd className="text-sm leading-relaxed text-text">{item.method}</dd>
+          </div>
+        )}
+        {item.successMetric && (
+          <div className="rounded-lg border border-border bg-panel p-2.5">
+            <dt className="mb-0.5 font-mono text-[9px] uppercase tracking-widest text-muted">Success metric</dt>
+            <dd className="text-sm leading-relaxed text-text">{item.successMetric}</dd>
+          </div>
+        )}
+      </dl>
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {item.duration && (
+          <span className="rounded-full border border-border bg-panel px-2 py-0.5 font-mono text-[9px] uppercase tracking-wide text-muted">⏱ {item.duration}</span>
+        )}
+        {item.budget && item.budget !== 'unknown' && (
+          <span className={`rounded-full border px-2 py-0.5 font-mono text-[9px] uppercase tracking-wide ${
+            item.budget === 'low' ? 'border-success/30 bg-success/10 text-success'
+            : item.budget === 'medium' ? 'border-amber-300 bg-amber-50 text-amber-700'
+            : 'border-accent/30 bg-accent/10 text-accent'
+          }`}>Budget: {item.budget}</span>
+        )}
+        <span className="rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wide text-accent">Experiment</span>
+      </div>
+    </div>
+  )
+}
+
+const COLUMNS = [
+  {
+    key: '7d',
+    label: 'Week 1 – 2',
+    heading: 'Validate now',
+    dot: 'bg-accent',
+    header: 'border-accent/40 bg-accent/8',
+    headingStyle: 'text-accent',
+    countStyle: 'bg-accent text-white',
+    border: 'border-accent/20',
+  },
+  {
+    key: '30d',
+    label: 'Month 1',
+    heading: 'Build traction',
+    dot: 'bg-info',
+    header: 'border-info/30 bg-info/8',
+    headingStyle: 'text-info',
+    countStyle: 'bg-info text-white',
+    border: 'border-info/20',
+  },
+  {
+    key: '90d',
+    label: 'Month 2 – 3',
+    heading: 'Scale',
+    dot: 'bg-success',
+    header: 'border-success/30 bg-success/8',
+    headingStyle: 'text-success',
+    countStyle: 'bg-success text-white',
+    border: 'border-success/20',
+  },
+]
 
 function Unavailable({ error }) {
   return (
@@ -88,51 +136,84 @@ function Unavailable({ error }) {
   )
 }
 
-// Renders Tracks C/D (docs/unique-features-plan.md §5.4-5.5): validation
-// experiments converting risky assumptions into testable hypotheses, and
-// the 7/30/90-day founder action plan. Neither has a backend agent yet
-// (agent/experiment_generator.py, agent/action_plan.py), so `experiments`
-// and `actionPlan` are undefined from the live API today - this renders
-// the same "not available" state that covers a genuinely failed section,
-// and should be replaced with data once those land (see mocks/validationMock.js).
 export default function ExperimentsActionPlan({ experiments, actionPlan, error }) {
   const items = Array.isArray(experiments) ? experiments : []
-  const plan = actionPlan || {}
-  const hasPlan = plan.next7Days || plan.next30Days || plan.next90Days
+  const plan = actionPlan && typeof actionPlan === 'object' && !Array.isArray(actionPlan) ? actionPlan : {}
 
-  if (items.length === 0 && !hasPlan) {
-    return <Unavailable error={error} />
+  const mid = Math.ceil(items.length / 2)
+  const expByPhase = { '7d': items.slice(0, mid), '30d': items.slice(mid), '90d': [] }
+
+  function planItems(key) {
+    const map = { '7d': plan.next7Days, '30d': plan.next30Days, '90d': plan.next90Days }
+    const p = map[key]
+    if (!p) return []
+    if (Array.isArray(p)) return p
+    if (Array.isArray(p.items)) return p.items
+    return []
+  }
+  function planTitle(key) {
+    const map = { '7d': plan.next7Days, '30d': plan.next30Days, '90d': plan.next90Days }
+    const p = map[key]
+    return p && typeof p === 'object' && !Array.isArray(p) ? p.title : null
   }
 
-  return (
-    <div className="space-y-8">
-      {items.length > 0 && (
-        <section>
-          <h3 className="mb-3 flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-widest text-muted">
-            <IconFlask className="h-3.5 w-3.5 text-accent" />
-            Validation experiments
-          </h3>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {items.map((item, index) => (
-              <ExperimentCard key={index} item={item} />
-            ))}
-          </div>
-        </section>
-      )}
+  const hasPlan = plan.next7Days || plan.next30Days || plan.next90Days
+  if (items.length === 0 && !hasPlan) return <Unavailable error={error} />
 
-      {hasPlan && (
-        <section>
-          <h3 className="mb-3 flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-widest text-muted">
-            <IconListChecks className="h-3.5 w-3.5 text-accent" />
-            Founder action plan
-          </h3>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <PlanColumn title="Next 7 days" heading={plan.next7Days?.title} items={plan.next7Days?.items} />
-            <PlanColumn title="Next 30 days" heading={plan.next30Days?.title} items={plan.next30Days?.items} />
-            <PlanColumn title="Next 90 days" heading={plan.next90Days?.title} items={plan.next90Days?.items} />
+  return (
+    <div className="grid grid-cols-3 gap-4">
+      {COLUMNS.map((col) => {
+        const exps = expByPhase[col.key] ?? []
+        const pItems = planItems(col.key)
+        const title = planTitle(col.key)
+        const totalCards = exps.length + pItems.length
+        if (totalCards === 0 && !title) return null
+
+        return (
+          <div key={col.key} className={`flex flex-col rounded-2xl border ${col.border} bg-panel overflow-hidden`}>
+            {/* Column header */}
+            <div className={`border-b px-4 py-3 ${col.header}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className={`h-2 w-2 rounded-full ${col.dot}`} />
+                  <span className={`font-mono text-[10px] font-semibold uppercase tracking-widest ${col.headingStyle}`}>
+                    {col.heading}
+                  </span>
+                </div>
+                <span className={`rounded-full px-1.5 py-0.5 font-mono text-[9px] font-bold ${col.countStyle}`}>
+                  {totalCards}
+                </span>
+              </div>
+              <p className="mt-0.5 pl-4 font-mono text-[9px] text-muted">{col.label}</p>
+            </div>
+
+            {/* Cards */}
+            <div className="flex flex-col gap-3 p-3">
+              {exps.map((exp, i) => <ExperimentCard key={`e-${i}`} item={exp} index={i} />)}
+
+              {pItems.length > 0 && (
+                <>
+                  {exps.length > 0 && (
+                    <div className="flex items-center gap-2 py-1">
+                      <div className="h-px flex-1 bg-border" />
+                      <span className="font-mono text-[9px] uppercase tracking-widest text-muted">
+                        {title || 'Action items'}
+                      </span>
+                      <div className="h-px flex-1 bg-border" />
+                    </div>
+                  )}
+                  {exps.length === 0 && title && (
+                    <p className="font-mono text-[9px] uppercase tracking-widest text-muted">{title}</p>
+                  )}
+                  {pItems.map((entry, i) => (
+                    <ActionCard key={`a-${i}`} text={typeof entry === 'string' ? entry : entry.text} index={i} />
+                  ))}
+                </>
+              )}
+            </div>
           </div>
-        </section>
-      )}
+        )
+      })}
     </div>
   )
 }
