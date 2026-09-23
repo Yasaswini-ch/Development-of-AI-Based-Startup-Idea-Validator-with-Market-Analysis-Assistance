@@ -1,11 +1,25 @@
 import logging
 import os
 import re
+import threading
 import time
 
 from crewai import LLM
 
 logger = logging.getLogger(__name__)
+
+# Track G.2 - caps how many LLM calls run at once across the whole process,
+# regardless of which of the 3 fallback models/providers they land on. Each
+# pipeline run makes up to 4 sequential calls (market/swot/mvp/gtm) already,
+# so the real risk here is concurrent *requests* (several founders
+# validating at once) all hitting the same shared Groq quota simultaneously
+# - a semaphore in front of the one shared entry point (_kickoff_with_metrics)
+# throttles that without needing every caller to coordinate. A plain
+# threading.Semaphore (not asyncio) since crew.kickoff() is a blocking call
+# made from a sync function either way, on whatever thread FastAPI happens
+# to run the request/background task on.
+_MAX_CONCURRENT_LLM_CALLS = int(os.environ.get("MAX_CONCURRENT_LLM_CALLS", "4"))
+_llm_semaphore = threading.Semaphore(_MAX_CONCURRENT_LLM_CALLS)
 
 # qwen3.6-27b was deprecated and removed from Groq (confirmed via
 # GET /openai/v1/models on Sept 15, 2026: only qwen/qwen3.8-27b remains of the
@@ -143,9 +157,17 @@ def _kickoff_with_metrics(model: str, build_crew):
     real numbers Track F's optimization pass needs to tune prompt/limit
     budgets from, which nothing previously captured (only success/failure
     was logged, never how long a call took or how many tokens it used).
+
+    Gated by _llm_semaphore (Track G.2) so at most MAX_CONCURRENT_LLM_CALLS
+    real network calls are in flight at once, across every concurrent
+    request this process is handling - acquired here rather than around the
+    whole kickoff_with_fallback loop, so a wait for a slot doesn't also
+    count against _MAX_RETRY_WAIT_SECONDS' cooldown wait, which is a
+    different kind of backoff (provider-told, not our own concurrency cap).
     """
-    start = time.time()
-    output = build_crew(model).kickoff()
+    with _llm_semaphore:
+        start = time.time()
+        output = build_crew(model).kickoff()
     elapsed_ms = round((time.time() - start) * 1000)
     usage = getattr(output, "token_usage", None)
     if usage is not None:
