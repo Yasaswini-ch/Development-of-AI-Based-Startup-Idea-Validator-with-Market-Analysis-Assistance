@@ -55,6 +55,8 @@ def _valid_shape(value: dict) -> bool:
         and isinstance(item.get("risk"), str)
         and item.get("severity") in _LEVELS
         and item.get("likelihood") in _LEVELS
+        # mitigation is optional — newer prompts produce it, cached results may not
+        and (item.get("mitigation") is None or isinstance(item.get("mitigation"), str))
         and valid_source_ids(item.get("sourceIds", []))
         for item in risks
     )
@@ -65,11 +67,9 @@ def _build_crew(idea: str, context: str, model: str) -> Crew:
         role="SWOT and Risk Analyst",
         goal="Produce concise, evidence-grounded strategic strengths, weaknesses, opportunities, threats, and risks.",
         backstory=load_prompt("swot_system"),
-        # Rebalanced to 750 (was 900, briefly tried 250 then 550) - see
-        # market_agent.py for the full rationale; SWOT's schema (4 list
-        # fields plus per-item sourceIds plus per-risk severity/likelihood)
-        # is similarly verbose and was confirmed live to truncate at 550.
-        llm=get_llm(max_tokens=750, model=model),
+        # Bumped to 900 (was 750) to accommodate the new mitigation field
+        # added to each risk item — 4 risks × ~40 tokens each ≈ 160 extra.
+        llm=get_llm(max_tokens=900, model=model),
         verbose=False,
     )
     task = Task(
@@ -119,7 +119,11 @@ def analyze_swot(
         for key in _SWOT_KEYS:
             data[key] = _sanitize_claims(data[key], valid_ids, _MAX_ITEMS)
         data["risks"] = [
-            {**risk, "sourceIds": sanitize_source_ids(risk.get("sourceIds"), valid_ids)}
+            {
+                **risk,
+                "mitigation": (risk.get("mitigation") or "").strip() or None,
+                "sourceIds": sanitize_source_ids(risk.get("sourceIds"), valid_ids),
+            }
             for risk in data["risks"][:_MAX_RISKS]
         ]
 

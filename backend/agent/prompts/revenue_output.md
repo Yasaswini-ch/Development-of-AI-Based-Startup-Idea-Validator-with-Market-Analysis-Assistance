@@ -1,1 +1,1 @@
-One JSON object only: {"models":[{"name":"...","fit":"high|medium|low","rationale":"...","tradeoffs":"...","sourceIds":["src-1"]}]}.
+One JSON object only: {"models":[{"name":"...","fit":"high|medium|low","rationale":"...","tradeoffs":"...","pricingRange":"...","exampleCompanies":["Company A","Company B"],"sourceIds":["src-1"]}]}.

@@ -27,6 +27,7 @@ function AssumptionCard({ item, index, sourceMap }) {
             {index + 1}
           </span>
           <div className="min-w-0 flex-1">
+            {/* badges */}
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <span className={`rounded-full border px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wide ${style.badge}`}>
                 {style.label} uncertainty
@@ -36,13 +37,33 @@ function AssumptionCard({ item, index, sourceMap }) {
                   {CATEGORY_LABELS[item.category] ?? item.category}
                 </span>
               )}
+              {item.timeToValidate && (
+                <span className="rounded-full border border-accent/30 bg-accent/5 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wide text-accent">
+                  ⏱ {item.timeToValidate}
+                </span>
+              )}
             </div>
+
+            {/* assumption statement */}
             <p className="text-sm font-medium leading-snug text-text">
               {item.assumption}
               {sourceMap && <Citation sourceIds={item.sourceIds} sourceMap={sourceMap} />}
             </p>
+
+            {/* risk if wrong */}
+            {item.riskIfWrong && (
+              <div className="mt-3 flex items-start gap-2 rounded-lg border border-danger/20 bg-danger/5 px-3 py-2.5">
+                <span className="mt-0.5 shrink-0 text-[11px] text-danger">✕</span>
+                <p className="text-xs leading-relaxed text-danger/80">
+                  <span className="font-semibold text-danger">If wrong:</span>{' '}
+                  {item.riskIfWrong}
+                </p>
+              </div>
+            )}
+
+            {/* how to validate */}
             {item.howToValidate && (
-              <div className="mt-3 flex items-start gap-2 rounded-lg border border-border bg-panel px-3 py-2.5">
+              <div className="mt-2 flex items-start gap-2 rounded-lg border border-border bg-panel px-3 py-2.5">
                 <IconFlask className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
                 <p className="text-xs leading-relaxed text-muted">
                   <span className="font-semibold text-text">Validate by:</span>{' '}

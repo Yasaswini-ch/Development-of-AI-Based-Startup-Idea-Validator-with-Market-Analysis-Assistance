@@ -5,20 +5,21 @@ import Citation from './Citation'
 // Frames the most serious investor objections the founder should preempt.
 
 const SEVERITY_STYLES = {
-  high:    { border: 'border-danger/40',   bg: 'bg-danger/5',   dot: 'bg-danger',    badge: 'border-danger/40 bg-danger/10 text-danger' },
-  medium:  { border: 'border-amber-400/40', bg: 'bg-amber-50',   dot: 'bg-amber-400', badge: 'border-amber-400/50 bg-amber-50 text-amber-700' },
-  low:     { border: 'border-border',       bg: 'bg-surface',    dot: 'bg-border-strong', badge: 'border-border-strong bg-panel text-muted-strong' },
-  unknown: { border: 'border-border',       bg: 'bg-surface',    dot: 'bg-border-strong', badge: 'border-border-strong bg-panel text-muted-strong' },
+  high:    { border: 'border-danger/40',    bg: 'bg-danger/5',    dot: 'bg-danger',        badge: 'border-danger/40 bg-danger/10 text-danger' },
+  medium:  { border: 'border-amber-400/40', bg: 'bg-amber-50',    dot: 'bg-amber-400',     badge: 'border-amber-400/50 bg-amber-50 text-amber-700' },
+  low:     { border: 'border-border',       bg: 'bg-surface',     dot: 'bg-border-strong', badge: 'border-border-strong bg-panel text-muted-strong' },
+  unknown: { border: 'border-border',       bg: 'bg-surface',     dot: 'bg-border-strong', badge: 'border-border-strong bg-panel text-muted-strong' },
 }
 
-function BearCard({ heading, body, severity, sourceIds, sourceMap, index }) {
+function BearCard({ heading, mitigation, severity, sourceIds, sourceMap, index }) {
   const style = SEVERITY_STYLES[severity] ?? SEVERITY_STYLES.unknown
   return (
     <div className={`rounded-xl border p-5 ${style.border} ${style.bg}`}>
       <div className="flex items-start gap-3">
         <span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${style.dot}`} />
         <div className="min-w-0 flex-1">
-          <div className="mb-1 flex flex-wrap items-center gap-2">
+          {/* header */}
+          <div className="mb-2 flex flex-wrap items-center gap-2">
             <p className="font-mono text-[9px] uppercase tracking-widest text-muted">
               Objection #{index + 1}
             </p>
@@ -28,12 +29,22 @@ function BearCard({ heading, body, severity, sourceIds, sourceMap, index }) {
               </span>
             )}
           </div>
+
+          {/* objection */}
           <p className="text-sm font-medium leading-snug text-text">
             {heading}
             {sourceMap && <Citation sourceIds={sourceIds} sourceMap={sourceMap} />}
           </p>
-          {body && body !== heading && (
-            <p className="mt-1.5 text-xs leading-relaxed text-muted">{body}</p>
+
+          {/* mitigation / your answer */}
+          {mitigation && (
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-success/30 bg-success/5 px-3 py-2.5">
+              <span className="mt-0.5 shrink-0 text-[11px] text-success">✓</span>
+              <p className="text-xs leading-relaxed text-success/80">
+                <span className="font-semibold text-success">Your answer:</span>{' '}
+                {mitigation}
+              </p>
+            </div>
           )}
         </div>
       </div>
@@ -45,28 +56,29 @@ function deriveCards(swot) {
   if (!swot) return []
   const cards = []
 
-  // Risks with severity come first — they already have structured severity/likelihood
+  // Risks with severity come first — they have structured severity/likelihood + optional mitigation
   const risks = Array.isArray(swot.risks) ? swot.risks : []
   for (const risk of risks.slice(0, 3)) {
     const text = typeof risk === 'string' ? risk : (risk.risk || '')
     if (!text || text.toLowerCase().includes('unavailable')) continue
     cards.push({
       heading: text,
+      mitigation: typeof risk === 'object' ? (risk.mitigation || null) : null,
       severity: (typeof risk === 'object' && risk.severity) || 'unknown',
       sourceIds: (typeof risk === 'object' && risk.sourceIds) || [],
     })
   }
 
-  // Then raw threats to fill up to 4 cards total
+  // Fill remainder with raw threats (no mitigation available)
   const threats = Array.isArray(swot.threats) ? swot.threats : []
   for (const threat of threats) {
     if (cards.length >= 4) break
     const text = typeof threat === 'string' ? threat : (threat.text || '')
     if (!text) continue
-    // De-duplicate against risks already added
     if (cards.some((c) => c.heading === text)) continue
     cards.push({
       heading: text,
+      mitigation: null,
       severity: 'unknown',
       sourceIds: (typeof threat === 'object' && threat.sourceIds) || [],
     })
@@ -90,6 +102,7 @@ export default function BearCase({ swot, sourceMap }) {
     )
   }
 
+  const withAnswer = cards.filter((c) => c.mitigation).length
   const highSeverityCount = cards.filter((c) => c.severity === 'high').length
 
   return (
@@ -98,7 +111,9 @@ export default function BearCase({ swot, sourceMap }) {
         <IconAlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
         <p className="text-sm text-muted">
           {highSeverityCount > 0
-            ? <><span className="font-semibold text-text">The hardest questions an investor will ask.</span> Prepare answers for these before your first pitch.</>
+            ? <><span className="font-semibold text-text">The hardest questions an investor will ask.</span>{' '}
+                {withAnswer > 0 && <>{withAnswer} include a suggested answer.</>}
+              </>
             : <><span className="font-semibold text-text">Investor objections derived from your risk and threat profile.</span> Address these proactively in your pitch.</>
           }
         </p>
@@ -109,6 +124,7 @@ export default function BearCase({ swot, sourceMap }) {
             key={i}
             index={i}
             heading={card.heading}
+            mitigation={card.mitigation}
             severity={card.severity}
             sourceIds={card.sourceIds}
             sourceMap={sourceMap}

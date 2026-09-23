@@ -35,6 +35,9 @@ def _valid_model(item) -> bool:
         and item.get("rationale").strip()
         and isinstance(item.get("tradeoffs"), str)
         and item.get("tradeoffs").strip()
+        # pricingRange and exampleCompanies are optional for backward compatibility
+        and (item.get("pricingRange") is None or isinstance(item.get("pricingRange"), str))
+        and (item.get("exampleCompanies") is None or isinstance(item.get("exampleCompanies"), list))
         and valid_source_ids(item.get("sourceIds", []))
     )
 
@@ -56,7 +59,7 @@ def _build_crew(
         role="Monetization Strategist",
         goal="Match revenue models to the specific market dynamics and customer behavior already evidenced.",
         backstory=load_prompt("revenue_system"),
-        llm=get_llm(max_tokens=450, model=model),
+        llm=get_llm(max_tokens=600, model=model),
         verbose=False,
     )
     task = Task(
@@ -101,7 +104,15 @@ def analyze_revenue_models(
             logger.warning("Revenue agent returned no valid JSON")
             raise ValueError("Revenue model analysis did not return a valid result.")
         data["models"] = [
-            {**item, "sourceIds": sanitize_source_ids(item.get("sourceIds"), valid_ids)}
+            {
+                **item,
+                "pricingRange": (item.get("pricingRange") or "").strip() or None,
+                "exampleCompanies": [
+                    c.strip() for c in (item.get("exampleCompanies") or [])[:3]
+                    if isinstance(c, str) and c.strip()
+                ],
+                "sourceIds": sanitize_source_ids(item.get("sourceIds"), valid_ids),
+            }
             for item in data["models"][:_MAX_MODELS]
         ]
         return data
