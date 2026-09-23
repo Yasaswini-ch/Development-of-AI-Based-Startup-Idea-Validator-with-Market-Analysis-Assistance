@@ -599,6 +599,9 @@ def _run_pipeline_and_build_response(payload: ValidateRequest, cache_key: str, a
         "experiments": state.get("experiments"),
         "actionPlan": state.get("actionPlan"),
         "marketViability": state.get("marketViability"),
+        # Novel features
+        "assumptions": state.get("assumptions"),
+        "revenueModels": state.get("revenueModels"),
         "errors": state.get("errors", {}),
         "mode": state.get("mode", "deep"),
     }

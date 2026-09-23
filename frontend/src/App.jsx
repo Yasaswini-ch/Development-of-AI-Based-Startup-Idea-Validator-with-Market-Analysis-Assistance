@@ -496,6 +496,8 @@ export default function App() {
               contradictions={validation.contradictions}
               experiments={validation.experiments}
               actionPlan={validation.actionPlan}
+              assumptions={validation.assumptions}
+              revenueModels={validation.revenueModels}
               sessionId={validation.sessionId}
               apiUrl={API_URL}
               errors={validation.errors}
