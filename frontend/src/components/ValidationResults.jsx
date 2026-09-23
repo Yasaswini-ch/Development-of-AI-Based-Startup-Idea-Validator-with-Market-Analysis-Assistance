@@ -16,6 +16,9 @@ import { buildSourceMap } from '../lib/sources'
 import IdeaDossier from './IdeaDossier'
 import CustomerPersonas from './CustomerPersonas'
 import StatsStrip from './StatsStrip'
+import AssumptionTracker from './AssumptionTracker'
+import BearCase from './BearCase'
+import RevenueModels from './RevenueModels'
 
 const INITIAL_VISIBLE = 3
 const RESEARCH_ANGLES = [
@@ -269,6 +272,8 @@ export default function ValidationResults({
   contradictions,
   experiments,
   actionPlan,
+  assumptions,
+  revenueModels,
   sessionId,
   apiUrl,
   errors,
@@ -426,7 +431,12 @@ export default function ValidationResults({
 
         {activeTab === 'opportunity' && (
           <div className="space-y-8">
-            <SectionNav sections={[{ id: 'sec-whitespace', label: 'Whitespace gaps' }, { id: 'sec-swot', label: 'Strengths & exposure' }]} />
+            <SectionNav sections={[
+              { id: 'sec-whitespace', label: 'Whitespace gaps' },
+              { id: 'sec-swot', label: 'Strengths & exposure' },
+              { id: 'sec-bearcase', label: 'Bear case' },
+              { id: 'sec-assumptions', label: 'Key assumptions' },
+            ]} />
             <div id="sec-whitespace" className="scroll-mt-16 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
               <SectionDivider label="Whitespace gaps" />
               <WhiteSpaceAnalysis data={whiteSpace} />
@@ -435,15 +445,31 @@ export default function ValidationResults({
               <SectionDivider label="Strengths & exposure" />
               <SwotAnalysis data={swot} error={errors?.swot} sourceMap={sourceMap} />
             </div>
+            <div id="sec-bearcase" className="scroll-mt-16 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
+              <SectionDivider label="Bear case — investor objections" />
+              <BearCase swot={swot} sourceMap={sourceMap} />
+            </div>
+            <div id="sec-assumptions" className="scroll-mt-16 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
+              <SectionDivider label="Key assumptions to validate" />
+              <AssumptionTracker data={assumptions} error={errors?.assumptions} sourceMap={sourceMap} />
+            </div>
           </div>
         )}
 
         {activeTab === 'build' && (
           <div className="space-y-8">
-            <SectionNav sections={[{ id: 'sec-mvp', label: 'MVP blueprint' }, { id: 'sec-gtm', label: 'Go-to-market' }]} />
+            <SectionNav sections={[
+              { id: 'sec-mvp', label: 'MVP blueprint' },
+              { id: 'sec-revenue', label: 'Revenue models' },
+              { id: 'sec-gtm', label: 'Go-to-market' },
+            ]} />
             <div id="sec-mvp" className="scroll-mt-16 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
               <SectionDivider label="MVP blueprint" />
               <MvpRecommendations data={mvp} error={errors?.mvp} sourceMap={sourceMap} />
+            </div>
+            <div id="sec-revenue" className="scroll-mt-16 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
+              <SectionDivider label="Revenue models" />
+              <RevenueModels data={revenueModels} error={errors?.revenueModels} sourceMap={sourceMap} />
             </div>
             <div id="sec-gtm" className="scroll-mt-16 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
               <SectionDivider label="Go-to-market playbook" />

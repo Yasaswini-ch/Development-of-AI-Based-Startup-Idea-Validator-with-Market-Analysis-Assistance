@@ -7,6 +7,7 @@ from langgraph.graph import END, START, StateGraph
 
 from . import metrics, retrieval
 from .action_plan import generate_action_plan
+from .assumption_agent import analyze_assumptions
 from .competitor_agent import analyze_competitors
 from .contradiction_detector import detect_contradictions
 from .experiment_generator import generate_experiments
@@ -14,6 +15,7 @@ from .gtm_agent import analyze_gtm
 from .llm import NeedsDeepAnalysisError
 from .market_agent import MAX_SOURCES_IN_CONTEXT, analyze_market_opportunity
 from .mvp_agent import analyze_mvp
+from .revenue_agent import analyze_revenue_models
 from .opportunity_score import calculate_opportunity_score
 from .structured_output import compact_sources
 from .swot_agent import analyze_swot
@@ -114,6 +116,10 @@ class PipelineState(TypedDict, total=False):
 
     # Market Viability Score
     marketViability: dict
+
+    # Novel features: assumption tracker + revenue model suggester
+    assumptions: dict
+    revenueModels: dict
 
     # Errors
     error: str
@@ -962,6 +968,86 @@ def confidence_dashboard_node(state: PipelineState) -> PipelineState:
 
 
 # --------------------------------------------------
+# NOVEL FEATURE: ASSUMPTION TRACKER
+# --------------------------------------------------
+
+def assumption_tracker_node(state: PipelineState) -> PipelineState:
+    """Surfaces the 3-5 riskiest hidden assumptions underlying the analysis,
+    ranked by uncertainty, each with a concrete how-to-validate step.
+    Runs after SWOT/MVP so it has the richest context to reason from.
+    """
+    logger.info("[assumption_tracker] START")
+    if state.get("error"):
+        logger.warning("[assumption_tracker] Skipped because web search failed")
+        return state
+    if state.get("mode") == "quick":
+        logger.info("[assumption_tracker] Skipped - quick mode")
+        return state
+    try:
+        value = analyze_assumptions(
+            state["idea"],
+            state.get("targetCustomer", ""),
+            state.get("problem", ""),
+            state.get("swot"),
+            state.get("marketOpportunity"),
+            state.get("mvp"),
+            state.get("results", []),
+            allow_local=state.get("allowLocalLlm", False),
+        )
+    except NeedsDeepAnalysisError:
+        logger.warning("[assumption_tracker] Needs deep analysis - short-circuiting pipeline")
+        return {**state, "error": NEEDS_DEEP_ANALYSIS}
+    except Exception as exc:
+        logger.exception("[assumption_tracker] FAILED")
+        return {
+            **state,
+            "assumptions": None,
+            "errors": {**state.get("errors", {}), "assumptions": _friendly_error_message(exc)},
+        }
+    logger.info("[assumption_tracker] COMPLETE")
+    return {**state, "assumptions": value}
+
+
+# --------------------------------------------------
+# NOVEL FEATURE: REVENUE MODEL SUGGESTER
+# --------------------------------------------------
+
+def revenue_models_node(state: PipelineState) -> PipelineState:
+    """Suggests 2-3 revenue models matched to the specific market dynamics
+    and customer segments already evidenced in the pipeline.
+    Runs after market_opportunity and competitor_discovery.
+    """
+    logger.info("[revenue_models] START")
+    if state.get("error"):
+        logger.warning("[revenue_models] Skipped because web search failed")
+        return state
+    if state.get("mode") == "quick":
+        logger.info("[revenue_models] Skipped - quick mode")
+        return state
+    try:
+        value = analyze_revenue_models(
+            state["idea"],
+            state.get("targetCustomer", ""),
+            state.get("marketOpportunity"),
+            state.get("competitors"),
+            state.get("results", []),
+            allow_local=state.get("allowLocalLlm", False),
+        )
+    except NeedsDeepAnalysisError:
+        logger.warning("[revenue_models] Needs deep analysis - short-circuiting pipeline")
+        return {**state, "error": NEEDS_DEEP_ANALYSIS}
+    except Exception as exc:
+        logger.exception("[revenue_models] FAILED")
+        return {
+            **state,
+            "revenueModels": None,
+            "errors": {**state.get("errors", {}), "revenueModels": _friendly_error_message(exc)},
+        }
+    logger.info("[revenue_models] COMPLETE")
+    return {**state, "revenueModels": value}
+
+
+# --------------------------------------------------
 # BUILD LANGGRAPH PIPELINE
 # --------------------------------------------------
 
@@ -1043,6 +1129,10 @@ def build_pipeline():
     )
     graph.add_node("action_plan", _timed("action_plan", action_plan_node))
 
+    # Novel features: assumption tracker + revenue model suggester
+    graph.add_node("assumption_tracker", _timed("assumption_tracker", assumption_tracker_node))
+    graph.add_node("revenue_models", _timed("revenue_models", revenue_models_node))
+
     # Track A: confidence dashboard (source coverage, cross-source
     # agreement, direct-evidence ratio) - runs last so it can see every
     # strategy agent's sourceIds-bearing claims.
@@ -1105,7 +1195,9 @@ def build_pipeline():
     graph.add_edge("gtm_strategy", "contradiction_detector")
     graph.add_edge("contradiction_detector", "experiment_generator")
     graph.add_edge("experiment_generator", "action_plan")
-    graph.add_edge("action_plan", "confidence_dashboard")
+    graph.add_edge("action_plan", "assumption_tracker")
+    graph.add_edge("assumption_tracker", "revenue_models")
+    graph.add_edge("revenue_models", "confidence_dashboard")
     graph.add_edge("confidence_dashboard", END)
 
     return graph.compile()
