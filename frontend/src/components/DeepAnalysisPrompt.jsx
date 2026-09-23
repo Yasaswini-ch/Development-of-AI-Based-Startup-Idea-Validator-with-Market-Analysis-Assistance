@@ -8,9 +8,10 @@ const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 // silently serving the weaker deterministic-fallback result, main.py asks
 // for an email so the (much slower) local-model retry can run in the
 // background and email the report when it's ready.
-export default function DeepAnalysisPrompt({ message, onSubmit }) {
-  const [email, setEmail] = useState('')
+export default function DeepAnalysisPrompt({ message, onSubmit, defaultEmail = '' }) {
+  const [email, setEmail] = useState(defaultEmail)
   const [error, setError] = useState('')
+  const [submitted, setSubmitted] = useState(false)
 
   function handleSubmit(e) {
     e.preventDefault()
@@ -20,6 +21,20 @@ export default function DeepAnalysisPrompt({ message, onSubmit }) {
     }
     setError('')
     onSubmit(email.trim())
+    setSubmitted(true)
+  }
+
+  if (submitted) {
+    return (
+      <div className="mt-4 rounded-xl border-2 border-success/40 bg-success/5 p-5">
+        <div className="flex items-center gap-2.5">
+          <span className="text-success">✓</span>
+          <p className="text-sm leading-relaxed text-text">
+            Submitted — we'll send the full report to <strong>{email}</strong> when it's ready.
+          </p>
+        </div>
+      </div>
+    )
   }
 
   return (

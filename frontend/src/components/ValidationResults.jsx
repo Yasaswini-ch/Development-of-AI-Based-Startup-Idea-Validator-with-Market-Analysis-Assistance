@@ -13,6 +13,9 @@ import ConfidenceDashboard from './ConfidenceDashboard'
 import ContradictionsBanner from './ContradictionsBanner'
 import ExperimentsActionPlan from './ExperimentsActionPlan'
 import { buildSourceMap } from '../lib/sources'
+import IdeaDossier from './IdeaDossier'
+import CustomerPersonas from './CustomerPersonas'
+import StatsStrip from './StatsStrip'
 
 const INITIAL_VISIBLE = 3
 const RESEARCH_ANGLES = [
@@ -173,6 +176,7 @@ function AngleGroup({ angle, items }) {
 const TABS = [
   { key: 'sources', label: 'Evidence' },
   { key: 'market', label: 'Market & Rivals' },
+  { key: 'customers', label: 'Customers' },
   { key: 'opportunity', label: 'Gaps & Exposure' },
   { key: 'build', label: 'Build & Ship' },
   { key: 'experiments', label: 'Roadmap' },
@@ -221,6 +225,9 @@ function CopyLinkButton({ sessionId }) {
 }
 
 export default function ValidationResults({
+  idea,
+  targetCustomer,
+  problem,
   summary,
   results,
   marketOpportunity,
@@ -252,8 +259,21 @@ export default function ValidationResults({
   const competitorCount = competitors?.competitors?.length ?? 0
   const sourceMap = buildSourceMap(results)
 
+  const segments = marketOpportunity?.segments ?? []
+
   return (
-    <div className="mt-6">
+    <div className="mt-6 space-y-4">
+      {/* Idea dossier — shows back what was submitted so founders can verify interpretation */}
+      <IdeaDossier idea={idea} targetCustomer={targetCustomer} problem={problem} />
+
+      {/* KPI strip — at-a-glance numbers before the full report */}
+      <StatsStrip
+        results={results}
+        competitors={competitors}
+        whiteSpace={whiteSpace}
+        marketOpportunity={marketOpportunity}
+      />
+
       <div className="flex flex-wrap items-center gap-6 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -280,23 +300,21 @@ export default function ValidationResults({
         )}
       </div>
 
-      <div className="mt-6">
+      <div>
         <ConfidenceDashboard data={confidence} />
       </div>
 
-      <div className="mt-6">
+      <div>
         <ContradictionsBanner data={contradictions} sourceMap={sourceMap} />
       </div>
 
-      {/* Pill tab switcher, not the classic underline-tabs strip - the
-          active tab gets its own raised pill instead of a line underneath.
-          Sticky so the switcher stays reachable once a tab's content (now
-          two merged sections deep) scrolls past a screen's height. */}
-      <div className="sticky top-0 z-10 mt-6 max-w-full overflow-x-auto bg-surface/95 py-2 backdrop-blur-sm">
+      {/* Pill tab switcher */}
+      <div className="sticky top-0 z-10 max-w-full overflow-x-auto bg-surface/95 py-2 backdrop-blur-sm">
         <div className="inline-flex min-w-max gap-0.5 rounded-full bg-border p-1">
           {TABS.map((t) => {
           const active = activeTab === t.key
-          const count = t.key === 'sources' ? results.length : t.key === 'market' ? competitorCount : null
+          const segmentCount = marketOpportunity?.segments?.length ?? 0
+          const count = t.key === 'sources' ? results.length : t.key === 'market' ? competitorCount : t.key === 'customers' ? segmentCount : null
           return (
             <button
               key={t.key}
@@ -324,7 +342,7 @@ export default function ValidationResults({
         </div>
       </div>
 
-      <div className="mt-6">
+      <div>
         {activeTab === 'sources' && (
           <div className="space-y-8">
             {groups.length > 0 ? (
@@ -347,6 +365,18 @@ export default function ValidationResults({
               <SectionDivider label="Competitive field" />
               <CompetitorAnalysis data={competitors} error={errors?.competitors} />
             </div>
+          </div>
+        )}
+
+        {activeTab === 'customers' && (
+          <div className="rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
+            {segments.length > 0 ? (
+              <CustomerPersonas segments={segments} />
+            ) : (
+              <p className="rounded-xl border border-dashed border-border bg-surface p-6 text-center text-sm text-muted">
+                Customer segments were not produced for this run.
+              </p>
+            )}
           </div>
         )}
 
