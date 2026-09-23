@@ -3,17 +3,43 @@ import DegradedBanner from './DegradedBanner'
 import Citation from './Citation'
 
 const LEVEL_STYLES = {
-  low: 'border-border bg-panel text-muted',
-  medium: 'border-amber-300 bg-amber-50 text-amber-700',
-  high: 'border-accent/30 bg-accent/5 text-accent',
-  unknown: 'border-border bg-panel text-muted',
+  low: 'border-border-strong bg-panel text-muted-strong',
+  medium: 'border-amber-400 bg-amber-100 text-amber-800',
+  high: 'border-accent/40 bg-accent/10 text-accent',
+  unknown: 'border-border-strong bg-panel text-muted-strong',
 }
 
 function Badge({ label, value }) {
   const level = LEVEL_STYLES[value] ? value : 'unknown'
   return (
-    <span className={`rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide ${LEVEL_STYLES[level]}`}>
+    <span className={`rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide ${LEVEL_STYLES[level]}`}>
       {label}: {level}
+    </span>
+  )
+}
+
+// Derived client-side from the impact/effort the agent already returns -
+// no new backend field needed for a simple "what to build first" signal.
+// High impact for anything less than high effort is the clearest "do this
+// first" case; anything else genuinely needs the impact/effort badges
+// spelled out rather than collapsing to a single P-number.
+function priorityFor(impact, effort) {
+  if (impact === 'high' && effort !== 'high') return 'P0'
+  if (impact === 'high' || (impact === 'medium' && effort !== 'high')) return 'P1'
+  return 'P2'
+}
+
+const PRIORITY_STYLES = {
+  P0: 'bg-accent text-white',
+  P1: 'border border-accent/40 bg-accent/10 text-accent',
+  P2: 'border border-border-strong bg-panel text-muted-strong',
+}
+
+function PriorityTag({ impact, effort }) {
+  const priority = priorityFor(impact, effort)
+  return (
+    <span className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-bold ${PRIORITY_STYLES[priority]}`}>
+      {priority}
     </span>
   )
 }
@@ -41,10 +67,11 @@ export default function MvpRecommendations({ data, error, sourceMap }) {
       {data.degraded && <DegradedBanner />}
       <div className="grid gap-3 sm:grid-cols-2">
         {features.map((item, index) => (
-          <article key={index} className="rounded-xl border border-border bg-surface p-5">
+          <article key={index} className="rounded-xl border border-border-strong bg-surface p-5">
             <div className="flex items-start gap-2">
+              <PriorityTag impact={item.impact} effort={item.effort} />
               <IconLightbulb className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
-              <h3 className="text-sm font-semibold leading-snug text-text">
+              <h3 className="font-serif text-base font-semibold leading-snug text-text">
                 {item.feature}
                 {sourceMap && <Citation sourceIds={item.sourceIds} sourceMap={sourceMap} />}
               </h3>

@@ -51,10 +51,27 @@ function hostnameOf(url) {
   }
 }
 
+// Always renders, even without a numeric score - a source with no
+// relevance signal at all is worth flagging just as much as a weak one,
+// not silently hidden while every other card shows its number. Tiered the
+// same accent/success/danger way as the confidence dashboard, so "how much
+// should I trust this source" reads consistently across the whole app.
 function ScoreBadge({ score }) {
-  const percent = useCountUp(Math.round(score * 100), 500)
+  const hasScore = typeof score === 'number'
+  const percent = useCountUp(hasScore ? Math.round(score * 100) : 0, 500)
+  if (!hasScore) {
+    return (
+      <span className="shrink-0 rounded-full border border-border-strong bg-panel px-2 py-0.5 font-mono text-[11px] font-semibold tracking-wide text-muted-strong">
+        Not scored
+      </span>
+    )
+  }
   const tier =
-    percent > 50 ? 'bg-accent/15 text-accent border-accent/30' : 'bg-muted/10 text-muted border-border'
+    percent >= 67
+      ? 'bg-success/15 text-success border-success/40'
+      : percent >= 34
+        ? 'bg-accent/15 text-accent border-accent/30'
+        : 'bg-danger/10 text-danger border-danger/30'
   return (
     <span
       className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[11px] font-semibold tracking-wide ${tier}`}
@@ -64,44 +81,24 @@ function ScoreBadge({ score }) {
   )
 }
 
-function ResultHeroCard({ r }) {
+function ResultCard({ r, isTop }) {
   return (
     <a
       href={r.url}
       target="_blank"
       rel="noreferrer"
-      className="block rounded-2xl border-[1.5px] border-accent bg-panel p-5 transition-shadow duration-200 hover:shadow-md hover:shadow-black/5"
+      className={`block rounded-2xl bg-panel p-5 transition-shadow duration-200 hover:shadow-md hover:shadow-black/5 ${
+        isTop ? 'border-[1.5px] border-accent' : 'border border-border-strong'
+      }`}
     >
       <div className="flex items-start justify-between gap-3">
         <h4 className="font-serif text-base font-semibold leading-snug text-text">{r.title}</h4>
-        {typeof r.score === 'number' && <ScoreBadge score={r.score} />}
+        <ScoreBadge score={r.score} />
       </div>
       {r.snippet && <p className="mt-2 text-sm leading-relaxed text-muted">{r.snippet}</p>}
       <p className="mt-3 truncate border-t border-border pt-2.5 font-mono text-[11px] uppercase tracking-wide text-muted/70">
         {hostnameOf(r.url)}
       </p>
-    </a>
-  )
-}
-
-function ResultRow({ r }) {
-  return (
-    <a
-      href={r.url}
-      target="_blank"
-      rel="noreferrer"
-      className="flex items-start justify-between gap-4 py-3 transition-colors hover:bg-accent/5"
-    >
-      <div className="min-w-0">
-        <p className="text-sm text-text">{r.title}</p>
-        {r.snippet && <p className="mt-1 text-xs leading-relaxed text-muted line-clamp-2">{r.snippet}</p>}
-        <p className="mt-1 font-mono text-[10px] uppercase tracking-wide text-muted/70">{hostnameOf(r.url)}</p>
-      </div>
-      {typeof r.score === 'number' && (
-        <span className="shrink-0 pt-0.5 font-mono text-[11px] text-muted">
-          {Math.round(r.score * 100)}% match
-        </span>
-      )}
     </a>
   )
 }
@@ -163,31 +160,28 @@ function AngleGroup({ angle, items }) {
         )}
       </div>
 
-      <ResultHeroCard r={top} />
-
-      {visibleRest.length > 0 && (
-        <div className="mt-1 flex flex-col divide-y divide-border border-t border-border">
-          {visibleRest.map((r, i) => (
-            <ResultRow key={r.url || i} r={r} />
-          ))}
-        </div>
-      )}
+      <div className="space-y-3">
+        <ResultCard r={top} isTop />
+        {visibleRest.map((r, i) => (
+          <ResultCard key={r.url || i} r={r} />
+        ))}
+      </div>
     </div>
   )
 }
 
 const TABS = [
-  { key: 'sources', label: 'Sources' },
-  { key: 'market', label: 'Market & Competition' },
-  { key: 'opportunity', label: 'Opportunity & Risks' },
-  { key: 'build', label: 'Build & Launch' },
-  { key: 'experiments', label: 'Experiments & Action Plan' },
+  { key: 'sources', label: 'Evidence' },
+  { key: 'market', label: 'Market & Rivals' },
+  { key: 'opportunity', label: 'Gaps & Exposure' },
+  { key: 'build', label: 'Build & Ship' },
+  { key: 'experiments', label: 'Roadmap' },
 ]
 
 function SectionDivider({ label }) {
   return (
-    <h3 className="mb-4 flex items-center gap-2 font-mono text-[11px] uppercase tracking-widest text-muted">
-      <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+    <h3 className="mb-4 flex items-center gap-2 border-b border-border-strong pb-2.5 font-mono text-[11px] font-semibold uppercase tracking-widest text-text">
+      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
       {label}
     </h3>
   )
@@ -260,12 +254,12 @@ export default function ValidationResults({
 
   return (
     <div className="mt-6">
-      <div className="flex flex-wrap items-center gap-6 rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+      <div className="flex flex-wrap items-center gap-6 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-            <h2 className="font-mono text-xs uppercase tracking-widest text-muted">
-              Validation summary
+            <h2 className="font-mono text-xs font-semibold uppercase tracking-widest text-text">
+              Executive summary
             </h2>
           </div>
           <p className="mt-3 text-sm text-text leading-relaxed">{summary}</p>
@@ -309,7 +303,9 @@ export default function ValidationResults({
               onClick={() => setActiveTab(t.key)}
               aria-selected={active}
               className={`flex items-center gap-2 rounded-full px-5 py-2 font-serif text-[15px] transition-colors ${
-                active ? 'bg-panel italic text-text shadow-sm' : 'text-muted hover:text-text'
+                active
+                  ? 'border border-border-strong bg-panel italic text-text shadow-sm'
+                  : 'text-muted-strong hover:text-text'
               }`}
             >
               {t.label}
@@ -343,12 +339,12 @@ export default function ValidationResults({
 
         {activeTab === 'market' && (
           <div className="space-y-8">
-            <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
-              <SectionDivider label="Market opportunity" />
+            <div className="rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
+              <SectionDivider label="Market signal" />
               <MarketOpportunity data={marketOpportunity} error={errors?.marketOpportunity} sourceMap={sourceMap} />
             </div>
-            <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
-              <SectionDivider label="Competitors" />
+            <div className="rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
+              <SectionDivider label="Competitive field" />
               <CompetitorAnalysis data={competitors} error={errors?.competitors} />
             </div>
           </div>
@@ -356,12 +352,12 @@ export default function ValidationResults({
 
         {activeTab === 'opportunity' && (
           <div className="space-y-8">
-            <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
-              <SectionDivider label="White space" />
+            <div className="rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
+              <SectionDivider label="Whitespace gaps" />
               <WhiteSpaceAnalysis data={whiteSpace} />
             </div>
-            <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
-              <SectionDivider label="SWOT & risks" />
+            <div className="rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
+              <SectionDivider label="Strengths & exposure" />
               <SwotAnalysis data={swot} error={errors?.swot} sourceMap={sourceMap} />
             </div>
           </div>
@@ -369,20 +365,20 @@ export default function ValidationResults({
 
         {activeTab === 'build' && (
           <div className="space-y-8">
-            <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
-              <SectionDivider label="MVP recommendations" />
+            <div className="rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
+              <SectionDivider label="MVP blueprint" />
               <MvpRecommendations data={mvp} error={errors?.mvp} sourceMap={sourceMap} />
             </div>
-            <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
-              <SectionDivider label="Go to market" />
+            <div className="rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
+              <SectionDivider label="Go-to-market playbook" />
               <GtmStrategy data={gtm} error={errors?.gtm} sourceMap={sourceMap} />
             </div>
           </div>
         )}
 
         {activeTab === 'experiments' && (
-          <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
-            <SectionDivider label="Experiments & action plan" />
+          <div className="rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
+            <SectionDivider label="Experiments & roadmap" />
             <ExperimentsActionPlan
               experiments={experiments}
               actionPlan={actionPlan}

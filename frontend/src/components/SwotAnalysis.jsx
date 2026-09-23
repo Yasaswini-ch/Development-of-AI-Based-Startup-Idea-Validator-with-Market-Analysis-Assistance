@@ -35,10 +35,10 @@ const QUADRANTS = [
 ]
 
 const SEVERITY_STYLES = {
-  low: 'border-accent/20 bg-accent/5 text-accent',
-  medium: 'border-amber-300 bg-amber-50 text-amber-700',
-  high: 'border-danger/30 bg-danger/5 text-danger',
-  unknown: 'border-border bg-panel text-muted',
+  low: 'border-accent/40 bg-accent/10 text-accent font-semibold',
+  medium: 'border-amber-400 bg-amber-100 text-amber-800 font-semibold',
+  high: 'border-danger/50 bg-danger/10 text-danger font-semibold',
+  unknown: 'border-border-strong bg-panel text-muted-strong font-semibold',
 }
 
 function Unavailable({ error }) {

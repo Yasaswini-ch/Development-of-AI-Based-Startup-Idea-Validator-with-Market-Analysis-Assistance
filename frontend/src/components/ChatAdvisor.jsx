@@ -166,7 +166,7 @@ export default function ChatAdvisor({ sessionId, apiUrl }) {
             <h2 className="flex items-center gap-2 font-serif text-lg text-text">
               <IconLightbulb className="h-5 w-5 text-accent" />
               Validation advisor
-              <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-accent" aria-hidden="true" />
+              <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-info" aria-hidden="true" />
             </h2>
             <button
               type="button"
