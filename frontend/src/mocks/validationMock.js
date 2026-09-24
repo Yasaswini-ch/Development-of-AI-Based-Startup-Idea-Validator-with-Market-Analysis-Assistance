@@ -46,6 +46,9 @@ export const mockResults = [
 export const mockMarketOpportunity = {
   marketSize: 'The creator monetization tooling market is estimated at $2.4B and growing quickly as more part-time creators look for income.',
   opportunityScore: 62,
+  tam: { text: 'USD 2.4B - the full creator monetization tooling market.', sourceIds: ['src-1'] },
+  sam: { text: 'USD 600M - part-time creators reachable through direct-to-creator channels.', sourceIds: ['src-2'] },
+  som: null,
   trends: [
     { text: 'The creator tooling market is growing at roughly 24% CAGR.', sourceIds: ['src-1'] },
     { text: 'Onboarding friction is the leading cause of early churn across creator SaaS tools.', sourceIds: ['src-2'] },

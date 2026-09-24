@@ -195,3 +195,11 @@ export function IconColumns(props) {
     </svg>
   )
 }
+
+export function IconChevronDown(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  )
+}

@@ -21,7 +21,14 @@ describe('ConfidenceDashboard', () => {
     expect(screen.getByText('Direct evidence')).toBeInTheDocument()
     expect(screen.getByText('3 direct vs 0 inferred.')).toBeInTheDocument()
 
+    // Average relevance and source recency are two distinct metrics -
+    // regression test for a bug where the relevance tile showed the
+    // recency detail text instead of its own, and recency had no tile of
+    // its own at all.
     expect(screen.getByText('Average relevance')).toBeInTheDocument()
+    expect(screen.getByText('How closely cited sources match the search query, on average (0.74 of 1.00).')).toBeInTheDocument()
+
+    expect(screen.getByText('Source recency')).toBeInTheDocument()
     expect(screen.getByText('Median source age: 97 days (3/4 dated).')).toBeInTheDocument()
   })
 
@@ -29,5 +36,12 @@ describe('ConfidenceDashboard', () => {
     render(<ConfidenceDashboard data={{ sourceCoverage: mockConfidence.sourceCoverage }} />)
     expect(screen.getByText('Source coverage')).toBeInTheDocument()
     expect(screen.queryByText('Cross-source agreement')).not.toBeInTheDocument()
+  })
+
+  it('still shows source recency when there is no average relevance to show alongside it', () => {
+    render(<ConfidenceDashboard data={{ sourceRecency: { sourcesWithKnownDate: 0, totalSources: 3, medianAgeDays: null } }} />)
+    expect(screen.getByText('Source recency')).toBeInTheDocument()
+    expect(screen.getByText('No dated sources available.')).toBeInTheDocument()
+    expect(screen.queryByText('Average relevance')).not.toBeInTheDocument()
   })
 })
