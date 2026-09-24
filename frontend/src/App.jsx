@@ -435,7 +435,7 @@ export default function App() {
                     onClick={() => setView('analytics')}
                     className="rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-muted transition-colors hover:border-accent hover:text-accent"
                   >
-                    Analytics
+                    Dashboard
                   </button>
                   {currentUser.isAdmin && (
                     <button

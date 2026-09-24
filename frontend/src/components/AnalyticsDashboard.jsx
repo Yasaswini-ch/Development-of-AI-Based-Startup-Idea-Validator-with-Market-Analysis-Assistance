@@ -558,7 +558,7 @@ export default function AnalyticsDashboard({ apiUrl, token, onBack }) {
     <div className="mx-auto max-w-6xl">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <p className="font-mono text-xs uppercase tracking-widest text-accent">Analytics</p>
+          <p className="font-mono text-xs uppercase tracking-widest text-accent">Dashboard</p>
           <h2 className="font-serif text-2xl text-text">Your validation stats</h2>
         </div>
         {onBack && (
