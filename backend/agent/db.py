@@ -154,6 +154,7 @@ def get_engine() -> Engine:
     _engine = create_engine(url, connect_args=connect_args, pool_pre_ping=True, **pool_kwargs)
     metadata.create_all(_engine)
     _migrate_missing_columns(_engine)
+    _bootstrap_admin_emails(_engine)
     return _engine
 
 
@@ -191,6 +192,31 @@ def _migrate_missing_columns(engine: Engine) -> None:
             # otherwise, and every existing user row must resolve to
             # "not admin" rather than NULL either way.
             conn.execute(text("ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT 0"))
+
+
+# Promoting an account to admin otherwise requires a direct database update
+# (see users_table.is_admin above) - on a host with no interactive shell or
+# SQL console (e.g. Render's free tier), that's unreachable. ADMIN_EMAILS
+# gives an operator a way to do the same thing through something every
+# deployment already has: an env var plus a redeploy. Runs on every engine
+# creation rather than once at signup so promoting or demoting an existing
+# account is just an env var edit, not a data migration - and skips
+# entirely, at zero cost, on the far more common case of the var being unset.
+def _bootstrap_admin_emails(engine: Engine) -> None:
+    raw = os.environ.get("ADMIN_EMAILS", "")
+    emails = {email.strip().lower() for email in raw.split(",") if email.strip()}
+    if not emails:
+        return
+
+    inspector = inspect(engine)
+    if "users" not in set(inspector.get_table_names()):
+        return
+
+    with engine.begin() as conn:
+        rows = conn.execute(text("SELECT id, email FROM users")).all()
+        matching_ids = [row.id for row in rows if row.email.lower() in emails]
+        if matching_ids:
+            conn.execute(users_table.update().where(users_table.c.id.in_(matching_ids)).values(is_admin=True))
 
 
 def reset_engine() -> None:
