@@ -959,6 +959,20 @@ def _confidence_dashboard(state: PipelineState) -> dict:
     relevance, cross-source agreement, source recency, and a direct-
     evidence-vs-inferred ratio. Computed without another LLM call, same as
     the rest of this pipeline's deterministic post-processing steps.
+
+    Also recomputes the headline agreeingSources/totalSources/percentage/
+    label confidence_node first set - over cited sources instead of the
+    full raw search pool. confidence_node necessarily runs before any
+    claims exist, so it can only measure "how relevant is everything we
+    retrieved" (30-50+ results blended across every search angle,
+    including deliberately broad ones like industry news and customer
+    demand that were never meant to individually match the idea tightly).
+    That reads as a near-permanently low "Overall confidence" regardless of
+    how well-evidenced the actual analysis is, since it's diluted by
+    breadth the claims never even used. Once claims exist, "how relevant
+    are the sources this analysis is actually built on" is both answerable
+    and the more honest headline number - the same population sourceCoverage/
+    averageRelevance/etc. below already use.
     """
     claims = _collect_claims(state)
     total_claims = len(claims)
@@ -981,7 +995,17 @@ def _confidence_dashboard(state: PipelineState) -> dict:
     cited_scores = [relevance_by_id[sid] for sid in cited_ids if sid in relevance_by_id]
     average_relevance = round(sum(cited_scores) / len(cited_scores), 2) if cited_scores else None
 
+    # Same >=0.5 "agrees" bar confidence_node used, just applied to the
+    # cited population instead of the raw pool - so a source only counts
+    # against the headline number if the analysis actually relied on it.
+    agreeing_cited = sum(1 for score in cited_scores if score >= 0.5)
+    total_cited = len(cited_scores)
+
     return {
+        "agreeingSources": agreeing_cited,
+        "totalSources": total_cited,
+        "percentage": _pct(agreeing_cited, total_cited),
+        "label": f"{agreeing_cited}/{total_cited} sources agree" if total_cited else "No cited sources yet",
         "sourceCoverage": {
             "claimsWithSource": claims_with_source,
             "totalClaims": total_claims,
@@ -1005,9 +1029,14 @@ def _confidence_dashboard(state: PipelineState) -> dict:
 def confidence_dashboard_node(state: PipelineState) -> PipelineState:
     """Runs once every strategy agent has had a chance to produce
     sourceIds-bearing claims, merging the dashboard into the same
-    "confidence" key confidence_node already populated - additive, never
-    replacing the existing agreeingSources/percentage/perAngle fields the
-    frontend may already read.
+    "confidence" key confidence_node already populated. Additive for
+    sourceCoverage/averageRelevance/crossSourceAgreement/
+    directEvidenceRatio/sourceRecency (all new here) and leaves
+    confidence_node's own perAngle breakdown untouched - but this
+    intentionally overwrites confidence_node's headline agreeingSources/
+    totalSources/percentage/label with the cited-sources recomputation
+    above, which is why this node always runs after confidence_node in the
+    graph rather than the two being independent.
     """
     logger.info("[confidence_dashboard] START")
 
@@ -1023,7 +1052,8 @@ def confidence_dashboard_node(state: PipelineState) -> PipelineState:
 
     confidence = {**(state.get("confidence") or {}), **dashboard}
     logger.info(
-        "[confidence_dashboard] COMPLETE - source coverage %s%%",
+        "[confidence_dashboard] COMPLETE - overall %s%%, source coverage %s%%",
+        dashboard["percentage"],
         dashboard["sourceCoverage"]["percentage"],
     )
     return {**state, "confidence": confidence}
