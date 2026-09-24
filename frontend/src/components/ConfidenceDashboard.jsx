@@ -31,6 +31,19 @@ function MetricTile({ label, percent, detail }) {
   )
 }
 
+function relevanceDetail(averageRelevance) {
+  return `How closely cited sources match the search query, on average (${averageRelevance.toFixed(2)} of 1.00).`
+}
+
+// sourceRecency has no percentage of its own (see confidence_dashboard_node)
+// - the tile's headline number is instead "% of sources with a known
+// publish date," so it's still a real, computed percent rather than a
+// placeholder, with the actual age in the detail line below it.
+function recencyPercent(sourceRecency) {
+  if (!sourceRecency || !sourceRecency.totalSources) return 0
+  return (sourceRecency.sourcesWithKnownDate / sourceRecency.totalSources) * 100
+}
+
 function recencyDetail(sourceRecency) {
   if (!sourceRecency || sourceRecency.sourcesWithKnownDate === 0) {
     return 'No dated sources available.'
@@ -101,6 +114,13 @@ export default function ConfidenceDashboard({ data }) {
           <MetricTile
             label="Average relevance"
             percent={averageRelevance * 100}
+            detail={relevanceDetail(averageRelevance)}
+          />
+        )}
+        {sourceRecency && (
+          <MetricTile
+            label="Source recency"
+            percent={recencyPercent(sourceRecency)}
             detail={recencyDetail(sourceRecency)}
           />
         )}

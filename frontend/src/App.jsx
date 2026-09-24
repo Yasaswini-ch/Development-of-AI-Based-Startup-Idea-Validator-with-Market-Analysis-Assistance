@@ -10,7 +10,7 @@ import AnalyticsDashboard from './components/AnalyticsDashboard'
 import PlatformHealth from './components/PlatformHealth'
 import AuthPanel from './components/AuthPanel'
 import DeepAnalysisPrompt from './components/DeepAnalysisPrompt'
-import { IconUser } from './components/icons'
+import AccountMenu from './components/AccountMenu'
 import useCountUp from './hooks/useCountUp'
 import useLoadingSteps from './hooks/useLoadingSteps'
 import { addHistoryEntry } from './lib/history'
@@ -414,50 +414,8 @@ export default function App() {
               Multi-agent · Live Web Search
             </p>
             <div className="flex items-center gap-2">
-              {currentUser && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setView('history')}
-                    className="rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-muted transition-colors hover:border-accent hover:text-accent"
-                  >
-                    History
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setView('compare')}
-                    className="rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-muted transition-colors hover:border-accent hover:text-accent"
-                  >
-                    Compare ideas
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setView('analytics')}
-                    className="rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-muted transition-colors hover:border-accent hover:text-accent"
-                  >
-                    Dashboard
-                  </button>
-                  {currentUser.isAdmin && (
-                    <button
-                      type="button"
-                      onClick={() => setView('platform-health')}
-                      className="rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-muted transition-colors hover:border-accent hover:text-accent"
-                    >
-                      Platform health
-                    </button>
-                  )}
-                </>
-              )}
               {currentUser ? (
-                <button
-                  type="button"
-                  onClick={handleSignOut}
-                  title={`Signed in as ${currentUser.email} - click to sign out`}
-                  className="flex items-center gap-1.5 rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-text transition-colors hover:border-accent hover:text-accent"
-                >
-                  <IconUser className="h-3 w-3 text-accent" />
-                  <span className="max-w-[9rem] truncate normal-case">{currentUser.email}</span>
-                </button>
+                <AccountMenu currentUser={currentUser} onNavigate={setView} onSignOut={handleSignOut} />
               ) : (
                 <button
                   type="button"

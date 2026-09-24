@@ -57,6 +57,36 @@ function SegmentCard({ segment, index, sourceMap }) {
   )
 }
 
+// A TAM/SAM/SOM tier is either null (the sources don't support that
+// specific figure - see market_agent.py) or a {"text", "sourceIds"} claim,
+// same per-claim shape as trends/segments. Only rendered when at least one
+// tier is present, so an idea with no sourced market-sizing breakdown
+// doesn't show three empty slots.
+function MarketSizeTiers({ tam, sam, som, sourceMap }) {
+  const tiers = [
+    { label: 'TAM', hint: 'Total addressable market', data: tam },
+    { label: 'SAM', hint: 'Serviceable addressable market', data: sam },
+    { label: 'SOM', hint: 'Serviceable obtainable market', data: som },
+  ].filter((tier) => tier.data?.text)
+
+  if (tiers.length === 0) return null
+
+  return (
+    <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      {tiers.map((tier) => (
+        <div key={tier.label} className="rounded-xl border border-border-strong bg-surface p-4">
+          <p className="font-mono text-[10px] uppercase tracking-widest text-accent">{tier.label}</p>
+          <p className="mt-0.5 font-mono text-[9px] uppercase tracking-wide text-muted">{tier.hint}</p>
+          <p className="mt-2 text-sm leading-relaxed text-text">
+            {tier.data.text}
+            {sourceMap && <Citation sourceIds={tier.data.sourceIds} sourceMap={sourceMap} />}
+          </p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function scoreTier(score) {
   if (score >= 70) {
     return { label: 'Strong opportunity', className: 'text-accent' }
@@ -107,7 +137,7 @@ export default function MarketOpportunity({ data, error, sourceMap }) {
     return <UnavailableCard error={error} />
   }
 
-  const { marketSize, trends = [], segments = [], opportunityScore = 0, degraded } = data
+  const { marketSize, trends = [], segments = [], opportunityScore = 0, degraded, tam, sam, som } = data
   if (!marketSize && trends.length === 0 && segments.length === 0) {
     return <UnavailableCard error="No market data could be extracted from the available sources." />
   }
@@ -118,6 +148,7 @@ export default function MarketOpportunity({ data, error, sourceMap }) {
       {marketSize && (
         <div>
           <p className="text-sm text-text leading-relaxed">{marketSize}</p>
+          <MarketSizeTiers tam={tam} sam={sam} som={som} sourceMap={sourceMap} />
           {/* A score of 0 means the underlying analysis produced no grounded
               data at all (see backend/agent/opportunity_score.py) - showing
               "0" here would read as a real negative signal, not "unavailable",
