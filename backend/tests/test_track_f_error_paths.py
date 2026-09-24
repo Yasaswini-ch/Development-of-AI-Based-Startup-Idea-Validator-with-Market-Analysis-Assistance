@@ -23,6 +23,7 @@ from fastapi.testclient import TestClient
 
 import main
 from agent.graph import (
+    NEEDS_DEEP_ANALYSIS,
     competitor_discovery_node,
     market_opportunity_node,
     opportunity_score_node,
@@ -31,6 +32,7 @@ from agent.graph import (
     web_search_node,
     white_space_node,
 )
+from agent.llm import NeedsDeepAnalysisError
 
 
 class WebSearchNodeErrorPathTests(unittest.TestCase):
@@ -205,6 +207,80 @@ class MidPipelineFailureIntegrationTests(unittest.TestCase):
         # (non-pipeline-error) result.
         self.assertNotIn("error", state)
         self.assertIn("confidence", state)
+
+
+class ParallelMvpGtmFailureTests(unittest.TestCase):
+    """mvp_recommendation and gtm_strategy run as parallel branches off
+    viability_score (see build_pipeline) instead of one after the other,
+    so both can now fail in the very same step - something that could
+    never happen while they ran sequentially. Runs the real compiled
+    pipeline (not isolated node calls) since the failure mode this guards
+    against - two concurrent writes to a shared state channel - only
+    surfaces during actual LangGraph execution.
+    """
+
+    @patch("agent.graph.analyze_revenue_models")
+    @patch("agent.graph.analyze_assumptions")
+    @patch("agent.graph.analyze_gtm")
+    @patch("agent.graph.analyze_mvp")
+    @patch("agent.graph.analyze_swot")
+    @patch("agent.graph.analyze_competitors")
+    @patch("agent.graph.analyze_market_opportunity")
+    @patch("agent.graph.retrieval.collect")
+    def test_both_branches_needing_deep_analysis_at_once_does_not_crash(
+        self, collect, market, competitors, swot, mvp, gtm, assumptions, revenue
+    ):
+        collect.return_value = [
+            {"title": "A", "snippet": "s", "url": "https://a", "angle": "Competitors", "score": 0.7}
+        ]
+        market.return_value = {"marketSize": "text", "trends": [], "segments": []}
+        competitors.return_value = {"competitors": []}
+        swot.return_value = {"strengths": [], "weaknesses": [], "opportunities": [], "threats": [], "risks": []}
+        mvp.side_effect = NeedsDeepAnalysisError()
+        gtm.side_effect = NeedsDeepAnalysisError()
+
+        state = pipeline.invoke({"idea": "A meal kit for busy families", "targetCustomer": "", "problem": ""})
+
+        self.assertEqual(state["error"], NEEDS_DEEP_ANALYSIS)
+        # Neither branch got far enough to write its own key at all on
+        # this path (same as before parallelization - NeedsDeepAnalysisError
+        # short-circuits before either "mvp" or "gtm" would be set), so
+        # .get() rather than a literal key lookup.
+        self.assertIsNone(state.get("mvp"))
+        self.assertIsNone(state.get("gtm"))
+
+    @patch("agent.graph.analyze_revenue_models")
+    @patch("agent.graph.analyze_assumptions")
+    @patch("agent.graph.analyze_gtm")
+    @patch("agent.graph.analyze_mvp")
+    @patch("agent.graph.analyze_swot")
+    @patch("agent.graph.analyze_competitors")
+    @patch("agent.graph.analyze_market_opportunity")
+    @patch("agent.graph.retrieval.collect")
+    def test_both_branches_failing_at_once_records_both_errors(
+        self, collect, market, competitors, swot, mvp, gtm, assumptions, revenue
+    ):
+        collect.return_value = [
+            {"title": "A", "snippet": "s", "url": "https://a", "angle": "Competitors", "score": 0.7}
+        ]
+        market.return_value = {"marketSize": "text", "trends": [], "segments": []}
+        competitors.return_value = {"competitors": []}
+        swot.return_value = {"strengths": [], "weaknesses": [], "opportunities": [], "threats": [], "risks": []}
+        mvp.side_effect = RuntimeError("mvp boom")
+        gtm.side_effect = RuntimeError("gtm boom")
+        assumptions.return_value = {"assumptions": []}
+        revenue.return_value = {"models": []}
+
+        state = pipeline.invoke({"idea": "A meal kit for busy families", "targetCustomer": "", "problem": ""})
+
+        self.assertIsNone(state["mvp"])
+        self.assertIsNone(state["gtm"])
+        self.assertIn("mvp", state["errors"])
+        self.assertIn("gtm", state["errors"])
+        # Neither branch's failure was swallowed by the other overwriting
+        # the shared "errors" channel - the rest of the run still
+        # completed normally.
+        self.assertNotIn("error", state)
 
 
 class SlowLlmCallTests(unittest.TestCase):
