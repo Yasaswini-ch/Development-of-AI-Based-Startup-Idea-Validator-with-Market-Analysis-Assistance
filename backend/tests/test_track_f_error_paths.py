@@ -158,6 +158,8 @@ class MidPipelineFailureIntegrationTests(unittest.TestCase):
     its own output, rather than the whole run stopping at the first error.
     """
 
+    @patch("agent.graph.analyze_revenue_models")
+    @patch("agent.graph.analyze_assumptions")
     @patch("agent.graph.analyze_gtm")
     @patch("agent.graph.analyze_mvp")
     @patch("agent.graph.analyze_swot")
@@ -165,7 +167,7 @@ class MidPipelineFailureIntegrationTests(unittest.TestCase):
     @patch("agent.graph.analyze_market_opportunity")
     @patch("agent.graph.retrieval.collect")
     def test_market_opportunity_failure_does_not_block_downstream_nodes(
-        self, collect, market, competitors, swot, mvp, gtm
+        self, collect, market, competitors, swot, mvp, gtm, assumptions, revenue
     ):
         # Every other agent mocked to return instantly - this test asserts
         # failure isolation around market_opportunity_node specifically, not
@@ -184,6 +186,8 @@ class MidPipelineFailureIntegrationTests(unittest.TestCase):
             "earlyCustomerApproach": "text",
             "earlyCustomerApproachSourceIds": [],
         }
+        assumptions.return_value = {"assumptions": []}
+        revenue.return_value = {"models": []}
 
         state = pipeline.invoke({"idea": "A meal kit for busy families", "targetCustomer": "", "problem": ""})
 
@@ -216,13 +220,15 @@ class SlowLlmCallTests(unittest.TestCase):
     error, never on plain latency).
     """
 
+    @patch("agent.graph.analyze_revenue_models")
+    @patch("agent.graph.analyze_assumptions")
     @patch("agent.graph.analyze_gtm")
     @patch("agent.graph.analyze_mvp")
     @patch("agent.graph.analyze_swot")
     @patch("agent.graph.analyze_competitors")
     @patch("agent.graph.analyze_market_opportunity")
     @patch("agent.graph.retrieval.collect")
-    def test_slow_but_successful_call_completes_normally(self, collect, market, competitors, swot, mvp, gtm):
+    def test_slow_but_successful_call_completes_normally(self, collect, market, competitors, swot, mvp, gtm, assumptions, revenue):
         collect.return_value = []
         competitors.return_value = {"competitors": []}
         swot.return_value = {"strengths": [], "weaknesses": [], "opportunities": [], "threats": [], "risks": []}
@@ -234,6 +240,8 @@ class SlowLlmCallTests(unittest.TestCase):
             "earlyCustomerApproach": "text",
             "earlyCustomerApproachSourceIds": [],
         }
+        assumptions.return_value = {"assumptions": []}
+        revenue.return_value = {"models": []}
 
         def slow_market_call(*args, **kwargs):
             # Simulated latency, not a real sleep - this test asserts
