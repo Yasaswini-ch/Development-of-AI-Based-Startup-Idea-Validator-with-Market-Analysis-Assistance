@@ -251,13 +251,13 @@ def kickoff_with_fallback(build_crew, primary: str | None = None, allow_local: b
     much a "wrong result" as a rate limit, so it gets the same local-model
     retry (or the same NeedsDeepAnalysisError signal) rather than silently
     reaching the caller's own except-block and going straight to the
-    deterministic fallback without ever trying the local model.
+    deterministic fallback without ever trying the local model. This is
+    checked per-attempt inside _kickoff_cloud_chain (passed straight
+    through below), not just once here after the chain already returned -
+    see that function's docstring for why that distinction matters.
     """
     try:
-        output = _kickoff_cloud_chain(build_crew, primary)
-        if validate is not None and not validate(output):
-            raise ValueError("Cloud model response failed validation (unparseable or wrong shape).")
-        return output
+        return _kickoff_cloud_chain(build_crew, primary, validate)
     except Exception as exc:
         if not allow_local:
             raise NeedsDeepAnalysisError(str(exc)) from exc
@@ -265,13 +265,32 @@ def kickoff_with_fallback(build_crew, primary: str | None = None, allow_local: b
         return _kickoff_with_metrics(LOCAL_MODEL, build_crew)
 
 
-def _kickoff_cloud_chain(build_crew, primary: str | None = None):
+class _ShapeValidationError(Exception):
+    """Internal marker for "validate(output) returned False", kept distinct
+    from any other exception so a bug inside a caller's own `validate`
+    function still propagates and fails loudly, instead of being silently
+    treated as switch-worthy like a rate limit or model_not_found.
+    """
+
+
+def _kickoff_cloud_chain(build_crew, primary: str | None = None, validate=None):
     """Run a CrewAI crew built against the primary model; on a rate limit,
     switch to the next model in FALLBACK_MODELS immediately (no wait - each
     is a separate quota bucket, so there's nothing to wait out) instead of
     retrying the same exhausted model. Only once every model in the chain
     has been rate limited does this fall back to waiting out the last one's
     own suggested cooldown, as a final resort.
+
+    A model that responds without raising, but whose output fails
+    `validate`, gets that exact same immediate-switch treatment rather than
+    being returned as-is - a malformed/wrong-shape reply is just as much
+    "this model didn't work" as a rate limit is. Without this, the chain
+    would stop at the *first* network-successful response regardless of
+    shape and never even attempt the remaining, healthier models behind it:
+    e.g. primary rate-limited -> switch to fallback 1, which responds with
+    unparseable JSON (no exception raised) -> the old code returned that
+    broken response immediately, never trying fallback 2 or fallback 3,
+    even though both were still fully available.
 
     `build_crew` is a callable(model: str) -> Crew, not a pre-built Crew -
     switching models means rebuilding the Agent with a different `llm`, so
@@ -301,22 +320,31 @@ def _kickoff_cloud_chain(build_crew, primary: str | None = None):
         if m not in models:
             models.append(m)
 
+    def run(model):
+        output = _kickoff_with_metrics(model, build_crew)
+        if validate is not None and not validate(output):
+            raise _ShapeValidationError(f"{model} response failed validation (unparseable or wrong shape).")
+        return output
+
     last_exc = None
     for i, model in enumerate(models):
         try:
-            return _kickoff_with_metrics(model, build_crew)
+            return run(model)
         except Exception as exc:
             last_exc = exc
-            # model_not_found switches immediately too (see
-            # _is_model_not_found_error) - but only ever waits out a cooldown
-            # for an actual rate limit, since no wait fixes a missing model.
-            if not (_is_rate_limit_error(exc) or _is_model_not_found_error(exc)):
+            # model_not_found and a shape-validation failure switch
+            # immediately too (see _is_model_not_found_error and
+            # _ShapeValidationError above) - but only ever waits out a
+            # cooldown for an actual rate limit, since no wait fixes a
+            # missing model or a malformed response.
+            if not (_is_rate_limit_error(exc) or _is_model_not_found_error(exc) or isinstance(exc, _ShapeValidationError)):
                 raise
 
             is_last = i == len(models) - 1
             if not is_last:
                 reason = (
                     "Rate limited" if _is_rate_limit_error(exc)
+                    else "Invalid response shape" if isinstance(exc, _ShapeValidationError)
                     else "Model unavailable"
                 )
                 logger.warning(
@@ -325,12 +353,13 @@ def _kickoff_cloud_chain(build_crew, primary: str | None = None):
                 )
                 continue
 
-            # Every model in the chain is exhausted or unavailable. Only wait
-            # if this last failure is a rate limit that actually names a
-            # cooldown - if it's the "requested output exceeds the model's own
-            # per-minute cap" shape, or the model simply doesn't exist, no
-            # wait fixes that, so there's nothing left to do but report the
-            # failure.
+            # Every model in the chain is exhausted, unavailable, or
+            # returned an unusable shape. Only wait if this last failure is
+            # a rate limit that actually names a cooldown - if it's the
+            # "requested output exceeds the model's own per-minute cap"
+            # shape, the model simply doesn't exist, or its response didn't
+            # pass validation, no wait fixes that, so there's nothing left
+            # to do but report the failure.
             if not _is_rate_limit_error(exc):
                 raise
             wait = _retry_after_seconds(exc)
@@ -340,5 +369,5 @@ def _kickoff_cloud_chain(build_crew, primary: str | None = None):
             wait = min(wait, _MAX_RETRY_WAIT_SECONDS) + 0.5
             logger.warning("All models rate limited, waiting %.1fs before one final retry", wait)
             time.sleep(wait)
-            return _kickoff_with_metrics(model, build_crew)
+            return run(model)
     raise last_exc
