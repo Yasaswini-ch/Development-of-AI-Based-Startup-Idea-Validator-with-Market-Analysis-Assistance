@@ -133,6 +133,11 @@ def optional_user(authorization: str | None = Header(default=None)) -> dict | No
     return {"id": claims["sub"], "email": claims["email"]}
 
 
+def _admin_emails() -> set[str]:
+    raw = os.environ.get("ADMIN_EMAILS", "")
+    return {email.strip().lower() for email in raw.split(",") if email.strip()}
+
+
 def is_admin(user_id: str) -> bool:
     """Looked up fresh from the users table rather than carried in the JWT
     payload - there's no self-service way to become an admin (see db.py's
@@ -140,11 +145,33 @@ def is_admin(user_id: str) -> bool:
     and a fresh lookup means revoking admin access takes effect
     immediately instead of waiting out whatever is left of that user's
     up-to-30-day token.
+
+    Also self-heals against ADMIN_EMAILS here, not just once at startup
+    (db.py's _bootstrap_admin_emails) - on a host with no persistent disk
+    (e.g. Render's free tier, plain SQLite), the deploy that applies a new
+    ADMIN_EMAILS value also resets the on-disk database, so the one-time
+    startup bootstrap can run before the matching account exists in that
+    fresh database and never get another chance. Checking here instead
+    covers that account the next time it's looked up at all - no redeploy
+    ordering required - at the cost of one extra cheap lookup on accounts
+    that are already flagged (skipped) or already admin (returns early
+    below without ever calling this).
     """
     engine = get_engine()
     with engine.begin() as conn:
-        row = conn.execute(select(users_table.c.is_admin).where(users_table.c.id == user_id)).first()
-    return bool(row and row.is_admin)
+        row = conn.execute(
+            select(users_table.c.is_admin, users_table.c.email).where(users_table.c.id == user_id)
+        ).first()
+    if row is None:
+        return False
+    if row.is_admin:
+        return True
+    if row.email.lower() not in _admin_emails():
+        return False
+
+    with engine.begin() as conn:
+        conn.execute(users_table.update().where(users_table.c.id == user_id).values(is_admin=True))
+    return True
 
 
 def require_admin(authorization: str | None = Header(default=None)) -> dict:

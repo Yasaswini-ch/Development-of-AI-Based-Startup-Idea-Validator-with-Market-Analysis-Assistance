@@ -8,6 +8,7 @@ on to tag a session with user_id only when actually signed in, and
 GET /me/history end to end (signup -> validate -> history lists it).
 """
 
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -20,7 +21,7 @@ from fastapi.testclient import TestClient
 
 import main
 from agent import job_store, session_store
-from agent.auth import AuthError, login, signup
+from agent.auth import AuthError, is_admin, login, signup
 from agent.db import get_engine, users_table
 from sqlalchemy import delete
 
@@ -70,6 +71,44 @@ class AuthModuleTests(unittest.TestCase):
     def test_login_fails_for_an_account_that_does_not_exist(self):
         with self.assertRaises(AuthError):
             login("nobody@example.com", "whatever-password")
+
+
+class IsAdminSelfHealTests(unittest.TestCase):
+    """is_admin() self-promotes an ADMIN_EMAILS match on every lookup, not
+    just once at process startup (db.py's _bootstrap_admin_emails) - a host
+    with no persistent disk (e.g. Render's free tier, plain SQLite) resets
+    the database on every deploy, so an account created after the deploy
+    that set ADMIN_EMAILS would otherwise never get promoted until another
+    restart.
+    """
+
+    def setUp(self):
+        _clear_users()
+        os.environ.pop("ADMIN_EMAILS", None)
+
+    def tearDown(self):
+        os.environ.pop("ADMIN_EMAILS", None)
+
+    def test_promotes_a_matching_account_on_first_lookup(self):
+        result = signup("founder@example.com", "correct-horse-battery")
+        with patch.dict(os.environ, {"ADMIN_EMAILS": "founder@example.com"}):
+            self.assertTrue(is_admin(result["user"]["id"]))
+        # The promotion itself is persisted, not just returned for this call.
+        self.assertTrue(is_admin(result["user"]["id"]))
+
+    def test_matches_case_insensitively_and_ignores_whitespace(self):
+        result = signup("founder@example.com", "correct-horse-battery")
+        with patch.dict(os.environ, {"ADMIN_EMAILS": " Founder@Example.com , someone-else@example.com "}):
+            self.assertTrue(is_admin(result["user"]["id"]))
+
+    def test_does_not_promote_a_non_matching_account(self):
+        result = signup("founder@example.com", "correct-horse-battery")
+        with patch.dict(os.environ, {"ADMIN_EMAILS": "someone-else@example.com"}):
+            self.assertFalse(is_admin(result["user"]["id"]))
+
+    def test_returns_false_for_an_unknown_user_id(self):
+        with patch.dict(os.environ, {"ADMIN_EMAILS": "founder@example.com"}):
+            self.assertFalse(is_admin("not-a-real-user-id"))
 
 
 class AuthEndpointTests(unittest.TestCase):
