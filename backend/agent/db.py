@@ -14,8 +14,9 @@ never could be.
 import os
 import time
 
-from sqlalchemy import JSON, Column, Float, MetaData, String, Table, create_engine, inspect, text
+from sqlalchemy import JSON, Boolean, Column, Float, Integer, MetaData, String, Table, create_engine, inspect, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.sql import false as sql_false
 
 _DEFAULT_SQLITE_URL = "sqlite:///./affinity.db"
 
@@ -57,6 +58,12 @@ users_table = Table(
     Column("email", String, nullable=False, unique=True, index=True),
     Column("password_hash", String, nullable=False),
     Column("created_at", Float, nullable=False),
+    # Nullable/defaulted False - there is no self-service way to become an
+    # admin (no signup flag, no endpoint); promoting a user is a direct
+    # database update an operator runs by hand. Gates GET
+    # /admin/platform-metrics only - never affects a regular account's own
+    # validations, sessions, or history.
+    Column("is_admin", Boolean, nullable=False, server_default=sql_false()),
 )
 
 jobs_table = Table(
@@ -76,6 +83,26 @@ cache_table = Table(
     Column("cache_key", String, primary_key=True),
     Column("data", JSON, nullable=False),
     Column("cached_at", Float, nullable=False, index=True),
+)
+
+# Append-only operational log backing GET /admin/platform-metrics - the
+# in-memory-only counters in agent/metrics.py answer "what's the total
+# right now" but can't answer "how did this trend over the last 30 days"
+# and reset to zero on every restart. One flexible table (rather than a
+# separate one per metric) since every row this needs to record - a node's
+# latency sample, which model served an LLM call, a cache hit/miss, a
+# node failure, an idea's category, an email delivery outcome - is the
+# same shape: a type, an optional node name, and a small JSON detail blob,
+# timestamped. agent/events.py is the only writer/reader; nothing else
+# should query this table directly.
+events_table = Table(
+    "events",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("type", String, nullable=False, index=True),
+    Column("node", String, nullable=True, index=True),
+    Column("detail", JSON, nullable=True),
+    Column("created_at", Float, nullable=False, index=True),
 )
 
 _engine: Engine | None = None
@@ -158,6 +185,12 @@ def _migrate_missing_columns(engine: Engine) -> None:
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_sessions_user_id ON sessions (user_id)"))
         if "sessions" in existing_tables and "decisions" not in existing_columns("sessions"):
             conn.execute(text("ALTER TABLE sessions ADD COLUMN decisions JSON"))
+        if "users" in existing_tables and "is_admin" not in existing_columns("users"):
+            # A DEFAULT is required here (not just NOT NULL) - SQLite
+            # rejects ADD COLUMN ... NOT NULL on a non-empty table
+            # otherwise, and every existing user row must resolve to
+            # "not admin" rather than NULL either way.
+            conn.execute(text("ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT 0"))
 
 
 def reset_engine() -> None:
@@ -177,6 +210,7 @@ def now() -> float:
 
 __all__ = [
     "cache_table",
+    "events_table",
     "get_engine",
     "jobs_table",
     "now",

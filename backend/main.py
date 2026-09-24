@@ -34,17 +34,28 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from agent import metrics
-from agent.auth import AuthError, login as auth_login, optional_user, require_user, signup as auth_signup
+from agent import events, metrics
+from agent.auth import (
+    AuthError,
+    is_admin,
+    login as auth_login,
+    optional_user,
+    require_admin,
+    require_user,
+    signup as auth_signup,
+)
 from agent.chat_graph import ChatRateLimitError, run_chat_turn
 from agent.db import cache_table, get_engine
 from agent.email_delivery import is_valid_email, send_canonical_report_email, send_report_email
 from agent.graph import NEEDS_DEEP_ANALYSIS, pipeline
+from agent.idea_category import categorize_idea
 from agent.job_store import complete_job, create_job, fail_job, get_job
 from agent.pdf_exporter import generate_dossier_pdf
+from agent.platform_metrics import get_platform_metrics
 from agent.report_assembler import assemble_report, report_to_pdf_input
 from agent.session_store import create_session, get_session, list_sessions_for_user
 from agent.structured_output import compact_sources
+from agent.user_analytics import get_user_analytics
 from sqlalchemy import delete, select
 
 
@@ -439,12 +450,17 @@ def _create_validation_session(payload: ValidateRequest, response: dict, user_id
             "mvp": response.get("mvp"),
             "gtm": response.get("gtm"),
             "marketViability": response.get("marketViability"),
-            # Tracks B/C - not produced by the pipeline yet; stored
-            # defensively so report_assembler.py picks them up the moment
-            # they exist, with no change needed here when that lands.
             "contradictions": response.get("contradictions"),
             "experiments": response.get("experiments"),
             "actionPlan": response.get("actionPlan"),
+            # Novel features (assumption tracker + revenue model suggester) -
+            # were being computed and returned in the live /validate response
+            # but never stored here, so GET /reports/{id}, PDF export, email,
+            # and anything else that reads a session back after the fact
+            # always saw them as missing, even for a request that actually
+            # produced real assumptions/revenueModels data.
+            "assumptions": response.get("assumptions"),
+            "revenueModels": response.get("revenueModels"),
         },
         user_id=user_id,
     )
@@ -514,12 +530,23 @@ def auth_login_route(payload: LoginRequest, request: Request):
 
 @app.get("/auth/me")
 def auth_me(current_user: dict = Depends(require_user)):
-    return current_user
+    return {**current_user, "isAdmin": is_admin(current_user["id"])}
 
 
 @app.get("/me/history")
 def my_history(current_user: dict = Depends(require_user)):
     return {"entries": list_sessions_for_user(current_user["id"])}
+
+
+@app.get("/me/analytics")
+def my_analytics(current_user: dict = Depends(require_user)):
+    """Server-side aggregation backing the "My Ideas" dashboard - see
+    agent/user_analytics.py. Signed-in only, like GET /me/history: without
+    a real account there's no durable set of "my ideas" to aggregate over
+    (device-local history is a frontend-only concept this endpoint has no
+    way to see).
+    """
+    return get_user_analytics(current_user["id"])
 
 
 @app.get("/metrics")
@@ -531,6 +558,17 @@ def get_metrics():
     time-series, same trade-off agent/metrics.py's own docstring explains.
     """
     return metrics.snapshot()
+
+
+@app.get("/admin/platform-metrics")
+def get_platform_metrics_endpoint(days: int = 30, _admin: dict = Depends(require_admin)):
+    """Admin-only (see agent/auth.py's require_admin) aggregation backing
+    the Platform Health dashboard - see agent/platform_metrics.py for what
+    each field is computed from, and what's deliberately left out (no live
+    provider quota data - nothing here observes that).
+    """
+    days = max(1, min(days, 90))
+    return get_platform_metrics(days=days)
 
 
 class PipelineStateError(Exception):
@@ -611,6 +649,8 @@ def _run_pipeline_and_build_response(payload: ValidateRequest, cache_key: str, a
         logger.info("Validation result cached")
 
     metrics.increment("cache.miss")
+    events.record("cache_miss")
+    events.record("idea_category", detail={"category": categorize_idea(payload.idea)})
     return response
 
 
@@ -687,6 +727,7 @@ async def validate_idea(payload: ValidateRequest, request: Request, current_user
             "Cache hit - skipping pipeline"
         )
         metrics.increment("cache.hit")
+        events.record("cache_hit")
 
         session_id = _create_validation_session(payload, cached, user_id=user_id)
 

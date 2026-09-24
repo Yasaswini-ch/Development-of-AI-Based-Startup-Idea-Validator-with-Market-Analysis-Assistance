@@ -131,3 +131,28 @@ def optional_user(authorization: str | None = Header(default=None)) -> dict | No
         return None
     claims = _decode_token(token)
     return {"id": claims["sub"], "email": claims["email"]}
+
+
+def is_admin(user_id: str) -> bool:
+    """Looked up fresh from the users table rather than carried in the JWT
+    payload - there's no self-service way to become an admin (see db.py's
+    is_admin column comment), so this is already a rare, low-traffic path,
+    and a fresh lookup means revoking admin access takes effect
+    immediately instead of waiting out whatever is left of that user's
+    up-to-30-day token.
+    """
+    engine = get_engine()
+    with engine.begin() as conn:
+        row = conn.execute(select(users_table.c.is_admin).where(users_table.c.id == user_id)).first()
+    return bool(row and row.is_admin)
+
+
+def require_admin(authorization: str | None = Header(default=None)) -> dict:
+    """FastAPI dependency for GET /admin/platform-metrics: 401s like
+    require_user for no/invalid token, 403s for a valid token belonging to
+    a non-admin account.
+    """
+    user = require_user(authorization)
+    if not is_admin(user["id"]):
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    return user

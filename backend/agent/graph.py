@@ -5,7 +5,7 @@ from typing import Annotated, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from . import metrics, retrieval
+from . import events, metrics, retrieval
 from .action_plan import generate_action_plan
 from .assumption_agent import analyze_assumptions
 from .competitor_agent import analyze_competitors
@@ -43,6 +43,17 @@ def _friendly_error_message(exc: Exception) -> str:
         return "This analysis hit a temporary usage limit. Please try again in a moment."
 
     return "This analysis couldn't be completed for this request. Please try again."
+
+
+def _record_node_failure(node: str, exc: Exception) -> None:
+    """Shared by every node's except-block: bumps the in-process
+    node.{node}.failure counter (agent/metrics.py, current-total-only) and
+    appends a durable "pipeline_error" event (agent/events.py) so GET
+    /admin/platform-metrics' error log has real node/error-type rows to
+    show, not just a live-total percentage.
+    """
+    metrics.increment(f"node.{node}.failure")
+    events.record("pipeline_error", node=node, detail={"errorType": type(exc).__name__})
 
 
 # --------------------------------------------------
@@ -171,6 +182,7 @@ def web_search_node(state: PipelineState) -> PipelineState:
 
     except Exception as exc:
         logger.exception("[web_search] FAILED")
+        metrics.increment("node.web_search.failure")
 
         return {
             **state,
@@ -181,6 +193,7 @@ def web_search_node(state: PipelineState) -> PipelineState:
         "[web_search] COMPLETE - %d results",
         len(results),
     )
+    metrics.increment("node.web_search.success")
 
     return {
         **state,
@@ -364,13 +377,14 @@ def market_opportunity_node(state: PipelineState) -> PipelineState:
             "marketOpportunity": market_opportunity,
         }
 
-    except NeedsDeepAnalysisError:
+    except NeedsDeepAnalysisError as exc:
         logger.warning("[market_opportunity] Needs deep analysis - short-circuiting pipeline")
+        _record_node_failure("market_opportunity", exc)
         return {**state, "error": NEEDS_DEEP_ANALYSIS}
 
     except Exception as exc:
         logger.exception("[market_opportunity] FAILED")
-        metrics.increment("node.market_opportunity.failure")
+        _record_node_failure("market_opportunity", exc)
 
         errors = {
             **state.get("errors", {}),
@@ -422,7 +436,7 @@ def competitor_discovery_node(state: PipelineState) -> PipelineState:
 
     except Exception as exc:
         logger.exception("[competitor_discovery] FAILED")
-        metrics.increment("node.competitor_discovery.failure")
+        _record_node_failure("competitor_discovery", exc)
 
         errors = {
             **state.get("errors", {}),
@@ -485,9 +499,11 @@ def opportunity_score_node(state: PipelineState) -> PipelineState:
             "[opportunity_score] COMPLETE - score=%s",
             score,
         )
+        metrics.increment("node.opportunity_score.success")
 
-    except Exception:
+    except Exception as exc:
         logger.exception("[opportunity_score] FAILED")
+        _record_node_failure("opportunity_score", exc)
 
         # Safe fallback
         market_opportunity["opportunityScore"] = 0
@@ -519,6 +535,7 @@ def white_space_node(state: PipelineState) -> PipelineState:
         )
     except Exception as exc:
         logger.exception("[white_space] FAILED")
+        _record_node_failure("white_space", exc)
         errors = {
             **state.get("errors", {}),
             "whiteSpace": _friendly_error_message(exc),
@@ -530,6 +547,7 @@ def white_space_node(state: PipelineState) -> PipelineState:
         }
 
     logger.info("[white_space] COMPLETE")
+    metrics.increment("node.white_space.success")
     return {
         **state,
         "whiteSpace": white_space,
@@ -556,12 +574,13 @@ def swot_node(state: PipelineState) -> PipelineState:
             state.get("results", []),
             allow_local=state.get("allowLocalLlm", False),
         )
-    except NeedsDeepAnalysisError:
+    except NeedsDeepAnalysisError as exc:
         logger.warning("[swot] Needs deep analysis - short-circuiting pipeline")
+        _record_node_failure("swot", exc)
         return {**state, "error": NEEDS_DEEP_ANALYSIS}
     except Exception as exc:
         logger.exception("[swot] FAILED")
-        metrics.increment("node.swot.failure")
+        _record_node_failure("swot", exc)
         return {
             **state,
             "swot": None,
@@ -596,9 +615,15 @@ def viability_score_node(state: PipelineState) -> PipelineState:
         return state
 
     try:
-        value = calculate_market_viability(market_opportunity, state.get("swot"))
+        value = calculate_market_viability(
+            market_opportunity,
+            state.get("swot"),
+            state.get("competitors"),
+            _source_recency(state.get("results", [])),
+        )
     except Exception as exc:
         logger.exception("[viability_score] FAILED")
+        _record_node_failure("viability_score", exc)
         return {
             **state,
             "marketViability": None,
@@ -606,6 +631,7 @@ def viability_score_node(state: PipelineState) -> PipelineState:
         }
 
     logger.info("[viability_score] COMPLETE - score=%s", value["score"])
+    metrics.increment("node.viability_score.success")
     return {**state, "marketViability": value}
 
 
@@ -638,12 +664,13 @@ def mvp_node(state: PipelineState) -> PipelineState:
             state.get("results", []),
             allow_local=state.get("allowLocalLlm", False),
         )
-    except NeedsDeepAnalysisError:
+    except NeedsDeepAnalysisError as exc:
         logger.warning("[mvp] Needs deep analysis - short-circuiting pipeline")
+        _record_node_failure("mvp", exc)
         return {"error": NEEDS_DEEP_ANALYSIS}
     except Exception as exc:
         logger.exception("[mvp] FAILED")
-        metrics.increment("node.mvp.failure")
+        _record_node_failure("mvp", exc)
         return {
             "mvp": None,
             "errors": {"mvp": _friendly_error_message(exc)},
@@ -670,12 +697,13 @@ def gtm_node(state: PipelineState) -> PipelineState:
             state.get("results", []),
             allow_local=state.get("allowLocalLlm", False),
         )
-    except NeedsDeepAnalysisError:
+    except NeedsDeepAnalysisError as exc:
         logger.warning("[gtm] Needs deep analysis - short-circuiting pipeline")
+        _record_node_failure("gtm", exc)
         return {"error": NEEDS_DEEP_ANALYSIS}
     except Exception as exc:
         logger.exception("[gtm] FAILED")
-        metrics.increment("node.gtm.failure")
+        _record_node_failure("gtm", exc)
         return {
             "gtm": None,
             "errors": {"gtm": _friendly_error_message(exc)},
@@ -1028,17 +1056,20 @@ def assumption_tracker_node(state: PipelineState) -> PipelineState:
             state.get("results", []),
             allow_local=state.get("allowLocalLlm", False),
         )
-    except NeedsDeepAnalysisError:
+    except NeedsDeepAnalysisError as exc:
         logger.warning("[assumption_tracker] Needs deep analysis - short-circuiting pipeline")
+        _record_node_failure("assumption_tracker", exc)
         return {**state, "error": NEEDS_DEEP_ANALYSIS}
     except Exception as exc:
         logger.exception("[assumption_tracker] FAILED")
+        _record_node_failure("assumption_tracker", exc)
         return {
             **state,
             "assumptions": None,
             "errors": {**state.get("errors", {}), "assumptions": _friendly_error_message(exc)},
         }
     logger.info("[assumption_tracker] COMPLETE")
+    metrics.increment("node.assumption_tracker.success")
     return {**state, "assumptions": value}
 
 
@@ -1067,17 +1098,20 @@ def revenue_models_node(state: PipelineState) -> PipelineState:
             state.get("results", []),
             allow_local=state.get("allowLocalLlm", False),
         )
-    except NeedsDeepAnalysisError:
+    except NeedsDeepAnalysisError as exc:
         logger.warning("[revenue_models] Needs deep analysis - short-circuiting pipeline")
+        _record_node_failure("revenue_models", exc)
         return {**state, "error": NEEDS_DEEP_ANALYSIS}
     except Exception as exc:
         logger.exception("[revenue_models] FAILED")
+        _record_node_failure("revenue_models", exc)
         return {
             **state,
             "revenueModels": None,
             "errors": {**state.get("errors", {}), "revenueModels": _friendly_error_message(exc)},
         }
     logger.info("[revenue_models] COMPLETE")
+    metrics.increment("node.revenue_models.success")
     return {**state, "revenueModels": value}
 
 
@@ -1090,13 +1124,19 @@ def _timed(node_name: str, fn):
     node function's own body - this is the per-node latency data Track F's
     optimization pass needs and previously had no way to measure (only
     START/COMPLETE markers existed, with no duration between them).
+
+    Also records a durable "node_latency" event (agent/events.py) so GET
+    /admin/platform-metrics can report per-node averages and trends, not
+    just whatever's in this process's own log stream.
     """
 
     def wrapper(state: PipelineState) -> PipelineState:
         start = time.time()
         result = fn(state)
-        elapsed_ms = round((time.time() - start) * 1000)
+        elapsed_seconds = time.time() - start
+        elapsed_ms = round(elapsed_seconds * 1000)
         logger.info("[%s] elapsed_ms=%d", node_name, elapsed_ms)
+        events.record("node_latency", node=node_name, detail={"seconds": round(elapsed_seconds, 3)})
         return result
 
     return wrapper
