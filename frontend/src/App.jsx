@@ -96,6 +96,28 @@ export default function App() {
   const loadingProgress = useLoadingSteps(isLoading)
   const sourceCount = useCountUp(validation?.results?.length ?? 0)
 
+  // The signed-in user object login()/signup() return has just {id, email} -
+  // fields like isAdmin only come from a live GET /auth/me lookup - so any
+  // place that sets currentUser from an auth response needs to follow up
+  // with this to get the real, current value rather than leaving isAdmin
+  // permanently undefined until an unrelated full page reload happens to
+  // trigger the mount effect below.
+  function refreshCurrentUser(token) {
+    return fetch(`${API_URL}/auth/me`, { headers: authHeaders(token) })
+      .then((res) => {
+        if (res.ok) return res.json().then((user) => setCurrentUser(user))
+        if (res.status === 401) {
+          clearAuth()
+          setAuthToken(null)
+          setCurrentUser(null)
+        }
+      })
+      .catch(() => {
+        // Network-level failure, not a server-confirmed invalid token -
+        // nothing to do; the cached credentials stay as they were.
+      })
+  }
+
   // Verifies the token on mount rather than trusting whatever's cached in
   // localStorage - a 30-day-old token could be expired, or a password
   // change could have invalidated it, and showing "signed in as..." for an
@@ -132,6 +154,11 @@ export default function App() {
     setAuthToken(token)
     setCurrentUser(user)
     setView('form')
+    // Signing in doesn't remount App, so the mount effect above never
+    // reruns for this token - without this, isAdmin (and anything else
+    // /auth/me adds beyond {id, email}) would stay unset until an unrelated
+    // full page reload happened to trigger it.
+    refreshCurrentUser(token)
   }
 
   function handleSignOut() {
