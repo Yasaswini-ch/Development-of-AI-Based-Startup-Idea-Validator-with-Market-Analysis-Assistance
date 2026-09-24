@@ -7,6 +7,7 @@ import LandingPage from './components/LandingPage'
 import CompareIdeas from './components/CompareIdeas'
 import HistoryPanel from './components/HistoryPanel'
 import AnalyticsDashboard from './components/AnalyticsDashboard'
+import PlatformHealth from './components/PlatformHealth'
 import AuthPanel from './components/AuthPanel'
 import DeepAnalysisPrompt from './components/DeepAnalysisPrompt'
 import { IconUser } from './components/icons'
@@ -318,11 +319,12 @@ export default function App() {
     )
   }
 
-  // History/Compare/Analytics are account-only (no nav button reaches them
-  // while signed out) - this only matters for the edge case of signing out
-  // while already on one of these screens, so it doesn't hang around
-  // showing a signed-in-only view to a now-signed-out user.
-  if (['compare', 'history', 'analytics'].includes(view) && !currentUser) {
+  // History/Compare/Analytics/Platform Health are account-only (no nav
+  // button reaches them while signed out) - this only matters for the edge
+  // case of signing out while already on one of these screens, so it
+  // doesn't hang around showing a signed-in-only view to a now-signed-out
+  // user.
+  if (['compare', 'history', 'analytics', 'platform-health'].includes(view) && !currentUser) {
     return (
       <LandingPage
         onStart={() => setView('form')}
@@ -333,6 +335,27 @@ export default function App() {
         }}
         onSignOut={handleSignOut}
       />
+    )
+  }
+
+  // Platform Health is admin-only, not just account-only - a signed-in
+  // non-admin who lands here (e.g. by navigating back to a stale URL/state)
+  // gets bounced the same way a signed-out user does above, rather than
+  // reaching a component that would just render a 403 from the API.
+  if (view === 'platform-health' && !currentUser?.isAdmin) {
+    return (
+      <div className="min-h-screen bg-surface px-4 py-10">
+        <div className="mx-auto max-w-md rounded-2xl border border-dashed border-border bg-panel p-8 text-center text-sm text-muted">
+          Admin access required.
+          <button
+            type="button"
+            onClick={() => setView('form')}
+            className="mx-auto mt-4 block rounded-full border border-border bg-surface px-4 py-2 font-mono text-[11px] uppercase tracking-wide text-muted transition-colors hover:border-accent hover:text-accent"
+          >
+            Back
+          </button>
+        </div>
+      </div>
     )
   }
 
@@ -362,6 +385,14 @@ export default function App() {
     return (
       <div className="min-h-screen bg-surface px-4 py-10">
         <AnalyticsDashboard apiUrl={API_URL} token={authToken} onBack={() => setView('form')} />
+      </div>
+    )
+  }
+
+  if (view === 'platform-health') {
+    return (
+      <div className="min-h-screen bg-surface px-4 py-10">
+        <PlatformHealth apiUrl={API_URL} token={authToken} onBack={() => setView('form')} />
       </div>
     )
   }
@@ -406,6 +437,15 @@ export default function App() {
                   >
                     Analytics
                   </button>
+                  {currentUser.isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => setView('platform-health')}
+                      className="rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-muted transition-colors hover:border-accent hover:text-accent"
+                    >
+                      Platform health
+                    </button>
+                  )}
                 </>
               )}
               {currentUser ? (

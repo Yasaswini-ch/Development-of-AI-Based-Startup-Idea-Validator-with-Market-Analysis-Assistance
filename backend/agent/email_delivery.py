@@ -28,6 +28,8 @@ import os
 import re
 import urllib.request
 
+from . import events
+
 logger = logging.getLogger(__name__)
 
 _EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -415,10 +417,12 @@ def _send_via_sendgrid(to_email: str, subject: str, html: str, text: str | None 
     from_email = os.environ.get("SENDGRID_FROM_EMAIL")
     if not api_key or not from_email:
         logger.warning("SENDGRID_API_KEY/SENDGRID_FROM_EMAIL not set - skipping report email to %s", to_email)
+        events.record("email_sent", detail={"outcome": "skipped_no_config"})
         return False
 
     if not is_valid_email(to_email):
         logger.warning("Refusing to send report email to invalid address")
+        events.record("email_sent", detail={"outcome": "skipped_invalid_address"})
         return False
 
     payload = json.dumps(
@@ -441,12 +445,15 @@ def _send_via_sendgrid(to_email: str, subject: str, html: str, text: str | None 
     )
     try:
         with urllib.request.urlopen(request, timeout=15) as resp:
-            return 200 <= resp.status < 300
+            delivered = 200 <= resp.status < 300
+            events.record("email_sent", detail={"outcome": "sent" if delivered else "failed"})
+            return delivered
     except Exception:
         # Never log the recipient address or report contents (see
         # docs/unique-features-plan.md §7 email rules) - just that a send
         # failed.
         logger.exception("Failed to send report email via SendGrid")
+        events.record("email_sent", detail={"outcome": "failed"})
         return False
 
 

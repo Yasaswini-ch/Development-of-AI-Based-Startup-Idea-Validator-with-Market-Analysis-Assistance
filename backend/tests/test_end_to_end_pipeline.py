@@ -213,6 +213,8 @@ class FullUserJourneyHttpTests(unittest.TestCase):
             "contradictions": [],
             "experiments": [],
             "actionPlan": {},
+            "assumptions": {"assumptions": [{"assumption": "Founders will pay monthly", "category": "demand", "uncertainty": "high"}]},
+            "revenueModels": {"models": [{"name": "SaaS Subscription", "fit": "high"}]},
             "errors": {},
         }
 
@@ -226,7 +228,13 @@ class FullUserJourneyHttpTests(unittest.TestCase):
 
         report_response = self.client.get(f"/reports/{session_id_a}")
         self.assertEqual(report_response.status_code, 200)
-        self.assertEqual(report_response.json()["gtm"]["positioning"], "Idea A positioning")
+        report_body = report_response.json()
+        self.assertEqual(report_body["gtm"]["positioning"], "Idea A positioning")
+        # Regression: assumptions/revenueModels used to be computed and
+        # returned by /validate but dropped before ever reaching a stored
+        # session, so a read-back like this always saw them as missing.
+        self.assertEqual(len(report_body["assumptions"]["assumptions"]), 1)
+        self.assertEqual(report_body["revenueModels"]["models"][0]["name"], "SaaS Subscription")
 
         email_response = self.client.post(f"/reports/{session_id_a}/email", json={"recipient": "founder@example.com"})
         self.assertEqual(email_response.status_code, 202)

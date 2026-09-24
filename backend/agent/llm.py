@@ -6,6 +6,8 @@ import time
 
 from crewai import LLM
 
+from . import events
+
 logger = logging.getLogger(__name__)
 
 # Track G.2 - caps how many LLM calls run at once across the whole process,
@@ -225,6 +227,12 @@ def _kickoff_with_metrics(model: str, build_crew):
         )
     else:
         logger.info("llm_call model=%s elapsed_ms=%d", model, elapsed_ms)
+    # Durable counterpart to the log line above - GET /admin/platform-metrics'
+    # "Groq Model Usage" split reads this. Only reached on success (an
+    # exception from build_crew(model).kickoff() propagates straight out of
+    # this function), so this is exactly "which model actually served the
+    # call," not every model merely attempted.
+    events.record("model_used", detail={"model": model, "elapsedMs": elapsed_ms})
     return output
 
 

@@ -90,6 +90,21 @@ class ReportAssemblerTests(unittest.TestCase):
         self.assertEqual(len(report["experiments"]), 1)
         self.assertEqual(report["actionPlan"]["next7Days"], "...")
 
+    def test_assumptions_and_revenue_models_are_carried_through(self):
+        # Regression: these were computed by assumption_tracker_node/
+        # revenue_models_node and returned in the live /validate response,
+        # but were never written into session context or read back here -
+        # every stored/replayed report (history, PDF, email) silently lost
+        # them even for a run that produced real data.
+        context = _full_context(
+            assumptions={"assumptions": [{"assumption": "...", "category": "demand", "uncertainty": "high"}]},
+            revenueModels={"models": [{"name": "SaaS Subscription", "fit": "high"}]},
+        )
+        report = assemble_report("session-5", context)
+
+        self.assertEqual(len(report["assumptions"]["assumptions"]), 1)
+        self.assertEqual(report["revenueModels"]["models"][0]["name"], "SaaS Subscription")
+
     def test_report_to_pdf_input_flattens_ideasummary_back_to_the_shape_pdf_exporter_expects(self):
         report = assemble_report("session-5", _full_context())
         pdf_input = report_to_pdf_input(report)
