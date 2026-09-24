@@ -248,16 +248,19 @@ def kickoff_with_fallback(build_crew, primary: str | None = None, allow_local: b
     return True for a usable response. A cloud model that responds but
     fails validation (e.g. no parseable JSON in the expected shape) is
     treated the same as a cloud model that errored outright - it's just as
-    much a "wrong result" as a rate limit, so it gets the same local-model
-    retry (or the same NeedsDeepAnalysisError signal) rather than silently
-    reaching the caller's own except-block and going straight to the
-    deterministic fallback without ever trying the local model.
+    much a "wrong result" as a rate limit, so it gets the same fallback-to-
+    the-next-model treatment _kickoff_cloud_chain already gives a rate
+    limit (passed through to it directly, not checked after the fact -
+    checking only the chain's final return meant a shape-invalid response
+    from an early fallback model short-circuited the whole chain instead of
+    trying the remaining ones, the actual bug this docstring used to
+    describe as intended behavior). Only once every model in the chain -
+    shape-invalid or rate-limited - is exhausted does this raise
+    NeedsDeepAnalysisError (allow_local False) or fall through to
+    LOCAL_MODEL (allow_local True).
     """
     try:
-        output = _kickoff_cloud_chain(build_crew, primary)
-        if validate is not None and not validate(output):
-            raise ValueError("Cloud model response failed validation (unparseable or wrong shape).")
-        return output
+        return _kickoff_cloud_chain(build_crew, primary, validate=validate)
     except Exception as exc:
         if not allow_local:
             raise NeedsDeepAnalysisError(str(exc)) from exc
@@ -265,7 +268,7 @@ def kickoff_with_fallback(build_crew, primary: str | None = None, allow_local: b
         return _kickoff_with_metrics(LOCAL_MODEL, build_crew)
 
 
-def _kickoff_cloud_chain(build_crew, primary: str | None = None):
+def _kickoff_cloud_chain(build_crew, primary: str | None = None, validate=None):
     """Run a CrewAI crew built against the primary model; on a rate limit,
     switch to the next model in FALLBACK_MODELS immediately (no wait - each
     is a separate quota bucket, so there's nothing to wait out) instead of
@@ -303,8 +306,9 @@ def _kickoff_cloud_chain(build_crew, primary: str | None = None):
 
     last_exc = None
     for i, model in enumerate(models):
+        is_last = i == len(models) - 1
         try:
-            return _kickoff_with_metrics(model, build_crew)
+            output = _kickoff_with_metrics(model, build_crew)
         except Exception as exc:
             last_exc = exc
             # model_not_found switches immediately too (see
@@ -313,7 +317,6 @@ def _kickoff_cloud_chain(build_crew, primary: str | None = None):
             if not (_is_rate_limit_error(exc) or _is_model_not_found_error(exc)):
                 raise
 
-            is_last = i == len(models) - 1
             if not is_last:
                 reason = (
                     "Rate limited" if _is_rate_limit_error(exc)
@@ -341,4 +344,22 @@ def _kickoff_cloud_chain(build_crew, primary: str | None = None):
             logger.warning("All models rate limited, waiting %.1fs before one final retry", wait)
             time.sleep(wait)
             return _kickoff_with_metrics(model, build_crew)
-    raise last_exc
+
+        # The call itself succeeded, but a model that responds without
+        # raising can still hand back unparseable/wrong-shaped content - a
+        # real, observed failure mode (confirmed live: gpt-oss-20b returning
+        # invalid JSON three times in a row while never once rate-limiting).
+        # Treated exactly like a rate limit above: try the next model in the
+        # chain rather than accepting a bad response or giving up early with
+        # models still untried.
+        if validate is not None and not validate(output):
+            last_exc = ValueError(f"{model} response failed validation (unparseable or wrong shape).")
+            if not is_last:
+                logger.warning(
+                    "Invalid response shape from %s, switching to fallback model %s",
+                    model, models[i + 1],
+                )
+                continue
+            raise last_exc
+
+        return output
