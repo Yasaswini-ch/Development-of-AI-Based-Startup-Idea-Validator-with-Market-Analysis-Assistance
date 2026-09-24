@@ -1,7 +1,7 @@
 import logging
 import time
 from datetime import datetime, timezone
-from typing import TypedDict
+from typing import Annotated, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
@@ -68,6 +68,29 @@ def _build_summary(idea: str, results: list) -> str:
 # PIPELINE STATE
 # --------------------------------------------------
 
+def _merge_error(current: str | None, update: str | None) -> str | None:
+    """Reducer for the "error" channel.
+
+    mvp_recommendation and gtm_strategy now run as parallel branches off
+    viability_score (see build_pipeline below) instead of one after the
+    other. Both can independently set "error" to NEEDS_DEEP_ANALYSIS on
+    NeedsDeepAnalysisError, and LangGraph's default per-key channel only
+    accepts one write per step - two concurrent writes raise even when, as
+    here, they'd carry the same value. Prefer whichever write is truthy so
+    either branch alone, or both together, resolve the same way a single
+    sequential write always did.
+    """
+    return update or current
+
+
+def _merge_errors(current: dict | None, update: dict | None) -> dict:
+    """Reducer for the "errors" channel, needed for the same reason as
+    _merge_error above: mvp_recommendation and gtm_strategy can now fail
+    independently in the same step, each recording its own key.
+    """
+    return {**(current or {}), **(update or {})}
+
+
 class PipelineState(TypedDict, total=False):
     idea: str
     targetCustomer: str
@@ -122,8 +145,8 @@ class PipelineState(TypedDict, total=False):
     revenueModels: dict
 
     # Errors
-    error: str
-    errors: dict
+    error: Annotated[str | None, _merge_error]
+    errors: Annotated[dict, _merge_errors]
 
 
 # --------------------------------------------------
@@ -586,13 +609,26 @@ def viability_score_node(state: PipelineState) -> PipelineState:
     return {**state, "marketViability": value}
 
 
+# mvp_node and gtm_node run as parallel branches off viability_score (see
+# build_pipeline) - neither depends on the other's output. Each returns
+# only the keys it actually owns instead of spreading the whole incoming
+# state: spreading would make this node's stale copy of the other
+# branch's key (e.g. mvp_node's copy of "gtm") race with that branch's
+# real update to the same channel in the same step, which LangGraph
+# rejects. The "error"/"errors" channels have merge reducers (above) so
+# both branches can still write to them independently. LangGraph also
+# rejects an update that touches zero keys, so each short-circuit below
+# re-affirms this node's own key instead of returning the previous
+# `state` unchanged.
+
+
 def mvp_node(state: PipelineState) -> PipelineState:
     logger.info("[mvp] START")
     if state.get("error"):
-        return state
+        return {"mvp": state.get("mvp")}
     if state.get("mode") == "quick":
         logger.info("[mvp] Skipped - quick mode")
-        return state
+        return {"mvp": state.get("mvp")}
     try:
         value = analyze_mvp(
             state["idea"],
@@ -604,27 +640,26 @@ def mvp_node(state: PipelineState) -> PipelineState:
         )
     except NeedsDeepAnalysisError:
         logger.warning("[mvp] Needs deep analysis - short-circuiting pipeline")
-        return {**state, "error": NEEDS_DEEP_ANALYSIS}
+        return {"error": NEEDS_DEEP_ANALYSIS}
     except Exception as exc:
         logger.exception("[mvp] FAILED")
         metrics.increment("node.mvp.failure")
         return {
-            **state,
             "mvp": None,
-            "errors": {**state.get("errors", {}), "mvp": _friendly_error_message(exc)},
+            "errors": {"mvp": _friendly_error_message(exc)},
         }
     logger.info("[mvp] COMPLETE")
     metrics.increment("node.mvp.success")
-    return {**state, "mvp": value}
+    return {"mvp": value}
 
 
 def gtm_node(state: PipelineState) -> PipelineState:
     logger.info("[gtm] START")
     if state.get("error"):
-        return state
+        return {"gtm": state.get("gtm")}
     if state.get("mode") == "quick":
         logger.info("[gtm] Skipped - quick mode")
-        return state
+        return {"gtm": state.get("gtm")}
     try:
         value = analyze_gtm(
             state["idea"],
@@ -637,18 +672,17 @@ def gtm_node(state: PipelineState) -> PipelineState:
         )
     except NeedsDeepAnalysisError:
         logger.warning("[gtm] Needs deep analysis - short-circuiting pipeline")
-        return {**state, "error": NEEDS_DEEP_ANALYSIS}
+        return {"error": NEEDS_DEEP_ANALYSIS}
     except Exception as exc:
         logger.exception("[gtm] FAILED")
         metrics.increment("node.gtm.failure")
         return {
-            **state,
             "gtm": None,
-            "errors": {**state.get("errors", {}), "gtm": _friendly_error_message(exc)},
+            "errors": {"gtm": _friendly_error_message(exc)},
         }
     logger.info("[gtm] COMPLETE")
     metrics.increment("node.gtm.success")
-    return {**state, "gtm": value}
+    return {"gtm": value}
 
 
 # --------------------------------------------------
@@ -1190,8 +1224,16 @@ def build_pipeline():
 
     graph.add_edge("white_space", "swot_analysis")
     graph.add_edge("swot_analysis", "viability_score")
+
+    # mvp_recommendation and gtm_strategy each only depend on swot/
+    # marketOpportunity/competitors (already computed by this point), not
+    # on each other, so they fan out from viability_score and run
+    # concurrently instead of sequentially - removing one full LLM
+    # round-trip from every request's critical path. contradiction_detector
+    # fans back in and waits for both.
     graph.add_edge("viability_score", "mvp_recommendation")
-    graph.add_edge("mvp_recommendation", "gtm_strategy")
+    graph.add_edge("viability_score", "gtm_strategy")
+    graph.add_edge("mvp_recommendation", "contradiction_detector")
     graph.add_edge("gtm_strategy", "contradiction_detector")
     graph.add_edge("contradiction_detector", "experiment_generator")
     graph.add_edge("experiment_generator", "action_plan")
