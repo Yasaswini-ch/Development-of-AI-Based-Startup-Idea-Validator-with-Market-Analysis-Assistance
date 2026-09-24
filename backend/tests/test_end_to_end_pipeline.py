@@ -43,6 +43,8 @@ def _idea_args():
 class FullPipelineHappyPathTests(unittest.TestCase):
     """Every node in the current graph, exercised together in one run."""
 
+    @patch("agent.graph.analyze_revenue_models")
+    @patch("agent.graph.analyze_assumptions")
     @patch("agent.graph.analyze_gtm")
     @patch("agent.graph.analyze_mvp")
     @patch("agent.graph.analyze_swot")
@@ -50,7 +52,7 @@ class FullPipelineHappyPathTests(unittest.TestCase):
     @patch("agent.graph.analyze_market_opportunity")
     @patch("agent.graph.retrieval.collect")
     def test_every_pipeline_node_populates_its_output_key(
-        self, collect, market, competitors, swot, mvp, gtm
+        self, collect, market, competitors, swot, mvp, gtm, assumptions, revenue
     ):
         collect.return_value = [
             {
@@ -95,6 +97,8 @@ class FullPipelineHappyPathTests(unittest.TestCase):
             "channels": [{"channel": "Instagram ads", "sourceIds": []}],
             "earlyCustomerApproach": "Direct outreach to eco communities",
         }
+        assumptions.return_value = {"assumptions": []}
+        revenue.return_value = {"models": []}
 
         result = pipeline.invoke(_idea_args())
 
@@ -132,6 +136,8 @@ class FullPipelineFailurePathTests(unittest.TestCase):
     node's already-computed (or intentionally-skipped) artifact.
     """
 
+    @patch("agent.graph.analyze_revenue_models", side_effect=RuntimeError("provider down"))
+    @patch("agent.graph.analyze_assumptions", side_effect=RuntimeError("provider down"))
     @patch("agent.graph.analyze_gtm", side_effect=RuntimeError("provider down"))
     @patch("agent.graph.analyze_mvp", side_effect=RuntimeError("provider down"))
     @patch("agent.graph.analyze_swot", side_effect=RuntimeError("provider down"))
@@ -139,7 +145,7 @@ class FullPipelineFailurePathTests(unittest.TestCase):
     @patch("agent.graph.analyze_market_opportunity", side_effect=RuntimeError("provider down"))
     @patch("agent.graph.retrieval.collect")
     def test_pipeline_completes_and_records_every_failure_without_crashing(
-        self, collect, market, competitors, swot, mvp, gtm
+        self, collect, market, competitors, swot, mvp, gtm, assumptions, revenue
     ):
         collect.return_value = [
             {"title": "Source", "snippet": "...", "url": "https://example.com", "angle": "Market size & trends", "score": 0.5}

@@ -54,6 +54,8 @@ class MetricsEndpointTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {})
 
+    @patch("agent.graph.analyze_revenue_models")
+    @patch("agent.graph.analyze_assumptions")
     @patch("agent.graph.analyze_gtm")
     @patch("agent.graph.analyze_mvp")
     @patch("agent.graph.analyze_swot")
@@ -61,7 +63,7 @@ class MetricsEndpointTests(unittest.TestCase):
     @patch("agent.graph.analyze_market_opportunity")
     @patch("agent.graph.retrieval.collect")
     def test_a_cache_miss_then_hit_is_reflected_in_metrics(
-        self, collect, market, competitors, swot, mvp, gtm
+        self, collect, market, competitors, swot, mvp, gtm, assumptions, revenue
     ):
         collect.return_value = [{"title": "S", "snippet": "...", "url": "https://example.com", "angle": "Market size & trends", "score": 0.5}]
         market.return_value = {"marketSize": "Growing", "trends": [], "segments": [], "opportunityScore": 0}
@@ -69,6 +71,8 @@ class MetricsEndpointTests(unittest.TestCase):
         swot.return_value = {"strengths": [], "weaknesses": [], "opportunities": [], "threats": [], "risks": []}
         mvp.return_value = {"features": []}
         gtm.return_value = {"positioning": "P", "channels": [], "earlyCustomerApproach": "E"}
+        assumptions.return_value = {"assumptions": []}
+        revenue.return_value = {"models": []}
 
         self.client.post("/validate", json={"idea": "Same idea"})
         self.client.post("/validate", json={"idea": "Same idea"})
