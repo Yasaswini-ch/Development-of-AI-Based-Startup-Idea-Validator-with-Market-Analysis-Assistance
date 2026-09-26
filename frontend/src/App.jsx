@@ -166,6 +166,20 @@ export default function App() {
   }, [])
 
   function handleAuthenticated({ token, user }) {
+    // A validation run anonymously, then signed into right after, would
+    // otherwise be stuck in this browser's device-local history forever -
+    // claim it onto the new account before the guest state below gets wiped,
+    // so it shows up in GET /me/history like anything else on this account.
+    // Best-effort: a signed-in account's own validations from other
+    // sessions aren't affected either way, so a failed claim here isn't
+    // worth surfacing as an error.
+    if (!authToken && validation?.sessionId) {
+      fetch(`${API_URL}/me/claim-session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
+        body: JSON.stringify({ sessionId: validation.sessionId }),
+      }).catch(() => {})
+    }
     setAuth({ token, user })
     setAuthToken(token)
     setCurrentUser(user)

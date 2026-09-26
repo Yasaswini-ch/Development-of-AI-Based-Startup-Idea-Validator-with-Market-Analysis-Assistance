@@ -91,6 +91,27 @@ def list_sessions_for_user(user_id: str, limit: int = 50) -> list[dict]:
     ]
 
 
+def claim_session(session_id: str, user_id: str) -> bool:
+    """Attaches an anonymous validation (started before sign-in) to the
+    account that just signed in, so it shows up in GET /me/history instead
+    of being stuck device-local forever. Only claims a session that has no
+    owner yet - one already tied to a *different* account (e.g. a stale
+    sessionId reused across browser tabs/accounts) is left alone rather
+    than reassigned.
+    """
+    engine = get_engine()
+    with engine.begin() as conn:
+        row = conn.execute(select(sessions_table).where(sessions_table.c.id == session_id)).first()
+        if row is None:
+            return False
+        if row.user_id is not None:
+            return row.user_id == user_id
+        conn.execute(
+            sessions_table.update().where(sessions_table.c.id == session_id).values(user_id=user_id, updated_at=now())
+        )
+        return True
+
+
 def get_session(session_id: str) -> dict | None:
     engine = get_engine()
     with engine.begin() as conn:
