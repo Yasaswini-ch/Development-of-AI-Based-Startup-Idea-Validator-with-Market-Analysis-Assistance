@@ -300,6 +300,21 @@ class MilestoneThreeTests(unittest.TestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["angle"], "Follow-up research")
 
+    def test_collect_scoped_direct_query_dedupes_and_keeps_existing_angles(self):
+        with patch(
+            "agent.retrieval.fetch_results",
+            return_value=[
+                {"title": "One", "url": "https://example.com/one", "score": 0.8},
+                {"title": "Duplicate", "url": "https://example.com/one", "score": 0.4},
+                {"title": "Two", "url": "https://example.com/two", "score": 0.7, "angle": "Competitors"},
+            ],
+        ) as fetch:
+            results = retrieval.collect_scoped("latest competitor pricing", max_results=5)
+        fetch.assert_called_once_with("latest competitor pricing", max_results=5)
+        self.assertEqual(len(results), 2)
+        self.assertEqual(results[0]["angle"], "Follow-up research")
+        self.assertEqual(results[1]["angle"], "Competitors")
+
     def test_search_angles_use_compact_product_subject(self):
         angles = retrieval.build_search_angles(
             "An AI-powered meal planning app that creates affordable weekly plans for households",

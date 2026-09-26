@@ -1431,7 +1431,7 @@ def fetch_results(
 
     raw_results = _search(
         query,
-        max_results=DEFAULT_SEARCH_RESULTS_PER_QUERY,
+        max_results=max_results,
     )
 
     filtered = _filter_results(
