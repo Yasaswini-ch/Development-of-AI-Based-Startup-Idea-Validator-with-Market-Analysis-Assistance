@@ -39,11 +39,13 @@ from agent.auth import (
     AuthError,
     is_admin,
     login as auth_login,
+    login_with_google as auth_login_with_google,
     optional_user,
     require_admin,
     require_user,
     signup as auth_signup,
 )
+from agent.google_auth import GoogleAuthError
 from agent.chat_graph import ChatRateLimitError, run_chat_turn
 from agent.db import cache_table, database_backend, get_engine
 from agent.email_delivery import is_valid_email, send_canonical_report_email, send_report_email
@@ -316,6 +318,14 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class GoogleAuthRequest(BaseModel):
+    # The raw signed JWT Google's Identity Services button hands the
+    # frontend - never the claims inside it, which the client could have
+    # read but not forged. agent/google_auth.py re-verifies the signature
+    # and audience server-side before trusting anything in it.
+    idToken: str
+
+
 class ValidateRequest(BaseModel):
     idea: str = Field(max_length=2500)
     targetCustomer: str = Field(default="", max_length=600)
@@ -524,6 +534,20 @@ def auth_login_route(payload: LoginRequest, request: Request):
     try:
         return auth_login(payload.email, payload.password)
     except AuthError as exc:
+        return JSONResponse(status_code=401, content={"error": str(exc)})
+
+
+@app.post("/auth/google")
+def auth_google_route(payload: GoogleAuthRequest, request: Request):
+    """Federated Google SSO (5-pillar spec §4.6). Same per-IP rate limit
+    as the password endpoints above - an unverifiable token is still a
+    failed auth attempt, not a free-standing endpoint to hammer.
+    """
+    if _is_rate_limited(f"auth:{_client_ip(request)}", _AUTH_RATE_LIMIT):
+        return _rate_limit_response("Too many attempts. Please wait a minute and try again.")
+    try:
+        return auth_login_with_google(payload.idToken)
+    except GoogleAuthError as exc:
         return JSONResponse(status_code=401, content={"error": str(exc)})
 
 

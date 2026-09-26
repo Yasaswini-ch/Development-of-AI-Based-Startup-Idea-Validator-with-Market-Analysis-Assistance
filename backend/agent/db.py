@@ -59,7 +59,12 @@ users_table = Table(
     metadata,
     Column("id", String, primary_key=True),
     Column("email", String, nullable=False, unique=True, index=True),
-    Column("password_hash", String, nullable=False),
+    # Nullable (was NOT NULL) - a Google-only account (see
+    # agent/google_auth.py / auth.login_with_google) never sets a
+    # password, same "passwordless OAuth users" allowance the spec's
+    # users-table schema calls for. A password/local account still always
+    # gets one; only the column itself had to stop requiring it.
+    Column("password_hash", String, nullable=True),
     Column("created_at", Float, nullable=False),
     # Nullable/defaulted False - there is no self-service way to become an
     # admin (no signup flag, no endpoint); promoting a user is a direct
@@ -67,6 +72,15 @@ users_table = Table(
     # /admin/platform-metrics only - never affects a regular account's own
     # validations, sessions, or history.
     Column("is_admin", Boolean, nullable=False, server_default=sql_false()),
+    # "local" (email/password, agent/auth.signup) or "google" (Google SSO,
+    # agent/auth.login_with_google). Informational only today - login
+    # itself is looked up by email regardless of provider, so a local
+    # account that later signs in with the same Google-verified email is
+    # simply the same row, not a separate linked identity.
+    Column("auth_provider", String, nullable=False, server_default="local"),
+    # Set only for a Google account, from the verified ID token's
+    # "picture" claim - never accepted as raw client input.
+    Column("avatar_url", String, nullable=True),
 )
 
 jobs_table = Table(
@@ -248,6 +262,24 @@ def _migrate_missing_columns(engine: Engine) -> None:
             # otherwise, and every existing user row must resolve to
             # "not admin" rather than NULL either way.
             conn.execute(text("ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT 0"))
+        if "users" in existing_tables and "auth_provider" not in existing_columns("users"):
+            # Every pre-existing row predates Google SSO, so it's a local
+            # (email/password) account by definition.
+            conn.execute(text("ALTER TABLE users ADD COLUMN auth_provider VARCHAR NOT NULL DEFAULT 'local'"))
+        if "users" in existing_tables and "avatar_url" not in existing_columns("users"):
+            conn.execute(text("ALTER TABLE users ADD COLUMN avatar_url VARCHAR"))
+        if "users" in existing_tables and engine.dialect.name == "postgresql":
+            # Only Postgres can relax an existing NOT NULL in place
+            # (`ALTER COLUMN ... DROP NOT NULL`); SQLite has no equivalent
+            # short of rebuilding the table. A pre-existing SQLite
+            # database's password_hash therefore stays NOT NULL until it's
+            # recreated - an accepted gap given this codebase's own
+            # documented stance that the SQLite fallback is non-persistent
+            # scratch storage on every host that matters (see
+            # _check_persistence above), not a database anyone migrates in
+            # place. Idempotent: DROP NOT NULL on an already-nullable
+            # column is a harmless no-op on every later startup.
+            conn.execute(text("ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL"))
 
 
 # Promoting an account to admin otherwise requires a direct database update
