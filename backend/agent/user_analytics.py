@@ -14,6 +14,7 @@ here re-derives analysis or calls an LLM/search provider.
 
 from collections import Counter
 
+from .deterministic_fallback import deterministic_assumptions
 from .session_store import get_session, list_sessions_for_user
 
 _RISK_SEVERITIES = ("high", "medium", "low")
@@ -58,10 +59,28 @@ def _viability_dimensions(contexts: list[dict]) -> dict:
     return {field: round(sums[field] / counts[field]) for field in fields if counts[field]}
 
 
+def _assumptions_for(context: dict) -> list:
+    """The report's assumptions, or - for reports saved before the
+    assumption tracker had a fallback, when its LLM call failed and stored
+    an empty list - the same deterministic assumptions a new run would get,
+    rebuilt from the artifacts the session already holds."""
+    assumptions = ((context.get("assumptions") or {}).get("assumptions")) or []
+    if assumptions or not (context.get("swot") or context.get("marketOpportunity")):
+        return assumptions
+    return deterministic_assumptions(
+        context.get("idea") or "",
+        context.get("targetCustomer") or "",
+        context.get("problem") or "",
+        context.get("swot"),
+        context.get("marketOpportunity"),
+        context.get("mvp"),
+    )["assumptions"]
+
+
 def _assumption_risk_by_category(contexts: list[dict]) -> dict:
     tally: dict[str, Counter] = {}
     for context in contexts:
-        assumptions = ((context.get("assumptions") or {}).get("assumptions")) or []
+        assumptions = _assumptions_for(context)
         for item in assumptions:
             if not isinstance(item, dict):
                 continue
@@ -193,7 +212,7 @@ def get_user_analytics(user_id: str) -> dict:
         if has_real_score:
             scores.append({"idea": entry["idea"], "score": score})
 
-        assumptions = ((context.get("assumptions") or {}).get("assumptions")) or []
+        assumptions = _assumptions_for(context)
         high_risk_assumptions += sum(1 for a in assumptions if isinstance(a, dict) and a.get("uncertainty") == "high")
 
         errors = context.get("errors") or {}

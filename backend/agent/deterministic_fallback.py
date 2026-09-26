@@ -319,3 +319,103 @@ def deterministic_gtm(
         "earlyCustomerApproachSourceIds": [],
         "degraded": True,
     }
+
+
+_REGULATED_KEYWORDS = (
+    "health", "medical", "patient", "clinic", "finance", "fintech", "payment",
+    "bank", "loan", "insurance", "legal", "tax", "crypto", "children", "kids",
+    "pharma", "drug", "food", "alcohol", "cannabis", "gambling", "privacy",
+)
+
+
+def _first_source_ids(claims: list) -> list[str]:
+    for claim in claims or []:
+        if isinstance(claim, dict) and claim.get("sourceIds"):
+            return list(claim["sourceIds"])[:2]
+    return []
+
+
+def deterministic_assumptions(
+    idea: str,
+    target_customer: str,
+    problem: str,
+    swot: dict | None,
+    market_opportunity: dict | None,
+    mvp: dict | None,
+) -> dict:
+    """Same contract as assumption_agent.analyze_assumptions' real output.
+    Every validation rests on the same core bets (customers feel the pain,
+    the market is real, they'll switch from alternatives, the MVP can ship),
+    so these are stated from the run's own inputs and artifacts, with
+    uncertainty set by how much evidence those artifacts actually carry -
+    never a guessed statistic.
+    """
+    subject = _compact_subject(idea, max_words=8) or "this idea"
+    customer = (target_customer or "").strip() or "the target customers"
+    pain = (problem or "").strip() or f"the problem {subject} addresses"
+    market = market_opportunity or {}
+    swot = swot or {}
+    trends = [t for t in market.get("trends") or [] if isinstance(t, dict)]
+    trend_ids = _first_source_ids(trends)
+    threats = [t for t in swot.get("threats") or [] if isinstance(t, dict)]
+    features = [f for f in (mvp or {}).get("features") or [] if isinstance(f, dict)]
+    first_feature = (features[0].get("name") or features[0].get("feature") or "").strip() if features else ""
+
+    assumptions = [
+        {
+            "assumption": f"{customer[:120]} feel {pain[:160]} strongly enough to pay for a solution.",
+            "category": "demand",
+            "uncertainty": "high",
+            "howToValidate": "Run 10 problem interviews and a landing page with a waitlist or pre-order; look for at least 20% sign-up.",
+            "riskIfWrong": "Nobody buys, however well the product is built.",
+            "timeToValidate": "1-2 weeks",
+            "sourceIds": [],
+        },
+        {
+            "assumption": "The market is large and growing enough to support a new entrant.",
+            "category": "market",
+            "uncertainty": "medium" if trend_ids else "high",
+            "howToValidate": "Cross-check market size and growth against three independent reports and count active buyers in your first segment.",
+            "riskIfWrong": "Growth stalls at a small ceiling even with good retention.",
+            "timeToValidate": "1 week",
+            "sourceIds": trend_ids,
+        },
+        {
+            "assumption": "Customers will switch from their current alternative to this product.",
+            "category": "competitive",
+            "uncertainty": "high" if len(threats) >= 3 else "medium",
+            "howToValidate": "Ask interviewees what they use today and what would make them switch; test a head-to-head demo with 5 users of a competitor.",
+            "riskIfWrong": "Acquisition costs stay high because incumbents are good enough.",
+            "timeToValidate": "2 weeks",
+            "sourceIds": _first_source_ids(threats),
+        },
+        {
+            "assumption": (
+                f"The core MVP feature ({first_feature[:80]}) can be built and delivered reliably by a small team."
+                if first_feature
+                else "A usable MVP can be built and delivered reliably by a small team."
+            ),
+            "category": "technical",
+            "uncertainty": "medium",
+            "howToValidate": "Build a clickable prototype or a concierge version of the core feature and deliver it manually to 3 customers.",
+            "riskIfWrong": "Launch slips and early users churn on reliability issues.",
+            "timeToValidate": "2-4 weeks",
+            "sourceIds": [],
+        },
+    ]
+
+    text = f"{idea} {target_customer} {problem}".lower()
+    if any(keyword in text for keyword in _REGULATED_KEYWORDS):
+        assumptions.append(
+            {
+                "assumption": "The product can launch without licences or compliance work that blocks an early release.",
+                "category": "regulatory",
+                "uncertainty": "medium",
+                "howToValidate": "Book a short consult with a domain lawyer and list the rules that apply before building.",
+                "riskIfWrong": "Launch is delayed or the model has to change after building.",
+                "timeToValidate": "1 week",
+                "sourceIds": [],
+            }
+        )
+
+    return {"assumptions": assumptions, "degraded": True}

@@ -80,6 +80,21 @@ class UserAnalyticsAggregationTests(unittest.TestCase):
         self.assertEqual(result["kpis"]["degradedRuns"], 1)
         self.assertEqual(result["kpis"]["avgSourceAgreement"], 80)
 
+    def test_reports_saved_with_empty_assumptions_still_fill_the_risk_chart(self):
+        # Regression: when the assumption tracker's LLM call failed it stored
+        # an empty list, so a founder with several saved ideas saw "Not
+        # enough data yet" on the assumption risk chart.
+        user_id = "user-empty-assumptions"
+        for idea in ("Idea A", "Idea B", "Idea C", "Idea D"):
+            create_session(_context(idea, score=60, target_customer="freelancers", problem="late invoices"), user_id=user_id)
+
+        result = get_user_analytics(user_id)
+        by_category = result["assumptionRiskByCategory"]
+        self.assertTrue(by_category)
+        self.assertEqual(by_category["demand"]["high"], 4)
+        self.assertEqual(result["kpis"]["highRiskAssumptions"], sum(c["high"] for c in by_category.values()))
+        self.assertTrue(all(idea["assumptions"] for idea in result["ideas"]))
+
     def test_viability_dimensions_averaged_across_ideas_that_have_it(self):
         user_id = "user-2"
         create_session(
