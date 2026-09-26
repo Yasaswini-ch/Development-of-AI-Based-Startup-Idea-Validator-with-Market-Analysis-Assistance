@@ -65,6 +65,11 @@ During processing (Milestone 2 measured about 10 seconds for the original pipeli
 Review results across the six tabs listed in §1.
 
 ### Step 4 (optional): Sign In to Keep a Board of Ideas
+
+You can sign in with **Google** (if the deployment has it configured), straight from
+the landing page or from the account page, or with an email and password. The first
+sign-in after the app has been idle can take up to a minute while the server wakes up. Using Google with the same email as an existing password account signs
+you into that same account.
 Signing in is optional; anonymous validation still works. With an account:
 
 1. Click **Sign in** in the header and create an account (email + password of at least
@@ -81,7 +86,7 @@ Signing in is optional; anonymous validation still works. With an account:
      - *Comparison matrix*: every idea on the account in one table, best idea marked 🏆.
      - *Validation history*: a detailed list of each run.
      - *Score trends*: your score and source agreement over time.
-   - **Platform health**: shown only to admin accounts (see §4.6).
+   - **Platform health**: shown only to admin accounts (see §4.12).
    - **Sign out**.
 
 > Saved validations expire **7 days** after their last update, even on an account.
@@ -132,11 +137,45 @@ All five are 0–100:
   describe how much is known rather than whether the news is good.
 
 ### 4.5 TAM / SAM / SOM
-The Market tab shows TAM, SAM and SOM tiles only for figures a source actually
+The Market & Rivals tab shows TAM, SAM and SOM tiles only for figures a source actually
 supports, each with its citation. A missing tier means the sources didn't give that
 number, not that it's zero.
 
-### 4.6 Platform Health (admins only)
+### 4.6 Grounded vs. Inferred badges
+A green **Grounded** pill means the claim cites at least one real source (hover to see
+how many). An amber **Inferred** pill means it was estimated from heuristics with no
+direct source match. Treat inferred claims as hypotheses to check.
+
+### 4.7 Voice of the Market (Market & Rivals tab)
+Up to four short quotes copied word-for-word from the search results, one per source,
+with pain and frustration quotes first. Click the site name to open the source. The
+section is hidden when no source contains a usable sentence.
+
+### 4.8 Market Viability & Dynamics (Market & Rivals tab)
+Five axes scored 1–5 with one sentence each: Demand Urgency, Expansion Velocity, Target
+Accessibility, Barrier to Entry / Moat and Capital Efficiency, plus a 0–100 composite.
+This is a more detailed view than the Dashboard radar in §4.4 and uses different axes.
+Capital Efficiency is always *Inferred* because it's read from how you describe the idea.
+
+### 4.9 How your idea compares (Market & Rivals tab, deep mode)
+A table of up to five dimensions comparing your idea with each profiled competitor.
+"unknown" means the sources didn't say, not that the competitor lacks the feature.
+
+### 4.10 Strategic Wedge Blueprints (Gaps & Exposure tab)
+Click a card to expand the chain *Observed Friction → Incumbent Blindspot → Structural
+Tailwind → Asymmetric Wedge → Defensibility Moat* for one customer segment. The
+conviction % is the share of the four evidence-based links that are actually backed by
+a source or profiled competitor data, so 25% means most of the chain is a guess. The
+amber box names the weakest link.
+
+### 4.11 Delivery Roadmap and Commercial Economics (Build & Ship tab)
+The roadmap turns the MVP features into Alpha, Beta and GA phases with a length in weeks
+and an exit gate for each. Commercial Economics shows an estimated CAC range, target
+ARPU, payback period, LTV:CAC and three pricing tiers. Both are **rule-of-thumb
+estimates** from your competitors' price level, GTM channel fit and SWOT risk, not a
+financial forecast. Use them as a starting point for your own model.
+
+### 4.12 Platform Health (admins only)
 Admins (accounts listed in the backend's `ADMIN_EMAILS`) see a 7/30/90-day view of
 total validations, cache hit rate, LLM success rate, deep-analysis rate, average
 latency, weekly active users, daily volume, node success rates, model usage, latency

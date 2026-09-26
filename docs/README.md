@@ -1,6 +1,6 @@
 # Affinity Technical Documentation Hub & Master Index
 **System Name:** Affinity — AI-Based Startup Idea Validator with Market Analysis Assistance  
-**Documentation Version:** 3.0 · updated 2026-09-26 (Milestones 1–4 and the analytics/access-control follow-ups)  
+**Documentation Version:** 3.1 · updated 2026-09-26 (Milestones 1–4, the analytics/access-control follow-ups, and the five-pillar Sprints 1–4)  
 **Verification Status:** Verified & Operational  
 
 ---
@@ -9,7 +9,7 @@
 
 Welcome to the central documentation hub for **Affinity**.
 
-> **Two doc sets, one system.** This folder has a numbered set (`01`–`22`, written as a
+> **Two doc sets, one system.** This folder has a numbered set (`01`–`23`, written as a
 > formal report) and a lowercase set (`architecture.md`, `api-reference.md`, ...) that
 > engineers update alongside code. They overlap. Both were reconciled against the
 > `staging` code on 2026-09-26. **Where they disagree, the lowercase doc and the code
@@ -29,6 +29,7 @@ Welcome to the central documentation hub for **Affinity**.
 > | 17 Roadmap | [`product-strategy-and-personas.md`](product-strategy-and-personas.md), [`known-limitations-and-future-work.md`](known-limitations-and-future-work.md) |
 > | 19 Persistence & auth | [`security-privacy-ethics.md`](security-privacy-ethics.md), [`../DEPLOYMENT.md`](../DEPLOYMENT.md#database-postgresql-on-render) |
 > | Confidence (mentioned in 03, 05, 10) | [`confidence-and-evidence-scoring-methodology.md`](confidence-and-evidence-scoring-methodology.md) |
+> | 23 Five pillars & Google SSO | [`architecture.md` §2](architecture.md#five-pillar-post-processors-sprints-14), [`known-limitations-and-future-work.md` §7](known-limitations-and-future-work.md#7-five-pillar-features) |
 
 ```mermaid
 flowchart TD
@@ -77,15 +78,16 @@ flowchart TD
 | **20** | [`20_AFFINITY_MILESTONE_3_PDF_DOSSIER_EXPORTER_AND_REPORTS.md`](20_AFFINITY_MILESTONE_3_PDF_DOSSIER_EXPORTER_AND_REPORTS.md) | Backend | The ReportLab-only PDF exporter (`agent/pdf_exporter.py`) and its two endpoints, which take no auth header (session ids act as share links). |
 | **21** | [`21_AFFINITY_MILESTONE_3_DEAL_SCREENING_AND_COMPARISON_MATRIX.md`](21_AFFINITY_MILESTONE_3_DEAL_SCREENING_AND_COMPARISON_MATRIX.md) | Product | Multi-idea comparison: `POST /reports/compare`, the Compare Ideas view, and the Dashboard's Comparison matrix tab. |
 | **22** | [`22_AFFINITY_MILESTONE_5_ANALYTICS_DASHBOARDS_AND_ACCESS_CONTROL.md`](22_AFFINITY_MILESTONE_5_ANALYTICS_DASHBOARDS_AND_ACCESS_CONTROL.md) | Engineers / Examiners | Founder Dashboard (4 tabs), admin Platform Health, `competitionClarity`/`timing` viability axes, the account-menu redesign, and the `events.py` durable log. |
+| **23** | [`23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOOGLE_SSO.md`](23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOOGLE_SSO.md) | Engineers / Examiners | The five-pillar upgrade: provenance badges, Voice-of-Market quotes, the Market Viability & Dynamics Index, competitor profiles and parity grid, strategic wedges, commercial economics, the MVP delivery roadmap, and Google sign-in. Formulas, schemas, config and gaps. |
 
 ---
 
 ## 🛠️ Specialized Technical References
 
-In addition to the 22 numbered modules above, the following detailed reference specifications are maintained in this directory:
+In addition to the 23 numbered modules above, the following detailed reference specifications are maintained in this directory:
 
 - [`confidence-and-evidence-scoring-methodology.md`](confidence-and-evidence-scoring-methodology.md) — How the headline confidence % and each evidence tile are computed, and which population each measures.
-- [`known-limitations-and-future-work.md`](known-limitations-and-future-work.md) — Retention TTLs, free-tier Postgres expiry, missing password reset, local-model hardware needs, and the duplicate-doc-set lesson.
+- [`known-limitations-and-future-work.md`](known-limitations-and-future-work.md) — Retention TTLs, free-tier Postgres expiry, missing password reset, local-model hardware needs, the duplicate-doc-set lesson, and the five-pillar gaps (PDF/email don't include the new sections, template economics, Google sign-in edge cases).
 - [`milestone4-verification.md`](milestone4-verification.md) — Dated log of bugs found in live testing in September 2026, with root causes, fixes and regression tests.
 - [`architecture.md`](architecture.md) — Technical system specification & data contracts.
 - [`prompt-engineering-agent-design.md`](prompt-engineering-agent-design.md) — Deep dive into LLM prompt engineering, `reasoning_effort` tuning, and JSON repair.

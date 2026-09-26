@@ -63,6 +63,15 @@ class ValidateRequest(BaseModel):
 
 The JSON response emitted by `POST /validate` follows a strict structure:
 
+> **Five-pillar additions (2026-09-26).** The interface below predates the Sprint 1–4
+> work on `staging`. Responses now also carry `marketOpportunity.voiceOfMarket`,
+> `marketOpportunity.viabilityIndex`, `whiteSpace.blueprints`, `mvp.deliveryRoadmap`,
+> `gtm.commercialModel`, and (deep mode) competitor profile fields plus
+> `competitors.comparisonMatrix` / `profiled`. All are optional and additive. Full
+> schemas: [doc 23 §9](23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOOGLE_SSO.md#9-where-each-field-lives-in-the-response) and
+> [`architecture.md` §4](architecture.md#4-api-contract).
+
+
 ```typescript
 interface ValidateResponse {
   summary: string;

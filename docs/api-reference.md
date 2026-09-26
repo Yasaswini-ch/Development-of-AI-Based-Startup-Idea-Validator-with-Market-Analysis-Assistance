@@ -17,7 +17,13 @@ The Affinity Backend API is built using **FastAPI** and provides asynchronous en
 
 ## 2. Authentication & Security Policy
 
-- **Authentication:** Public endpoints; no API tokens or bearer keys are required for `/validate`.
+- **Authentication:** `/validate` needs no API key. An optional `Authorization: Bearer <jwt>`
+  header saves the run to that account. Tokens come from `POST /auth/signup`,
+  `POST /auth/login` or `POST /auth/google` (`{ idToken }` from Google's Sign-In button;
+  returns `{ token, user: { id, email, authProvider, avatarUrl } }`, 401 when the token
+  can't be verified or Google sign-in isn't configured). Account endpoints are listed in
+  [`architecture.md` §4](architecture.md#4-api-contract) and
+  [doc 19](19_AFFINITY_MILESTONE_3_POSTGRESQL_AUTH_AND_DATA_PERSISTENCE.md#4-authentication--access-control).
 - **CORS Configuration:** Enforced via `CORSMiddleware`. Allowed origin is controlled by the `FRONTEND_ORIGIN` environment variable (defaults to `http://localhost:5173`).
 - **Allowed HTTP Methods:** `GET`, `POST`, `OPTIONS`.
 
@@ -88,6 +94,15 @@ interface ValidateRequest {
 ---
 
 #### Success Response Schema (TypeScript Interface) `200 OK`
+
+> **Five-pillar additions (2026-09-26).** The interface below predates the Sprint 1–4
+> work on `staging`. Responses now also carry `marketOpportunity.voiceOfMarket`,
+> `marketOpportunity.viabilityIndex`, `whiteSpace.blueprints`, `mvp.deliveryRoadmap`,
+> `gtm.commercialModel`, and (deep mode) competitor profile fields plus
+> `competitors.comparisonMatrix` / `profiled`. All are optional and additive. Full
+> schemas: [doc 23 §9](23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOOGLE_SSO.md#9-where-each-field-lives-in-the-response) and
+> [`architecture.md` §4](architecture.md#4-api-contract).
+
 
 ```typescript
 interface ValidateResponse {
