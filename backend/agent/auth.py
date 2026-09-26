@@ -236,6 +236,22 @@ def is_admin(user_id: str) -> bool:
     return True
 
 
+def account_profile(user_id: str) -> dict:
+    """{"authProvider", "avatarUrl"} for GET /auth/me, read fresh from the
+    users table (neither is in the JWT). An unknown id - e.g. a token for an
+    account wiped by a SQLite reset - gets the local/no-avatar defaults
+    rather than an error, since require_user already accepted the token.
+    """
+    engine = get_engine()
+    with engine.begin() as conn:
+        row = conn.execute(
+            select(users_table.c.auth_provider, users_table.c.avatar_url).where(users_table.c.id == user_id)
+        ).first()
+    if row is None:
+        return {"authProvider": "local", "avatarUrl": None}
+    return {"authProvider": row.auth_provider or "local", "avatarUrl": row.avatar_url}
+
+
 def require_admin(authorization: str | None = Header(default=None)) -> dict:
     """FastAPI dependency for GET /admin/platform-metrics: 401s like
     require_user for no/invalid token, 403s for a valid token belonging to

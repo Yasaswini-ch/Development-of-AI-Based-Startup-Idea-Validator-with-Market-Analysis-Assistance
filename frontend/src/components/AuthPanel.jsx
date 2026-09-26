@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { IconAlertTriangle, IconColumns, IconGauge, IconUser } from './icons'
 import GoogleSignInButton from './GoogleSignInButton'
+import useAuthRequest from '../hooks/useAuthRequest'
 
 const MIN_PASSWORD_LENGTH = 8
 
@@ -10,31 +11,15 @@ const BENEFITS = [
   { Icon: IconColumns, text: 'Compare past ideas side by side from any device.' },
 ]
 
-// Render's free-tier backend spins down after idling and can take 30-60s to
-// wake on the first request. Without this, the submit button just sits on
-// "One moment..." with no feedback, which reads as broken/stuck.
-const SLOW_REQUEST_NOTICE_MS = 6000
-
 export default function AuthPanel({ apiUrl, onAuthenticated, onBack }) {
   const [mode, setMode] = useState('login') // 'login' | 'signup'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [isWaking, setIsWaking] = useState(false)
-  const [error, setError] = useState('')
-
-  async function withSubmitting(request) {
-    setError('')
-    setIsSubmitting(true)
-    const wakeTimer = setTimeout(() => setIsWaking(true), SLOW_REQUEST_NOTICE_MS)
-    try {
-      await request()
-    } finally {
-      clearTimeout(wakeTimer)
-      setIsSubmitting(false)
-      setIsWaking(false)
-    }
-  }
+  // Only true once Google's button has actually rendered - the "or"
+  // divider is hidden otherwise, so a deployment without Google sign-in (or
+  // with Google's script blocked) doesn't open the form with a lone "or".
+  const [googleReady, setGoogleReady] = useState(false)
+  const { submit, isSubmitting, isWaking, error, setError } = useAuthRequest(apiUrl, onAuthenticated)
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -44,43 +29,11 @@ export default function AuthPanel({ apiUrl, onAuthenticated, onBack }) {
       return
     }
 
-    await withSubmitting(async () => {
-      try {
-        const res = await fetch(`${apiUrl}/auth/${mode}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password }),
-        })
-        const data = await res.json()
-        if (!res.ok) {
-          setError(data.error || 'Something went wrong. Please try again.')
-          return
-        }
-        onAuthenticated(data)
-      } catch {
-        setError('Could not reach the server. Please try again.')
-      }
-    })
+    await submit(`/auth/${mode}`, { email, password })
   }
 
   async function handleGoogleCredential(idToken) {
-    await withSubmitting(async () => {
-      try {
-        const res = await fetch(`${apiUrl}/auth/google`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ idToken }),
-        })
-        const data = await res.json()
-        if (!res.ok) {
-          setError(data.error || 'Google sign-in failed. Please try again.')
-          return
-        }
-        onAuthenticated(data)
-      } catch {
-        setError('Could not reach the server. Please try again.')
-      }
-    })
+    await submit('/auth/google', { idToken }, 'Google sign-in failed. Please try again.')
   }
 
   return (
@@ -105,16 +58,18 @@ export default function AuthPanel({ apiUrl, onAuthenticated, onBack }) {
         <p className="mb-4 text-sm leading-relaxed text-muted">
           {mode === 'login'
             ? "Sign in to see your own board - validations you run while signed in are saved to your account instead of just this device."
-            : 'One email and password, nothing else - your validations get tied to this account instead of only this device.'}
+            : `${googleReady ? 'Use your Google account or an email and password' : 'One email and password, nothing else'} - your validations get tied to this account instead of only this device.`}
         </p>
 
         <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm">
-        <GoogleSignInButton onCredential={handleGoogleCredential} onError={setError} />
-        <div className="my-5 flex items-center gap-3">
-          <span className="h-px flex-1 bg-border" />
-          <span className="font-mono text-[10px] uppercase tracking-widest text-muted">or</span>
-          <span className="h-px flex-1 bg-border" />
-        </div>
+        <GoogleSignInButton onCredential={handleGoogleCredential} onError={setError} onReady={() => setGoogleReady(true)} />
+        {googleReady && (
+          <div className="my-5 flex items-center gap-3">
+            <span className="h-px flex-1 bg-border" />
+            <span className="font-mono text-[10px] uppercase tracking-widest text-muted">or</span>
+            <span className="h-px flex-1 bg-border" />
+          </div>
+        )}
 
         <form onSubmit={handleSubmit}>
         <div className="space-y-4">

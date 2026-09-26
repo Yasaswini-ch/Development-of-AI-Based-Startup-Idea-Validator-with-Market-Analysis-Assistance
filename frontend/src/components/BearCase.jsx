@@ -6,7 +6,7 @@ import Citation from './Citation'
 
 const SEVERITY_STYLES = {
   high:    { border: 'border-danger/40',    bg: 'bg-danger/5',    dot: 'bg-danger',        badge: 'border-danger/40 bg-danger/10 text-danger' },
-  medium:  { border: 'border-amber-400/40', bg: 'bg-amber-50',    dot: 'bg-amber-400',     badge: 'border-amber-400/50 bg-amber-50 text-amber-700' },
+  medium:  { border: 'border-warning/40', bg: 'bg-warning/5',    dot: 'bg-warning-bright',     badge: 'border-warning/40 bg-warning/5 text-warning' },
   low:     { border: 'border-border',       bg: 'bg-surface',     dot: 'bg-border-strong', badge: 'border-border-strong bg-panel text-muted-strong' },
   unknown: { border: 'border-border',       bg: 'bg-surface',     dot: 'bg-border-strong', badge: 'border-border-strong bg-panel text-muted-strong' },
 }
@@ -20,11 +20,11 @@ function BearCard({ heading, mitigation, severity, sourceIds, sourceMap, index }
         <div className="min-w-0 flex-1">
           {/* header */}
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            <p className="font-mono text-[9px] uppercase tracking-widest text-muted">
+            <p className="font-mono text-[10.5px] uppercase tracking-widest text-muted">
               Objection #{index + 1}
             </p>
             {severity && severity !== 'unknown' && (
-              <span className={`rounded-full border px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wide ${style.badge}`}>
+              <span className={`rounded-full border px-2 py-0.5 font-mono text-[10.5px] font-bold uppercase tracking-wide ${style.badge}`}>
                 {severity} severity
               </span>
             )}
@@ -108,7 +108,7 @@ export default function BearCase({ swot, sourceMap }) {
   return (
     <div>
       <div className="mb-4 flex items-start gap-2.5">
-        <IconAlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+        <IconAlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-bright" />
         <p className="text-sm text-muted">
           {highSeverityCount > 0
             ? <><span className="font-semibold text-text">The hardest questions an investor will ask.</span>{' '}

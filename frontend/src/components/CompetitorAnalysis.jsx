@@ -98,12 +98,12 @@ function CompetitorCard({ competitor }) {
       <div className="flex items-start justify-between gap-2">
         <h4 className="font-serif text-base font-semibold text-text">{name}</h4>
         {confidence === 'high' ? (
-          <span className="flex shrink-0 items-center gap-1 rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wide text-accent">
+          <span className="flex shrink-0 items-center gap-1 rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 font-mono text-[10.5px] font-semibold uppercase tracking-wide text-accent">
             <IconCheckCircle className="h-3 w-3" />
             Analyzed
           </span>
         ) : (
-          <span className="shrink-0 rounded-full border border-border-strong bg-panel px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wide text-muted-strong">
+          <span className="shrink-0 rounded-full border border-border-strong bg-panel px-2 py-0.5 font-mono text-[10.5px] font-semibold uppercase tracking-wide text-muted-strong">
             Auto-identified
           </span>
         )}
@@ -250,7 +250,7 @@ function ComparisonMatrix({ rows, competitors }) {
   const names = competitors.map((c) => c.name).filter((n) => rows.some((r) => r.competitors && n in r.competitors))
   if (names.length === 0) return null
   return (
-    <div className="mt-6">
+    <div id="sec-compare" className="mt-6 scroll-mt-16">
       <h3 className="mb-2 font-mono text-[11px] uppercase tracking-widest text-muted">How your idea compares</h3>
       <p className="mb-3 text-[11px] leading-snug text-muted">
         Built only from what the search results say about each competitor &mdash; &ldquo;unknown&rdquo; means the

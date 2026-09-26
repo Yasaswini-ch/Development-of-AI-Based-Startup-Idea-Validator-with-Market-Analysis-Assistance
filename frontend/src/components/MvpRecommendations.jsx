@@ -1,13 +1,15 @@
 import { IconAlertTriangle, IconLightbulb } from './icons'
 import DegradedBanner from './DegradedBanner'
 import Citation from './Citation'
-import MvpDeliveryRoadmap from './MvpDeliveryRoadmap'
 
+// Impact/effort are intensities, not good/bad or evidence - so a neutral
+// ink scale rather than coral/amber, which the app reserves for actions and
+// caution states.
 const LEVEL_STYLES = {
-  low:     'border-border-strong bg-panel text-muted-strong',
-  medium:  'border-amber-400 bg-amber-100 text-amber-800',
-  high:    'border-accent/40 bg-accent/10 text-accent',
-  unknown: 'border-border-strong bg-panel text-muted-strong',
+  low:     'border-border bg-panel text-muted',
+  medium:  'border-border-strong bg-panel text-muted-strong',
+  high:    'border-text/30 bg-text/5 text-text',
+  unknown: 'border-border bg-panel text-muted',
 }
 
 function Badge({ label, value }) {
@@ -28,7 +30,7 @@ function priorityFor(impact, effort) {
 const PHASE_META = {
   P0: {
     label: 'P0 — Launch',
-    sub: 'Ship on day one',
+    sub: 'Phase 1 (Alpha), build first',
     dot: 'bg-accent',
     ring: 'border-accent/40 bg-accent/5',
     badge: 'bg-accent text-white',
@@ -36,7 +38,7 @@ const PHASE_META = {
   },
   P1: {
     label: 'P1 — Shortly after',
-    sub: 'First 30–60 days',
+    sub: 'Phase 1 (Alpha), after the P0 features',
     dot: 'bg-info',
     ring: 'border-info/30 bg-info/5',
     badge: 'border border-info/40 bg-info/10 text-info',
@@ -44,7 +46,7 @@ const PHASE_META = {
   },
   P2: {
     label: 'P2 — Future',
-    sub: 'Once you have signal',
+    sub: 'Phase 1 (Alpha), first to cut if time runs short',
     dot: 'bg-border-strong',
     ring: 'border-border-strong bg-surface',
     badge: 'border border-border-strong bg-panel text-muted-strong',
@@ -79,7 +81,7 @@ function FeatureCard({ item, meta, sourceMap }) {
 function ExtraFeatureRow({ item, tier, sourceMap }) {
   return (
     <div className="flex items-start gap-3 rounded-xl border border-border bg-surface p-4">
-      <span className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 font-mono text-[9px] font-bold ${tier.badge}`}>
+      <span className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 font-mono text-[10.5px] font-bold ${tier.badge}`}>
         {tier.key}
       </span>
       <div className="min-w-0">
@@ -96,11 +98,11 @@ function ExtraFeatureRow({ item, tier, sourceMap }) {
 }
 
 const EXTRA_META = {
-  niceToHave: { key: 'N2H', label: 'Nice to have', badge: 'border border-info/40 bg-info/10 text-info', dot: 'bg-info' },
-  deferred:   { key: 'V2',  label: 'Deferred v2',  badge: 'border border-border-strong bg-panel text-muted-strong', dot: 'bg-border-strong' },
+  niceToHave: { key: 'BETA', label: 'Phase 2 (closed beta)', badge: 'border border-info/40 bg-info/10 text-info', dot: 'bg-info' },
+  deferred:   { key: 'V2',   label: 'Later (v2)',            badge: 'border border-border-strong bg-panel text-muted-strong', dot: 'bg-border-strong' },
 }
 
-export default function MvpRecommendations({ data, error, sourceMap }) {
+export default function MvpRecommendations({ data, error, sourceMap, onOpenRoadmap }) {
   if (data === null || data === undefined) {
     return (
       <div className="flex flex-col items-center justify-center p-2 text-center">
@@ -158,7 +160,7 @@ export default function MvpRecommendations({ data, error, sourceMap }) {
               <span className={`absolute left-0 h-3.5 w-3.5 rounded-full border-2 border-surface ${meta.dot}`} />
               <div>
                 <p className="font-mono text-[11px] font-semibold uppercase tracking-widest text-text">{meta.label}</p>
-                <p className="font-mono text-[9px] text-muted">{meta.sub}</p>
+                <p className="text-xs text-muted">{meta.sub}</p>
               </div>
             </div>
 
@@ -175,7 +177,7 @@ export default function MvpRecommendations({ data, error, sourceMap }) {
       {hasExtra && (
         <div className="mt-8 space-y-4">
           <div className="flex items-center gap-2 border-t border-border pt-6">
-            <span className="font-mono text-[11px] uppercase tracking-widest text-muted">Out of scope for MVP</span>
+            <span className="font-mono text-[11px] uppercase tracking-widest text-muted">After the MVP</span>
           </div>
           {[...niceToHave.map((f) => ({ ...f, _tier: 'niceToHave' })), ...deferred.map((f) => ({ ...f, _tier: 'deferred' }))].map((item, i) => (
             <ExtraFeatureRow key={i} item={item} tier={EXTRA_META[item._tier]} sourceMap={sourceMap} />
@@ -183,7 +185,15 @@ export default function MvpRecommendations({ data, error, sourceMap }) {
         </div>
       )}
 
-      <MvpDeliveryRoadmap data={data.deliveryRoadmap} />
+      {data.deliveryRoadmap?.phases?.length > 0 && onOpenRoadmap && (
+        <p className="mt-8 border-t border-border pt-4 text-sm text-muted">
+          These features are laid out week by week in the{' '}
+          <button type="button" onClick={onOpenRoadmap} className="font-medium text-accent underline-offset-2 hover:underline">
+            Roadmap tab
+          </button>
+          .
+        </p>
+      )}
     </div>
   )
 }

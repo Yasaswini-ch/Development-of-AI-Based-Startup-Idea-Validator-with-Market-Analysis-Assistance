@@ -22,9 +22,9 @@ describe('ExperimentsActionPlan', () => {
     expect(screen.getByText('Budget: low')).toBeInTheDocument()
     expect(screen.getByText('Budget: medium')).toBeInTheDocument()
 
-    expect(screen.getByText('Next 7 days')).toBeInTheDocument()
+    expect(screen.getByText(/Next 7 days/)).toBeInTheDocument()
     expect(screen.getByText(mockActionPlan.next7Days.title)).toBeInTheDocument()
-    expect(screen.getByText('Next 30 days')).toBeInTheDocument()
-    expect(screen.getByText('Next 90 days')).toBeInTheDocument()
+    expect(screen.getByText(/Next 30 days/)).toBeInTheDocument()
+    expect(screen.getByText(/Next 90 days/)).toBeInTheDocument()
   })
 })

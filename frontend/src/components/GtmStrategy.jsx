@@ -2,12 +2,26 @@ import { IconAlertTriangle, IconGlobe, IconTrendingUp, IconUsers } from './icons
 import DegradedBanner from './DegradedBanner'
 import Citation from './Citation'
 import GtmCommercialModel from './GtmCommercialModel'
+import { roadmapWeekRanges } from '../lib/timeline'
+
+// Default launch windows when there's no delivery roadmap to align with
+// (older sessions, or the MVP section failed).
+const DEFAULT_TIMESPANS = ['Weeks 1 – 4', 'Month 2 – 3', 'Month 4+']
+
+// Launch windows on the same week axis as the Delivery Roadmap: Foundation
+// runs alongside the Alpha, Traction alongside the closed Beta, and Scale
+// starts at GA.
+function launchTimespans(roadmap) {
+  const ranges = roadmapWeekRanges(roadmap)
+  if (ranges.length < 3) return DEFAULT_TIMESPANS
+  return [ranges[0].label, ranges[1].label, `Week ${ranges[2].start} onward`]
+}
 
 // Derives a 3-phase launch timeline from the existing GTM fields the backend
 // already returns (positioning, channels, earlyCustomerApproach) — no new
 // backend data needed. Channels are split across phases so they feel
 // sequenced rather than dumped as a flat list.
-function buildPhases(data) {
+function buildPhases(data, timespans = DEFAULT_TIMESPANS) {
   const channels = Array.isArray(data.channels) ? data.channels : []
   const mid = Math.ceil(channels.length / 2)
   const phase1Ch = channels.slice(0, mid)
@@ -16,7 +30,7 @@ function buildPhases(data) {
   return [
     {
       label: 'Foundation',
-      timespan: 'Weeks 1 – 4',
+      timespan: timespans[0],
       color: { dot: 'bg-accent', line: 'bg-accent/30', border: 'border-accent/30 bg-accent/5', badge: 'bg-accent text-white' },
       sections: [
         data.earlyCustomerApproach && {
@@ -35,7 +49,7 @@ function buildPhases(data) {
     },
     {
       label: 'Traction',
-      timespan: 'Month 2 – 3',
+      timespan: timespans[1],
       color: { dot: 'bg-info', line: 'bg-info/20', border: 'border-info/30 bg-info/5', badge: 'border border-info/40 bg-info/10 text-info' },
       sections: [
         phase1Ch.length > 0 && {
@@ -47,7 +61,7 @@ function buildPhases(data) {
     },
     ...(phase2Ch.length > 0 ? [{
       label: 'Scale',
-      timespan: 'Month 4+',
+      timespan: timespans[2],
       color: { dot: 'bg-success', line: null, border: 'border-success/30 bg-success/5', badge: 'border border-success/40 bg-success/10 text-success' },
       sections: [
         {
@@ -62,7 +76,7 @@ function buildPhases(data) {
 
 const FIT_STYLES = {
   high:   'bg-success/10 text-success border-success/30',
-  medium: 'bg-accent/10 text-accent border-accent/30',
+  medium: 'bg-panel text-muted-strong border-border-strong',
   low:    'bg-border text-muted-strong border-border-strong',
 }
 
@@ -80,7 +94,7 @@ function ChannelCard({ ch, sourceMap }) {
           {sourceMap && <Citation sourceIds={sourceIds} sourceMap={sourceMap} />}
         </p>
         {fitScore && (
-          <span className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[9px] uppercase tracking-wide ${FIT_STYLES[fitScore] ?? FIT_STYLES.medium}`}>
+          <span className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10.5px] uppercase tracking-wide ${FIT_STYLES[fitScore] ?? FIT_STYLES.medium}`}>
             {fitScore} fit
           </span>
         )}
@@ -124,7 +138,7 @@ function PhaseSection({ section, sourceMap }) {
   )
 }
 
-export default function GtmStrategy({ data, error, sourceMap }) {
+export default function GtmStrategy({ data, error, sourceMap, roadmap }) {
   if (data === null || data === undefined) {
     return (
       <div className="flex flex-col items-center justify-center p-2 text-center">
@@ -137,7 +151,7 @@ export default function GtmStrategy({ data, error, sourceMap }) {
     )
   }
 
-  const phases = buildPhases(data)
+  const phases = buildPhases(data, launchTimespans(roadmap))
 
   // Fallback: if none of the structured fields exist (e.g. older backend
   // response that only has a `strategy` string), just render that prose.

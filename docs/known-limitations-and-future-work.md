@@ -147,14 +147,14 @@ was built in Sprint 4; see §7.4.)
 
 Details and formulas: [doc 23](23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOOGLE_SSO.md).
 
-### 7.1 Exports and comparisons don't include the new sections
-- **What:** the PDF dossier (`pdf_exporter.py`) and the report email
-  (`email_delivery.py`) render only the pre-sprint sections. Voice-of-Market quotes, the
-  Viability Index, wedge blueprints, pricing/unit economics and the delivery roadmap
-  appear on screen and in the JSON (`/validate`, `GET /reports/{id}`) only. Compare
-  Ideas and the Dashboard also ignore them.
-- **Impact:** medium. A founder who shares the PDF loses the most decision-ready parts.
-- **Fix:** add sections to the PDF/email builders; add `viabilityIndex.compositeScore`
+### 7.1 Email and comparisons don't include the new sections
+- **What:** the PDF dossier now includes Voice-of-Market quotes, the Viability Index,
+  wedge blueprints, the delivery roadmap and commercial economics, but the report email
+  (`email_delivery.py`) still renders only the pre-sprint sections. Compare Ideas and the
+  Dashboard also ignore them.
+- **Impact:** low to medium. A founder who shares the email instead of the PDF loses the
+  most decision-ready parts.
+- **Fix:** add the sections to the email builder; add `viabilityIndex.compositeScore`
   to the compare view.
 
 ### 7.2 Economics and roadmap are templates, not forecasts
@@ -179,7 +179,8 @@ Details and formulas: [doc 23](23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOO
   and the password form fails closed).
 - **Old SQLite files** keep `password_hash NOT NULL`, so a first Google sign-in into one
   fails until the file is recreated. Postgres is migrated automatically.
-- **`avatarUrl` is stored but not shown** anywhere in the UI yet.
+- The Google profile photo (`avatarUrl`) is shown in the account menu; local accounts
+  show their initial instead.
 
 ### 7.5 Heuristic text extraction
 - Voice-of-Market quotes are tagged by keyword. A sentence containing "manual" or

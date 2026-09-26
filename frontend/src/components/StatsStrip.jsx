@@ -3,45 +3,6 @@ import useCountUp from '../hooks/useCountUp'
 const SIZE = 88
 const STROKE = 7
 const R = (SIZE - STROKE) / 2
-const CIRC = 2 * Math.PI * R
-
-// Ring stat — for the opportunity score (0-100), renders a filled arc
-function RingStat({ value, max = 100, label, sub }) {
-  const display = useCountUp(value ?? 0, 800)
-  const pct = Math.min((display / max) * 100, 100)
-  const filled = (pct / 100) * CIRC
-  const gap = CIRC - filled
-
-  const tier =
-    pct >= 67 ? { stroke: 'var(--color-success)', text: 'text-success' }
-    : pct >= 40 ? { stroke: 'var(--color-accent)',  text: 'text-accent'  }
-    :             { stroke: 'var(--color-danger)',   text: 'text-danger'  }
-
-  return (
-    <div className="flex flex-col items-center gap-2">
-      <div className="relative" style={{ width: SIZE, height: SIZE }}>
-        <svg width={SIZE} height={SIZE} className="-rotate-90">
-          {/* Track */}
-          <circle cx={SIZE/2} cy={SIZE/2} r={R} fill="none"
-            stroke="var(--color-border)" strokeWidth={STROKE} />
-          {/* Fill */}
-          <circle cx={SIZE/2} cy={SIZE/2} r={R} fill="none"
-            stroke={tier.stroke} strokeWidth={STROKE}
-            strokeLinecap="round"
-            strokeDasharray={`${filled} ${gap}`} />
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className={`font-serif text-xl font-semibold leading-none ${tier.text}`}>{display}</span>
-          <span className="font-mono text-[8px] uppercase tracking-widest text-muted">/100</span>
-        </div>
-      </div>
-      <div className="text-center">
-        <p className="font-mono text-[10px] font-semibold uppercase tracking-widest text-text">{label}</p>
-        {sub && <p className="font-mono text-[9px] text-muted">{sub}</p>}
-      </div>
-    </div>
-  )
-}
 
 // Circle stat — for counts, renders a solid decorative ring with number inside
 function CircleStat({ value, label, sub, color = 'var(--color-accent)' }) {
@@ -64,7 +25,7 @@ function CircleStat({ value, label, sub, color = 'var(--color-accent)' }) {
       </div>
       <div className="text-center">
         <p className="font-mono text-[10px] font-semibold uppercase tracking-widest text-text">{label}</p>
-        {sub && <p className="font-mono text-[9px] text-muted">{sub}</p>}
+        {sub && <p className="font-mono text-[10.5px] text-muted">{sub}</p>}
       </div>
     </div>
   )
@@ -77,7 +38,6 @@ export default function StatsStrip({ results, competitors, whiteSpace, marketOpp
   // WhiteSpaceAnalysis renders); there is no "gaps" key.
   const gapCount        = whiteSpace?.opportunities?.length ?? 0
   const segmentCount    = marketOpportunity?.segments?.length ?? 0
-  const oppScore        = marketOpportunity?.opportunityScore ?? null
 
   if (sourceCount === 0) return null
 
@@ -88,9 +48,6 @@ export default function StatsStrip({ results, competitors, whiteSpace, marketOpp
         <CircleStat value={competitorCount} label="Competitors" sub="Direct & indirect" color="var(--color-info)" />
         <CircleStat value={gapCount}        label="Market gaps" sub="Whitespace found"  color="var(--color-success)" />
         <CircleStat value={segmentCount}    label="Personas"    sub="Customer segments" color="var(--color-accent)" />
-        {oppScore != null && (
-          <RingStat value={oppScore} label="Opp. score" sub="Out of 100" />
-        )}
       </div>
     </div>
   )

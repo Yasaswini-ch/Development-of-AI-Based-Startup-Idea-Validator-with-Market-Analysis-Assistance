@@ -16,7 +16,7 @@ describe('ValidationResults', () => {
 
   it('renders without crashing when given a confidence prop', () => {
     renderResults()
-    expect(screen.getByText(/validation summary/i)).toBeInTheDocument()
+    expect(screen.getByText(/executive summary/i)).toBeInTheDocument()
   })
 
   it('renders the confidence dashboard from real backend data instead of the old single badge', () => {
@@ -43,17 +43,17 @@ describe('ValidationResults', () => {
     const user = userEvent.setup()
     renderResults()
 
-    await user.click(screen.getByRole('button', { name: /experiments & action plan/i }))
+    await user.click(screen.getByRole('button', { name: /roadmap/i }))
 
     expect(screen.getByText(mockValidation.experiments[0].hypothesis)).toBeInTheDocument()
-    expect(screen.getByText('Next 7 days')).toBeInTheDocument()
+    expect(screen.getByText(/Next 7 days/)).toBeInTheDocument()
   })
 
   it('passes sourceMap through to Market Opportunity so its claims are citable', async () => {
     const user = userEvent.setup()
     renderResults()
 
-    await user.click(screen.getByRole('button', { name: /market & competition/i }))
+    await user.click(screen.getByRole('button', { name: /market & rivals/i }))
 
     // The first market trend cites src-1, so its claim renders a citation marker.
     expect(screen.getByText(mockValidation.marketOpportunity.trends[0].text)).toBeInTheDocument()

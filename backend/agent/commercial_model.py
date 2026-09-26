@@ -39,6 +39,26 @@ _BASE_LIFETIME_MONTHS = 24  # ceiling on assumed customer lifetime at zero measu
 _MIN_LIFETIME_MONTHS = 6
 
 
+def _price_tier_source(competitors_data: dict | None) -> str:
+    competitors = [c for c in (competitors_data or {}).get("competitors") or [] if isinstance(c, dict)]
+    if any(c.get("estimatedPrice") in ("low", "mid", "high") for c in competitors):
+        return "competitors"
+    return "idea"
+
+
+def _basis(idea: str, competitors_data: dict | None, channels: list | None, swot_data: dict | None) -> dict:
+    """The inputs every number above was derived from, so the UI can show
+    founders what drove the estimate (and what to change to move it)
+    instead of presenting template figures as if they were measured.
+    """
+    return {
+        "priceTier": _price_tier(idea, competitors_data),
+        "priceTierSource": _price_tier_source(competitors_data),
+        "channelCount": len([c for c in (channels or []) if isinstance(c, dict)]),
+        "executionRiskPercent": int(_execution_risk_percent(swot_data)),
+    }
+
+
 def _price_tier(idea: str, competitors_data: dict | None) -> str:
     """Prefer a real signal from named competitors' own pricing
     (competitor_agent.py's estimatedPrice) over guessing from the idea's
@@ -162,12 +182,14 @@ def build_commercial_model(
     channels: list | None = None,
     swot_data: dict | None = None,
 ) -> dict:
-    """Return {"unitEconomics": {...}, "pricingTiers": [3 tiers]} per the
-    spec's gtm_strategy.commercialModel schema (§4.5A).
+    """Return {"unitEconomics": {...}, "pricingTiers": [3 tiers], "basis":
+    {...}} per the spec's gtm_strategy.commercialModel schema (§4.5A), plus
+    the inputs the estimate was built from.
     """
     return {
         "unitEconomics": _unit_economics(idea, competitors_data, channels, swot_data),
         "pricingTiers": _pricing_tiers(idea, competitors_data),
+        "basis": _basis(idea, competitors_data, channels, swot_data),
     }
 
 

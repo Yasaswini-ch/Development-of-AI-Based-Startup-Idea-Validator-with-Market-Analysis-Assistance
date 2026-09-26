@@ -1,8 +1,8 @@
-import { useState } from 'react'
 import useTypewriter from '../hooks/useTypewriter'
 import useCountUp from '../hooks/useCountUp'
 import ConfidenceGauge from './ConfidenceGauge'
 import GoogleSignInButton from './GoogleSignInButton'
+import useAuthRequest from '../hooks/useAuthRequest'
 import {
   IconLightbulb,
   IconGlobe,
@@ -82,25 +82,10 @@ const FEATURES = [
 export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut, apiUrl, onAuthenticated }) {
   const { text, settled } = useTypewriter(EXAMPLE_IDEAS)
   const confidence = useCountUp(settled ? 84 : 0, 900)
-  const [googleError, setGoogleError] = useState('')
+  const google = useAuthRequest(apiUrl, onAuthenticated)
 
-  async function handleGoogleCredential(idToken) {
-    setGoogleError('')
-    try {
-      const res = await fetch(`${apiUrl}/auth/google`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        setGoogleError(data.error || 'Google sign-in failed. Please try again.')
-        return
-      }
-      onAuthenticated(data)
-    } catch {
-      setGoogleError('Could not reach the server. Please try again.')
-    }
+  function handleGoogleCredential(idToken) {
+    google.submit('/auth/google', { idToken }, 'Google sign-in failed. Please try again.')
   }
 
   return (
@@ -162,10 +147,17 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
               )}
             </div>
             {!currentUser && apiUrl && onAuthenticated && (
-              <div className="mt-1">
-                <GoogleSignInButton onCredential={handleGoogleCredential} onError={setGoogleError} />
-                {googleError && (
-                  <p className="mt-2 max-w-xs text-center text-[11px] text-danger">{googleError}</p>
+              <div className="mt-1 flex w-full max-w-xs flex-col items-center">
+                <div className={`w-full ${google.isSubmitting ? 'pointer-events-none opacity-60' : ''}`} aria-busy={google.isSubmitting}>
+                  <GoogleSignInButton onCredential={handleGoogleCredential} onError={google.setError} width={320} />
+                </div>
+                {google.isSubmitting && (
+                  <p className="mt-2 text-center font-mono text-[11px] uppercase tracking-wide text-muted">
+                    {google.isWaking ? 'Waking up the server, this can take up to a minute…' : 'Signing you in…'}
+                  </p>
+                )}
+                {google.error && (
+                  <p className="mt-2 text-center text-[11px] text-danger" role="alert">{google.error}</p>
                 )}
               </div>
             )}

@@ -1,64 +1,12 @@
-import { IconTrendingUp, IconUsers, IconAlertTriangle } from './icons'
-import useCountUp from '../hooks/useCountUp'
+import { IconTrendingUp, IconAlertTriangle } from './icons'
 import DegradedBanner from './DegradedBanner'
 import Citation from './Citation'
 import ProvenanceBadge from './ProvenanceBadge'
-import VoiceOfMarketSection from './VoiceOfMarketCard'
 import MarketViabilityIndex from './MarketViabilityIndex'
 
-// Segment fields (painPoints/motivations/buyingBehavior) are single prose
-// strings from the backend, not arrays - splitting on sentence boundaries
-// gets a scannable bullet list out of them without needing a backend
-// schema change. Falls back to one bullet (the whole string) when there's
-// nothing to split on, so short answers still render cleanly.
-function toBullets(text) {
-  if (!text) return []
-  const parts = text
-    .split(/(?<=[.;])\s+(?=[A-Z0-9])/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-  return parts.length > 0 ? parts : [text]
-}
-
-function BulletField({ label, text }) {
-  const bullets = toBullets(text)
-  if (bullets.length === 0) return null
-  return (
-    <div>
-      <dt className="font-mono text-[10px] uppercase tracking-widest text-muted">{label}</dt>
-      <dd className="mt-1.5">
-        <ul className="space-y-1.5">
-          {bullets.map((bullet, i) => (
-            <li key={i} className="flex gap-2 text-sm leading-relaxed text-text">
-              <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-accent" />
-              <span>{bullet}</span>
-            </li>
-          ))}
-        </ul>
-      </dd>
-    </div>
-  )
-}
-
-function SegmentCard({ segment, index, sourceMap }) {
-  const { segment: name, painPoints, motivations, buyingBehavior, sourceIds } = segment
-  return (
-    <div className="rounded-xl border border-border-strong bg-surface p-5">
-      <p className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-accent">
-        Segment {String(index + 1).padStart(2, '0')}
-      </p>
-      <h4 className="font-serif text-base font-semibold text-text">
-        {name}
-        {sourceMap && <Citation sourceIds={sourceIds} sourceMap={sourceMap} />}
-      </h4>
-      <dl className="mt-3 space-y-3">
-        <BulletField label="Pain points" text={painPoints} />
-        <BulletField label="Motivations" text={motivations} />
-        <BulletField label="Buying behavior" text={buyingBehavior} />
-      </dl>
-    </div>
-  )
-}
+// Customer segments and Voice-of-the-Market quotes live in the Customers
+// tab (CustomerPersonas.jsx / VoiceOfMarketCard.jsx) - this tab is about
+// the market itself: size, trends, and the dynamics breakdown.
 
 // A TAM/SAM/SOM tier is either null (the sources don't support that
 // specific figure - see market_agent.py) or a {"text", "sourceIds"} claim,
@@ -79,7 +27,7 @@ function MarketSizeTiers({ tam, sam, som, sourceMap }) {
       {tiers.map((tier) => (
         <div key={tier.label} className="rounded-xl border border-border-strong bg-surface p-4">
           <p className="font-mono text-[10px] uppercase tracking-widest text-accent">{tier.label}</p>
-          <p className="mt-0.5 font-mono text-[9px] uppercase tracking-wide text-muted">{tier.hint}</p>
+          <p className="mt-0.5 font-mono text-[10.5px] uppercase tracking-wide text-muted">{tier.hint}</p>
           <p className="mt-2 text-sm leading-relaxed text-text">
             {tier.data.text}
             {sourceMap && <Citation sourceIds={tier.data.sourceIds} sourceMap={sourceMap} />}
@@ -91,28 +39,20 @@ function MarketSizeTiers({ tam, sam, som, sourceMap }) {
 }
 
 function scoreTier(score) {
-  if (score >= 70) {
-    return { label: 'Strong opportunity', className: 'text-accent' }
-  }
-  if (score >= 40) {
-    return { label: 'Moderate opportunity', className: 'text-accent/80' }
-  }
-  return { label: 'Early signal', className: 'text-muted' }
+  if (score >= 70) return 'Strong opportunity'
+  if (score >= 40) return 'Moderate opportunity'
+  return 'Early signal'
 }
 
+// Deliberately small: the verdict card at the top of the report owns the
+// one headline score. This is a secondary, labelled metric.
 function OpportunityScore({ score }) {
-  const value = useCountUp(score, 800)
-  const tier = scoreTier(score)
   return (
-    <div className="flex items-baseline gap-3">
-      <p className="font-serif text-4xl text-accent">{value}</p>
-      <div>
-        <p className="font-mono text-[10px] uppercase tracking-widest text-muted">
-          Opportunity Score
-        </p>
-        <p className={`text-xs font-medium ${tier.className}`}>{tier.label}</p>
-      </div>
-    </div>
+    <p className="font-mono text-[11px] uppercase tracking-wide text-muted">
+      Opportunity score{' '}
+      <span className="text-sm font-semibold normal-case text-text">{score}/100</span>
+      <span className="ml-2 normal-case tracking-normal">{scoreTier(score)}</span>
+    </p>
   )
 }
 
@@ -149,7 +89,6 @@ export default function MarketOpportunity({ data, error, sourceMap }) {
     tam,
     sam,
     som,
-    voiceOfMarket = [],
     viabilityIndex,
   } = data
   if (!marketSize && trends.length === 0 && segments.length === 0) {
@@ -200,24 +139,6 @@ export default function MarketOpportunity({ data, error, sourceMap }) {
         </div>
       )}
 
-      {segments.length > 0 && (
-        <div className="mt-6">
-          <h3 className="mb-3 flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-widest text-muted">
-            <IconUsers className="h-3.5 w-3.5 text-accent" />
-            Customer Segments
-          </h3>
-          {/* Two columns now that this tab has the full page width to
-              itself - plenty of room per card, unlike the narrow dashboard
-              column this used to sit in. */}
-          <div className="grid gap-3 sm:grid-cols-2">
-            {segments.map((s, i) => (
-              <SegmentCard key={i} segment={s} index={i} sourceMap={sourceMap} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      <VoiceOfMarketSection quotes={voiceOfMarket} />
       <MarketViabilityIndex data={viabilityIndex} sourceMap={sourceMap} />
     </div>
   )

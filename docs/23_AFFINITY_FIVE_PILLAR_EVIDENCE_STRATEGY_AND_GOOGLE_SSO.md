@@ -329,9 +329,10 @@ The same fields are stored in the saved session context and returned by
 
 ## 10. What the new sections do not do yet
 
-- **PDF and email exports don't include them.** `pdf_exporter.py` and
-  `email_delivery.py` render the pre-sprint sections only; quotes, the index, blueprints,
-  pricing and the delivery roadmap appear on screen and in the JSON only.
+- **The email export doesn't include them.** The PDF (`pdf_exporter.py`) now has a
+  section for each (up to three quotes, the viability table, wedges, the delivery
+  roadmap with week ranges, and economics with pricing tiers), but `email_delivery.py`
+  still renders the pre-sprint sections only.
 - **Compare Ideas and the Dashboard don't use them.** Both still compare the headline
   `marketViability` and opportunity scores.
 - **Economics and roadmap are templates driven by a few signals.** ARPU has three possible

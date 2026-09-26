@@ -35,9 +35,22 @@ function loadGoogleScript() {
   return scriptLoadPromise
 }
 
-export default function GoogleSignInButton({ onCredential, onError }) {
+// Google's button is rendered at the container's width (capped at the 400px
+// Google allows) in its pill shape, so it lines up with the app's own
+// rounded-full buttons instead of sitting as a fixed 320px rectangle.
+const _MAX_WIDTH = 400
+const _MIN_WIDTH = 200
+
+export default function GoogleSignInButton({ onCredential, onError, onReady, width }) {
   const containerRef = useRef(null)
   const [failed, setFailed] = useState(false)
+  // Callbacks are read through a ref so a parent passing fresh inline
+  // functions each render doesn't re-initialize Google's button every time
+  // (and onReady setting parent state can't loop back into this effect).
+  const callbacks = useRef({ onCredential, onError, onReady })
+  useEffect(() => {
+    callbacks.current = { onCredential, onError, onReady }
+  })
 
   useEffect(() => {
     if (!CLIENT_ID) return
@@ -49,27 +62,31 @@ export default function GoogleSignInButton({ onCredential, onError }) {
         window.google.accounts.id.initialize({
           client_id: CLIENT_ID,
           callback: (response) => {
-            if (response?.credential) onCredential(response.credential)
+            if (response?.credential) callbacks.current.onCredential?.(response.credential)
           },
         })
+        const available = width || containerRef.current.clientWidth || 320
         window.google.accounts.id.renderButton(containerRef.current, {
           type: 'standard',
           theme: 'outline',
           size: 'large',
-          width: 320,
+          shape: 'pill',
+          text: 'continue_with',
+          width: Math.max(_MIN_WIDTH, Math.min(_MAX_WIDTH, Math.round(available))),
         })
+        callbacks.current.onReady?.()
       })
       .catch(() => {
         if (!cancelled) {
           setFailed(true)
-          onError?.('Could not load Google Sign-In. Please use email and password instead.')
+          callbacks.current.onError?.('Could not load Google Sign-In. Please use email and password instead.')
         }
       })
 
     return () => {
       cancelled = true
     }
-  }, [onCredential, onError])
+  }, [width])
 
   if (!CLIENT_ID || failed) return null
 

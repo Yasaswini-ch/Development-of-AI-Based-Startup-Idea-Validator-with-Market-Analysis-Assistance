@@ -8,7 +8,7 @@ import { DonutChart, HBarChart, LineChart, RadarChart, StackedHBarChart, TagClou
 const SEVERITY_ORDER = ['high', 'medium', 'low', 'unknown']
 const SEVERITY_STYLES = {
   high: 'bg-danger/15 text-danger',
-  medium: 'bg-amber-100 text-amber-700',
+  medium: 'bg-warning/10 text-warning',
   low: 'bg-accent/10 text-accent',
   unknown: 'bg-border text-muted',
 }

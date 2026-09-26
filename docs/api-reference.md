@@ -21,7 +21,8 @@ The Affinity Backend API is built using **FastAPI** and provides asynchronous en
   header saves the run to that account. Tokens come from `POST /auth/signup`,
   `POST /auth/login` or `POST /auth/google` (`{ idToken }` from Google's Sign-In button;
   returns `{ token, user: { id, email, authProvider, avatarUrl } }`, 401 when the token
-  can't be verified or Google sign-in isn't configured). Account endpoints are listed in
+  can't be verified or Google sign-in isn't configured). `GET /auth/me` returns the same
+  `authProvider` and `avatarUrl` alongside `id`, `email` and `isAdmin`. Account endpoints are listed in
   [`architecture.md` §4](architecture.md#4-api-contract) and
   [doc 19](19_AFFINITY_MILESTONE_3_POSTGRESQL_AUTH_AND_DATA_PERSISTENCE.md#4-authentication--access-control).
 - **CORS Configuration:** Enforced via `CORSMiddleware`. Allowed origin is controlled by the `FRONTEND_ORIGIN` environment variable (defaults to `http://localhost:5173`).

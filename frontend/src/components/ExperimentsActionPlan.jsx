@@ -1,9 +1,10 @@
-import { IconFlask, IconListChecks, IconAlertTriangle, IconLightbulb, IconUsers, IconTrendingUp, IconGlobe, IconNewspaper } from './icons'
+import { IconFlask, IconListChecks, IconAlertTriangle, IconLightbulb, IconUsers, IconTrendingUp, IconNewspaper } from './icons'
+import { ACTION_PLAN_WEEKS } from '../lib/timeline'
 
 const ACTION_CATEGORIES = [
   { label: 'Build',    icon: IconLightbulb,  keys: ['build','ship','develop','create','implement','code','deploy','publish page','landing'], style: 'bg-accent/10 text-accent border-accent/30' },
   { label: 'Market',   icon: IconTrendingUp, keys: ['launch','product hunt','reddit','twitter','post','email','newsletter','content','article'], style: 'bg-info/10 text-info border-info/30' },
-  { label: 'Research', icon: IconFlask,      keys: ['interview','survey','test','analyse','audit','measure','validate','feedback','nps'], style: 'bg-amber-100 text-amber-700 border-amber-300' },
+  { label: 'Research', icon: IconFlask,      keys: ['interview','survey','test','analyse','audit','measure','validate','feedback','nps'], style: 'bg-warning/10 text-warning border-warning/40' },
   { label: 'Outreach', icon: IconUsers,      keys: ['recruit','users','beta','partner','apply','reach','onboard'], style: 'bg-success/10 text-success border-success/30' },
   { label: 'Content',  icon: IconNewspaper,  keys: ['write','publish','content','piece','blog','seo','article','video'], style: 'bg-purple-100 text-purple-700 border-purple-300' },
 ]
@@ -20,14 +21,14 @@ function ActionCard({ text, index }) {
   return (
     <div className="rounded-xl border border-border bg-surface p-4">
       <div className="flex items-start gap-2.5">
-        <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border font-mono text-[9px] font-bold ${cat.style}`}>
+        <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border font-mono text-[10.5px] font-bold ${cat.style}`}>
           {index + 1}
         </span>
         <p className="text-sm leading-relaxed text-text">{text}</p>
       </div>
       <div className="mt-3 flex items-center gap-1.5">
         <Icon className="h-3 w-3 text-muted" />
-        <span className={`rounded-full border px-2 py-0.5 font-mono text-[9px] uppercase tracking-wide ${cat.style}`}>
+        <span className={`rounded-full border px-2 py-0.5 font-mono text-[10.5px] uppercase tracking-wide ${cat.style}`}>
           {cat.label}
         </span>
       </div>
@@ -40,14 +41,14 @@ function ExperimentCard({ item, index }) {
     return (
       <div className="rounded-xl border border-border bg-surface p-4">
         <div className="flex items-start gap-2.5">
-          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-accent/30 bg-accent/10 font-mono text-[9px] font-bold text-accent">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-accent/30 bg-accent/10 font-mono text-[10.5px] font-bold text-accent">
             {index + 1}
           </span>
           <p className="text-sm leading-relaxed text-text">{item}</p>
         </div>
         <div className="mt-3 flex items-center gap-1.5">
           <IconFlask className="h-3 w-3 text-muted" />
-          <span className="rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wide text-accent">Experiment</span>
+          <span className="rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 font-mono text-[10.5px] uppercase tracking-wide text-accent">Experiment</span>
         </div>
       </div>
     )
@@ -55,7 +56,7 @@ function ExperimentCard({ item, index }) {
   return (
     <div className="rounded-xl border border-border bg-surface p-4">
       <div className="flex items-start gap-2.5">
-        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-accent/30 bg-accent/10 font-mono text-[9px] font-bold text-accent">
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-accent/30 bg-accent/10 font-mono text-[10.5px] font-bold text-accent">
           {index + 1}
         </span>
         <h4 className="font-serif text-sm font-semibold leading-snug text-text">{item.hypothesis}</h4>
@@ -63,38 +64,40 @@ function ExperimentCard({ item, index }) {
       <dl className="mt-3 space-y-2">
         {item.method && (
           <div className="rounded-lg border border-border bg-panel p-2.5">
-            <dt className="mb-0.5 font-mono text-[9px] uppercase tracking-widest text-muted">Method</dt>
+            <dt className="mb-0.5 font-mono text-[10.5px] uppercase tracking-widest text-muted">Method</dt>
             <dd className="text-sm leading-relaxed text-text">{item.method}</dd>
           </div>
         )}
         {item.successMetric && (
           <div className="rounded-lg border border-border bg-panel p-2.5">
-            <dt className="mb-0.5 font-mono text-[9px] uppercase tracking-widest text-muted">Success metric</dt>
+            <dt className="mb-0.5 font-mono text-[10.5px] uppercase tracking-widest text-muted">Success metric</dt>
             <dd className="text-sm leading-relaxed text-text">{item.successMetric}</dd>
           </div>
         )}
       </dl>
       <div className="mt-3 flex flex-wrap gap-1.5">
         {item.duration && (
-          <span className="rounded-full border border-border bg-panel px-2 py-0.5 font-mono text-[9px] uppercase tracking-wide text-muted">⏱ {item.duration}</span>
+          <span className="rounded-full border border-border bg-panel px-2 py-0.5 font-mono text-[10.5px] uppercase tracking-wide text-muted">⏱ {item.duration}</span>
         )}
         {item.budget && item.budget !== 'unknown' && (
-          <span className={`rounded-full border px-2 py-0.5 font-mono text-[9px] uppercase tracking-wide ${
+          <span className={`rounded-full border px-2 py-0.5 font-mono text-[10.5px] uppercase tracking-wide ${
             item.budget === 'low' ? 'border-success/30 bg-success/10 text-success'
-            : item.budget === 'medium' ? 'border-amber-300 bg-amber-50 text-amber-700'
+            : item.budget === 'medium' ? 'border-warning/40 bg-warning/5 text-warning'
             : 'border-accent/30 bg-accent/10 text-accent'
           }`}>Budget: {item.budget}</span>
         )}
-        <span className="rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wide text-accent">Experiment</span>
+        <span className="rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 font-mono text-[10.5px] uppercase tracking-wide text-accent">Experiment</span>
       </div>
     </div>
   )
 }
 
+// Labels sit on the report's shared week axis (lib/timeline.js), matching
+// the Delivery Roadmap above them in the Roadmap tab.
 const COLUMNS = [
   {
     key: '7d',
-    label: 'Week 1 – 2',
+    label: `Next 7 days · ${ACTION_PLAN_WEEKS['7d']}`,
     heading: 'Validate now',
     dot: 'bg-accent',
     header: 'border-accent/40 bg-accent/8',
@@ -104,7 +107,7 @@ const COLUMNS = [
   },
   {
     key: '30d',
-    label: 'Month 1',
+    label: `Next 30 days · ${ACTION_PLAN_WEEKS['30d']}`,
     heading: 'Build traction',
     dot: 'bg-info',
     header: 'border-info/30 bg-info/8',
@@ -114,7 +117,7 @@ const COLUMNS = [
   },
   {
     key: '90d',
-    label: 'Month 2 – 3',
+    label: `Next 90 days · ${ACTION_PLAN_WEEKS['90d']}`,
     heading: 'Scale',
     dot: 'bg-success',
     header: 'border-success/30 bg-success/8',
@@ -161,7 +164,7 @@ export default function ExperimentsActionPlan({ experiments, actionPlan, error }
   if (items.length === 0 && !hasPlan) return <Unavailable error={error} />
 
   return (
-    <div className="grid grid-cols-3 gap-4">
+    <div className="grid gap-4 md:grid-cols-3">
       {COLUMNS.map((col) => {
         const exps = expByPhase[col.key] ?? []
         const pItems = planItems(col.key)
@@ -180,11 +183,11 @@ export default function ExperimentsActionPlan({ experiments, actionPlan, error }
                     {col.heading}
                   </span>
                 </div>
-                <span className={`rounded-full px-1.5 py-0.5 font-mono text-[9px] font-bold ${col.countStyle}`}>
+                <span className={`rounded-full px-1.5 py-0.5 font-mono text-[10.5px] font-bold ${col.countStyle}`}>
                   {totalCards}
                 </span>
               </div>
-              <p className="mt-0.5 pl-4 font-mono text-[9px] text-muted">{col.label}</p>
+              <p className="mt-0.5 pl-4 font-mono text-[10.5px] text-muted">{col.label}</p>
             </div>
 
             {/* Cards */}
@@ -196,14 +199,14 @@ export default function ExperimentsActionPlan({ experiments, actionPlan, error }
                   {exps.length > 0 && (
                     <div className="flex items-center gap-2 py-1">
                       <div className="h-px flex-1 bg-border" />
-                      <span className="font-mono text-[9px] uppercase tracking-widest text-muted">
+                      <span className="font-mono text-[10.5px] uppercase tracking-widest text-muted">
                         {title || 'Action items'}
                       </span>
                       <div className="h-px flex-1 bg-border" />
                     </div>
                   )}
                   {exps.length === 0 && title && (
-                    <p className="font-mono text-[9px] uppercase tracking-widest text-muted">{title}</p>
+                    <p className="font-mono text-[10.5px] uppercase tracking-widest text-muted">{title}</p>
                   )}
                   {pItems.map((entry, i) => (
                     <ActionCard key={`a-${i}`} text={typeof entry === 'string' ? entry : entry.text} index={i} />

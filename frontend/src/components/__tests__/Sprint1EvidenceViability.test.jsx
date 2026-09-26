@@ -49,7 +49,7 @@ describe('MarketViabilityIndex', () => {
     expect(screen.getByText('Target Accessibility')).toBeInTheDocument()
     expect(screen.getByText('Barrier to Entry / Moat')).toBeInTheDocument()
     expect(screen.getByText('Capital Efficiency')).toBeInTheDocument()
-    expect(screen.getByText('Viability Index')).toBeInTheDocument()
+    expect(screen.getByText(/^\d\.\d \/ 5$/)).toBeInTheDocument()
   })
 
   it('renders nothing when there is no index data', () => {
@@ -59,9 +59,9 @@ describe('MarketViabilityIndex', () => {
 })
 
 describe('MarketOpportunity with Pillar 1/2 additions', () => {
-  it('renders the voice-of-market section and viability index inline', () => {
+  it('renders the viability index inline; voice-of-market now lives in the Customers tab', () => {
     render(<MarketOpportunity data={mockMarketOpportunity} sourceMap={sourceMap} />)
-    expect(screen.getByText('Voice of the Market')).toBeInTheDocument()
+    expect(screen.queryByText('Voice of the Market')).not.toBeInTheDocument()
     expect(screen.getByText('Market Viability & Dynamics')).toBeInTheDocument()
   })
 

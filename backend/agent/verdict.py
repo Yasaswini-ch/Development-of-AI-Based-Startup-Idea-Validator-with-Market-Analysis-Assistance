@@ -130,6 +130,7 @@ def build_verdict(
         "label": _DECISION_LABELS[decision],
         "headline": _HEADLINES[decision],
         "score": score,
+        "scoreName": score_name,
         "reasons": reasons[:_MAX_REASONS],
         "nextStep": next_step,
     }

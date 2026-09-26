@@ -22,7 +22,7 @@ function ModelCard({ model, sourceMap }) {
             {model.name}
             {sourceMap && <Citation sourceIds={model.sourceIds} sourceMap={sourceMap} />}
           </h3>
-          <span className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wide ${style.badge}`}>
+          <span className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10.5px] font-bold uppercase tracking-wide ${style.badge}`}>
             {style.label}
           </span>
         </div>
@@ -45,7 +45,7 @@ function ModelCard({ model, sourceMap }) {
         {/* example companies */}
         {companies.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
-            <span className="font-mono text-[9px] uppercase tracking-widest text-muted">Used by:</span>
+            <span className="font-mono text-[10.5px] uppercase tracking-widest text-muted">Used by:</span>
             {companies.map((name, i) => (
               <span key={i} className="rounded border border-border bg-panel px-2 py-0.5 font-mono text-[10px] text-text">
                 {name}
@@ -56,9 +56,9 @@ function ModelCard({ model, sourceMap }) {
 
         {/* tradeoffs */}
         {model.tradeoffs && (
-          <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
-            <span className="mt-0.5 shrink-0 text-[11px] text-amber-500">⚠</span>
-            <p className="text-xs leading-relaxed text-amber-800">
+          <div className="mt-3 flex items-start gap-2 rounded-lg border border-warning/25 bg-warning/5 px-3 py-2.5">
+            <span className="mt-0.5 shrink-0 text-[11px] text-warning-bright">⚠</span>
+            <p className="text-xs leading-relaxed text-warning">
               <span className="font-semibold">Watch out:</span> {model.tradeoffs}
             </p>
           </div>

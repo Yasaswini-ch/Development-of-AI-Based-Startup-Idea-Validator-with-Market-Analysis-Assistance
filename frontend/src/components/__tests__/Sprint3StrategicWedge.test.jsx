@@ -21,17 +21,10 @@ const blueprints = [
 ]
 
 describe('StrategicWedgeSection', () => {
-  it('renders the opportunity title and conviction badge collapsed', () => {
+  it('opens the first card by default with all 5 vectors and the key risk', () => {
     render(<StrategicWedgeSection blueprints={blueprints} />)
     expect(screen.getByText('A focused wedge for Freelance collectives')).toBeInTheDocument()
     expect(screen.getByText('80% conviction')).toBeInTheDocument()
-    expect(screen.queryByText(/reconciling multi-client payouts/)).not.toBeInTheDocument()
-  })
-
-  it('expands to show all 5 vectors and the key risk on click', async () => {
-    const user = userEvent.setup()
-    render(<StrategicWedgeSection blueprints={blueprints} />)
-    await user.click(screen.getByRole('button', { name: /focused wedge for Freelance collectives/ }))
 
     expect(screen.getByText('Observed Friction')).toBeInTheDocument()
     expect(screen.getByText('Incumbent Blindspot')).toBeInTheDocument()
@@ -39,6 +32,16 @@ describe('StrategicWedgeSection', () => {
     expect(screen.getByText('Asymmetric Wedge')).toBeInTheDocument()
     expect(screen.getByText('Defensibility Moat')).toBeInTheDocument()
     expect(screen.getByText(/Execution speed, not the wedge itself/)).toBeInTheDocument()
+  })
+
+  it('keeps later cards collapsed to the wedge and key risk until clicked', async () => {
+    const user = userEvent.setup()
+    const second = { ...blueprints[0], segment: 'Solo agencies', opportunityTitle: 'A focused wedge for Solo agencies' }
+    render(<StrategicWedgeSection blueprints={[blueprints[0], second]} />)
+    expect(screen.getAllByText(/reconciling multi-client payouts/)).toHaveLength(1)
+    expect(screen.getAllByText(/Lead with what this segment already wants/)).toHaveLength(2)
+    await user.click(screen.getByRole('button', { name: /Solo agencies/ }))
+    expect(screen.getAllByText(/reconciling multi-client payouts/)).toHaveLength(2)
   })
 
   it('renders nothing when there are no blueprints', () => {
