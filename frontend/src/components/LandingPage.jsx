@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import useTypewriter from '../hooks/useTypewriter'
 import useCountUp from '../hooks/useCountUp'
 import ConfidenceGauge from './ConfidenceGauge'
+import GoogleSignInButton from './GoogleSignInButton'
 import {
   IconLightbulb,
   IconGlobe,
@@ -77,9 +79,29 @@ const FEATURES = [
   },
 ]
 
-export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut }) {
+export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut, apiUrl, onAuthenticated }) {
   const { text, settled } = useTypewriter(EXAMPLE_IDEAS)
   const confidence = useCountUp(settled ? 84 : 0, 900)
+  const [googleError, setGoogleError] = useState('')
+
+  async function handleGoogleCredential(idToken) {
+    setGoogleError('')
+    try {
+      const res = await fetch(`${apiUrl}/auth/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setGoogleError(data.error || 'Google sign-in failed. Please try again.')
+        return
+      }
+      onAuthenticated(data)
+    } catch {
+      setGoogleError('Could not reach the server. Please try again.')
+    }
+  }
 
   return (
     <div className="min-h-screen bg-surface">
@@ -139,6 +161,14 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut 
                 </button>
               )}
             </div>
+            {!currentUser && apiUrl && onAuthenticated && (
+              <div className="mt-1">
+                <GoogleSignInButton onCredential={handleGoogleCredential} onError={setGoogleError} />
+                {googleError && (
+                  <p className="mt-2 max-w-xs text-center text-[11px] text-danger">{googleError}</p>
+                )}
+              </div>
+            )}
             <p className="font-mono text-[11px] uppercase tracking-widest text-muted">
               {currentUser ? 'Signed in · Your validations are saved to your account' : 'No signup required to try · Sign in to save your history'}
             </p>

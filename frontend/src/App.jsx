@@ -414,6 +414,8 @@ export default function App() {
           setView('account')
         }}
         onSignOut={handleSignOut}
+        apiUrl={API_URL}
+        onAuthenticated={handleAuthenticated}
       />
     )
   }
@@ -433,6 +435,8 @@ export default function App() {
           setView('account')
         }}
         onSignOut={handleSignOut}
+        apiUrl={API_URL}
+        onAuthenticated={handleAuthenticated}
       />
     )
   }
