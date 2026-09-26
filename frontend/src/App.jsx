@@ -64,6 +64,7 @@ function adaptReportToValidation(report) {
     actionPlan: report.actionPlan,
     assumptions: report.assumptions,
     revenueModels: report.revenueModels,
+    verdict: report.verdict,
     sessionId: report.sessionId,
     errors: report.sectionErrors || {},
   }
@@ -564,6 +565,7 @@ export default function App() {
               actionPlan={validation.actionPlan}
               assumptions={validation.assumptions}
               revenueModels={validation.revenueModels}
+              verdict={validation.verdict}
               sessionId={validation.sessionId}
               apiUrl={API_URL}
               errors={validation.errors}

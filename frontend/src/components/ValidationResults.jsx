@@ -19,6 +19,7 @@ import StatsStrip from './StatsStrip'
 import AssumptionTracker from './AssumptionTracker'
 import BearCase from './BearCase'
 import RevenueModels from './RevenueModels'
+import VerdictCard from './VerdictCard'
 
 const INITIAL_VISIBLE = 3
 const RESEARCH_ANGLES = [
@@ -274,6 +275,7 @@ export default function ValidationResults({
   actionPlan,
   assumptions,
   revenueModels,
+  verdict,
   sessionId,
   apiUrl,
   errors,
@@ -338,6 +340,8 @@ export default function ValidationResults({
           </div>
         )}
       </div>
+
+      <VerdictCard data={verdict} />
 
       <div>
         <ConfidenceDashboard data={confidence} />
