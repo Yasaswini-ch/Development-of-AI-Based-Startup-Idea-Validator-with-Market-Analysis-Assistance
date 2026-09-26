@@ -2,6 +2,9 @@ import { IconTrendingUp, IconUsers, IconAlertTriangle } from './icons'
 import useCountUp from '../hooks/useCountUp'
 import DegradedBanner from './DegradedBanner'
 import Citation from './Citation'
+import ProvenanceBadge from './ProvenanceBadge'
+import VoiceOfMarketSection from './VoiceOfMarketCard'
+import MarketViabilityIndex from './MarketViabilityIndex'
 
 // Segment fields (painPoints/motivations/buyingBehavior) are single prose
 // strings from the backend, not arrays - splitting on sentence boundaries
@@ -137,7 +140,18 @@ export default function MarketOpportunity({ data, error, sourceMap }) {
     return <UnavailableCard error={error} />
   }
 
-  const { marketSize, trends = [], segments = [], opportunityScore = 0, degraded, tam, sam, som } = data
+  const {
+    marketSize,
+    trends = [],
+    segments = [],
+    opportunityScore = 0,
+    degraded,
+    tam,
+    sam,
+    som,
+    voiceOfMarket = [],
+    viabilityIndex,
+  } = data
   if (!marketSize && trends.length === 0 && segments.length === 0) {
     return <UnavailableCard error="No market data could be extracted from the available sources." />
   }
@@ -147,7 +161,10 @@ export default function MarketOpportunity({ data, error, sourceMap }) {
       {degraded && <DegradedBanner />}
       {marketSize && (
         <div>
-          <p className="text-sm text-text leading-relaxed">{marketSize}</p>
+          <div className="flex items-start gap-2">
+            <p className="text-sm text-text leading-relaxed">{marketSize}</p>
+            <ProvenanceBadge sourceIds={[...(tam?.sourceIds || []), ...(sam?.sourceIds || []), ...(som?.sourceIds || [])]} />
+          </div>
           <MarketSizeTiers tam={tam} sam={sam} som={som} sourceMap={sourceMap} />
           {/* A score of 0 means the underlying analysis produced no grounded
               data at all (see backend/agent/opportunity_score.py) - showing
@@ -199,6 +216,9 @@ export default function MarketOpportunity({ data, error, sourceMap }) {
           </div>
         </div>
       )}
+
+      <VoiceOfMarketSection quotes={voiceOfMarket} />
+      <MarketViabilityIndex data={viabilityIndex} sourceMap={sourceMap} />
     </div>
   )
 }
