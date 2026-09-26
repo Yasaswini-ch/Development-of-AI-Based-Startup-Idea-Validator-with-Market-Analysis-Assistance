@@ -14,7 +14,7 @@ import main
 from agent import retrieval
 from agent.chat_graph import interpret_node, run_chat_turn
 from agent.chat_graph import ChatRateLimitError
-from agent.graph import confidence_dashboard_node, gtm_node, mvp_node, swot_node
+from agent.graph import confidence_dashboard_node, confidence_node, gtm_node, mvp_node, swot_node
 from agent.graph import pipeline
 from agent.gtm_agent import analyze_gtm
 from agent.mvp_agent import analyze_mvp
@@ -265,6 +265,96 @@ class MilestoneThreeTests(unittest.TestCase):
         state = {"error": "search failed", "confidence": None}
         result = confidence_dashboard_node(state)
         self.assertIsNone(result["confidence"])
+
+    def test_confidence_dashboard_recomputes_overall_percentage_from_cited_sources_not_the_raw_pool(self):
+        # Regression coverage for a reported bug: confidence_node (runs
+        # before any claims exist) computes "Overall confidence" over the
+        # *entire* raw search pool, which is deliberately broad (multiple
+        # search angles, several of which are meant to add breadth rather
+        # than tightly match the idea) - so it reads as a near-permanently
+        # low, unmoving number on every idea regardless of how well-
+        # evidenced the actual analysis is. Once claims exist,
+        # confidence_dashboard_node must overwrite that headline number
+        # with one computed only over the sources the analysis actually
+        # cited - the same population sourceCoverage/averageRelevance use.
+        results = [
+            {"title": "Cited and strong", "url": "https://a", "score": 0.9},
+            {"title": "Cited and weak", "url": "https://b", "score": 0.3},
+        ] + [
+            # A wide, mostly-irrelevant raw pool (breadth-angle filler) that
+            # nothing ever cites - this is what was dragging the old
+            # raw-pool percentage down to near zero on every idea.
+            {"title": f"Uncited filler {i}", "url": f"https://filler-{i}", "score": 0.1}
+            for i in range(18)
+        ]
+
+        early = confidence_node({"results": results, "errors": {}})
+        # Only 1 of 20 raw results clears the 0.5 bar - this is the exact
+        # "always reads low" symptom the fix addresses.
+        self.assertEqual(early["confidence"]["percentage"], 5)
+
+        state = {
+            **early,
+            "swot": {
+                "strengths": [{"text": "Real strength", "sourceIds": ["src-1"]}],
+                "weaknesses": [],
+                "opportunities": [],
+                "threats": [],
+                "risks": [],
+            },
+            "mvp": None,
+            "gtm": None,
+        }
+        final = confidence_dashboard_node(state)["confidence"]
+
+        # Only src-1 (score 0.9) is cited - 1/1 cited sources agree, a
+        # meaningfully different (and honest) number from the diluted
+        # raw-pool 10% above, not just a cosmetic tweak.
+        self.assertEqual(final["agreeingSources"], 1)
+        self.assertEqual(final["totalSources"], 1)
+        self.assertEqual(final["percentage"], 100)
+        self.assertEqual(final["label"], "1/1 sources agree")
+
+    def test_confidence_dashboard_overall_percentage_reflects_weak_cited_sources_too(self):
+        # The fix isn't "always show a higher number" - a claim citing only
+        # weak sources must still show a low percentage, just computed over
+        # the right population.
+        state = {
+            "results": [{"title": "Weak", "url": "https://a", "score": 0.2}],
+            "swot": {
+                "strengths": [{"text": "Weakly supported", "sourceIds": ["src-1"]}],
+                "weaknesses": [],
+                "opportunities": [],
+                "threats": [],
+                "risks": [],
+            },
+            "mvp": None,
+            "gtm": None,
+            "errors": {},
+        }
+        final = confidence_dashboard_node(state)["confidence"]
+        self.assertEqual(final["agreeingSources"], 0)
+        self.assertEqual(final["totalSources"], 1)
+        self.assertEqual(final["percentage"], 0)
+
+    def test_confidence_dashboard_labels_no_citations_honestly_rather_than_a_bare_0_0(self):
+        state = {
+            "results": [{"title": "A", "url": "https://a", "score": 0.9}],
+            "swot": {
+                "strengths": [{"text": "Uncited claim", "sourceIds": []}],
+                "weaknesses": [],
+                "opportunities": [],
+                "threats": [],
+                "risks": [],
+            },
+            "mvp": None,
+            "gtm": None,
+            "errors": {},
+        }
+        final = confidence_dashboard_node(state)["confidence"]
+        self.assertEqual(final["totalSources"], 0)
+        self.assertEqual(final["percentage"], 0)
+        self.assertEqual(final["label"], "No cited sources yet")
 
     def test_session_and_chat_history(self):
         session_id = create_session({"idea": "Idea"})
