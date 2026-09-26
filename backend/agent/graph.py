@@ -19,7 +19,8 @@ from .revenue_agent import analyze_revenue_models
 from .opportunity_score import calculate_opportunity_score
 from .structured_output import compact_sources
 from .swot_agent import analyze_swot
-from .viability_score import calculate_market_viability
+from .viability_score import calculate_market_viability, calculate_viability_index
+from .voice_of_market import extract_voice_of_market
 from .white_space import analyze_white_space
 
 logger = logging.getLogger(__name__)
@@ -369,6 +370,15 @@ def market_opportunity_node(state: PipelineState) -> PipelineState:
             allow_local=state.get("allowLocalLlm", False),
         )
 
+        # Pillar 1: verbatim excerpts copied from the search snippets (no
+        # LLM call - see voice_of_market.py), attached here so they sit on
+        # the deterministic fallback result too, not only the LLM one.
+        if isinstance(market_opportunity, dict):
+            market_opportunity = {
+                **market_opportunity,
+                "voiceOfMarket": extract_voice_of_market(results),
+            }
+
         logger.info("[market_opportunity] COMPLETE")
         metrics.increment("node.market_opportunity.success")
 
@@ -630,9 +640,27 @@ def viability_score_node(state: PipelineState) -> PipelineState:
             "errors": {**state.get("errors", {}), "marketViability": _friendly_error_message(exc)},
         }
 
+    # Pillar 2: the 5-axis dynamics index lives on marketOpportunity (its
+    # spec'd home), computed here rather than in market_agent.py because
+    # two of its axes need swot/competitors, which only exist by now. Its
+    # own try/except so a bug in the index can't take the headline score
+    # (already computed above) down with it.
+    try:
+        index = calculate_viability_index(
+            market_opportunity,
+            state.get("swot"),
+            state.get("competitors"),
+            state.get("results", []),
+            state.get("idea", ""),
+        )
+        market_opportunity = {**market_opportunity, "viabilityIndex": index}
+    except Exception as exc:
+        logger.exception("[viability_score] viability index FAILED")
+        _record_node_failure("viability_index", exc)
+
     logger.info("[viability_score] COMPLETE - score=%s", value["score"])
     metrics.increment("node.viability_score.success")
-    return {**state, "marketViability": value}
+    return {**state, "marketViability": value, "marketOpportunity": market_opportunity}
 
 
 # mvp_node and gtm_node run as parallel branches off viability_score (see
