@@ -25,7 +25,11 @@ The Affinity API provides REST endpoints for automated startup validation.
 
 ## 2. CORS & Security Policy
 
-- **Authentication:** Public endpoints (`/validate` does not require an API key).
+- **Authentication:** `/validate` does not require an API key; an optional bearer token
+  saves the run to an account. Accounts use `POST /auth/signup`, `POST /auth/login`, or
+  `POST /auth/google` (Google ID token in, same `{ token, user }` out). See
+  [doc 19 §4](19_AFFINITY_MILESTONE_3_POSTGRESQL_AUTH_AND_DATA_PERSISTENCE.md#4-authentication--access-control)
+  and [doc 23 §8](23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOOGLE_SSO.md#8-platform-layer-google-sign-in).
 - **CORS Allowed Origins:** Managed via `FRONTEND_ORIGIN` env variable (defaults to `http://localhost:5173`).
 - **Methods Allowed:** `GET`, `POST`, `OPTIONS`.
 
@@ -75,6 +79,15 @@ Health probe endpoint.
 ```
 
 #### Success Response `200 OK`
+
+> **Five-pillar additions (2026-09-26).** The interface below predates the Sprint 1–4
+> work on `staging`. Responses now also carry `marketOpportunity.voiceOfMarket`,
+> `marketOpportunity.viabilityIndex`, `whiteSpace.blueprints`, `mvp.deliveryRoadmap`,
+> `gtm.commercialModel`, and (deep mode) competitor profile fields plus
+> `competitors.comparisonMatrix` / `profiled`. All are optional and additive. Full
+> schemas: [doc 23 §9](23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOOGLE_SSO.md#9-where-each-field-lives-in-the-response) and
+> [`architecture.md` §4](architecture.md#4-api-contract).
+
 ```json
 {
   "summary": "Found 12 relevant sources for \"AI-powered invoice management\", covering Market size & trends, Competitors, Industry news.",

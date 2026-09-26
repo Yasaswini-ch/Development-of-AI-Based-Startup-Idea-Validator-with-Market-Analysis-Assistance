@@ -1,6 +1,6 @@
 # 19. Milestone 4: PostgreSQL Persistence, Accounts & Admin Access
 
-**Document Version:** 5.0 (updated 2026-09-26 against the `staging` branch)
+**Document Version:** 5.1 (updated 2026-09-26 against `staging` after Sprint 4: Google sign-in)
 **Status:** Implemented & Verified
 **Target Audience:** Backend Engineers, Operators, Examiners
 
@@ -30,7 +30,8 @@ work added user accounts and an operational event log on top of it:
 - **SQLite locally and in tests.** When `DATABASE_URL` is unset, the backend uses a
   local `./affinity.db` file, so the test suite never needs a live database.
 - **Stateless JWT authentication** (`backend/agent/auth.py`) with email + password
-  accounts. Signing in is **optional**: anonymous users can still validate ideas.
+  accounts, plus optional **Sign in with Google** (`backend/agent/google_auth.py`).
+  Signing in is **optional**: anonymous users can still validate ideas.
 - **One admin flag** (`users.is_admin`) that gates the Platform Health dashboard.
 - **No migration tool.** `metadata.create_all()` creates missing tables, and a small
   hand-written helper (`_migrate_missing_columns`) adds the few columns that were
@@ -54,9 +55,11 @@ erDiagram
     USERS {
         string id PK
         string email UK
-        string password_hash
+        string password_hash "nullable (Google-only accounts)"
         float created_at
         bool is_admin
+        string auth_provider "local | google"
+        string avatar_url "nullable"
     }
     SESSIONS {
         string id PK
@@ -92,7 +95,9 @@ erDiagram
 
 - **`users`**: one row per account. Email is unique and stored lowercased. Passwords
   are bcrypt-hashed. `is_admin` defaults to false and cannot be set through any
-  public endpoint (see §4.3).
+  public endpoint (see §4.3). `auth_provider` is `local` or `google`, `avatar_url` is set
+  only from a verified Google token, and `password_hash` is `NULL` for an account that
+  has only ever signed in with Google (§4.4).
 - **`sessions`**: one row per validation run. `context` holds the full pipeline output
   (idea, results, marketOpportunity, competitors, swot, mvp, gtm, marketViability,
   verdict, ...). `history` holds the chat advisor transcript. `decisions` holds the
@@ -138,7 +143,8 @@ a serialized string on SQLite, so calling code never special-cases the backend.
   it falls back to a fixed dev-only key.
 - Tokens are stateless, so there is no server-side "log out everywhere" or revocation
   list. Signing out only clears the token from the browser.
-- Both auth endpoints are rate-limited per IP (`AUTH_RATE_LIMIT_PER_MINUTE`).
+- All three auth endpoints (`/auth/signup`, `/auth/login`, `/auth/google`) share one
+  per-IP rate limit (`AUTH_RATE_LIMIT_PER_MINUTE`, default 8).
 
 ### 4.2 Which endpoints use auth
 
@@ -173,6 +179,26 @@ one of two ways:
 revoking admin takes effect immediately. The frontend calls `GET /auth/me` right after
 sign-in so the **Platform health** menu item appears without a page reload.
 
+### 4.4 Sign in with Google
+
+`POST /auth/google {"idToken"}` verifies a Google ID token (signature and audience
+against `GOOGLE_OAUTH_CLIENT_ID`, verified email required) and returns the same
+`{token, user}` shape, with `user` also carrying `authProvider` and `avatarUrl`.
+
+- Accounts are matched **by email**. A new email creates a passwordless account. An
+  existing email/password account with the same email is reused and marked
+  `auth_provider = "google"`; its password keeps working.
+- A Google-only account can't use the password form (no hash to check, so it gets
+  "Incorrect email or password.") and can't sign up to add one ("already exists").
+- Unset `GOOGLE_OAUTH_CLIENT_ID` → the endpoint returns 401 "not configured"; unset
+  `VITE_GOOGLE_CLIENT_ID` → the frontend button doesn't render.
+- Migration: `_migrate_missing_columns` adds `auth_provider` and `avatar_url` on startup.
+  On Postgres it also drops `NOT NULL` from `password_hash`; an existing SQLite file
+  cannot be altered that way and must be recreated before a Google-only sign-in works.
+
+Full flow and configuration:
+[doc 23 §8](23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOOGLE_SSO.md#8-platform-layer-google-sign-in).
+
 ## 5. Persistence Safety Checks
 
 - `GET /health` returns `"database": "postgresql"` or `"sqlite"` (never the URL). On a
@@ -195,7 +221,12 @@ connection limit.
 
 - **No team workspaces or RBAC.** One account = one person's own board. The only role
   is the single `is_admin` flag.
-- **No password reset and no email verification.** Both are listed as future work.
+- **No password reset and no email verification** for email/password accounts. Both
+  are listed as future work. (Google accounts are verified by Google.)
+- **No account linking beyond "same email".** Google and password sign-in for one email
+  share one row; there is no way to unlink, or to add a password to a Google-only account.
+- **Google is the only external identity provider.** GitHub SSO from the original
+  roadmap (doc 17) was not built.
 - **No token revocation.** A stolen token is valid until it expires (30 days) or
   `AUTH_SECRET_KEY` is rotated (which signs everyone out).
 - **No migration tooling.** Schema changes are handled by `create_all()` plus the
@@ -207,6 +238,10 @@ connection limit.
 SQLite backs the test suite, so these tests exercise the layer directly:
 
 - `test_auth.py`: signup/login/me/history, and `is_admin` self-promotion via `ADMIN_EMAILS`.
+- `test_sprint4_google_auth.py`: Google sign-in with the verifier mocked (new account,
+  reuse of an existing local account, password login still working after that, a
+  Google-only account refused by the password form, safe 401 messages, and 422 for a
+  missing `idToken`).
 - `test_admin_bootstrap.py`: startup promotion, case/whitespace handling, no-op cases.
 - `test_db_persistence.py`: URL handling, `REQUIRE_PERSISTENT_DB`, the Render warning,
   and the `/health` database field.

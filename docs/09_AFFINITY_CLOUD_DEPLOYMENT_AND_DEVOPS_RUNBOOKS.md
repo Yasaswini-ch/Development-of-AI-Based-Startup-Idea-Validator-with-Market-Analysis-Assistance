@@ -99,7 +99,9 @@ services:
 | `ADMIN_EMAILS` | Backend | Optional | Comma-separated emails promoted to admin (Platform Health access). Set by hand in the dashboard |
 | `REQUIRE_PERSISTENT_DB` | Backend | Optional | `1` makes startup fail instead of falling back to SQLite |
 | `SENDGRID_API_KEY` / `SENDGRID_FROM_EMAIL` | Backend | Optional | Report email delivery |
+| `GOOGLE_OAUTH_CLIENT_ID` | Backend | Optional | Google OAuth web client ID for `POST /auth/google`. Unset → that endpoint returns 401 "not configured" |
 | `VITE_API_URL` | Frontend | **Yes** | Production backend API target URL |
+| `VITE_GOOGLE_CLIENT_ID` | Frontend | Optional | Same value as `GOOGLE_OAUTH_CLIENT_ID`. Unset → no Google button. Build-time: needs a frontend redeploy |
 
 > [!CAUTION]
 > **API Key Safety:** `GROQ_API_KEY` and `TAVILY_API_KEY` must **never** be committed to Git. They are configured securely via the Render Dashboard environment settings.
@@ -144,6 +146,19 @@ services:
   The account is promoted at startup or on its next admin check, so the order of
   sign-up and setting the variable doesn't matter.
 - **Then:** sign out and back in so the frontend refreshes `GET /auth/me` → `isAdmin`.
+
+### Playbook 6: Google Sign-In Missing or Failing
+- **No button on the account page:** `VITE_GOOGLE_CLIENT_ID` is unset on the frontend, or
+  was set after the last build. Set it and redeploy the frontend.
+- **Popup says the origin is not allowed:** add the exact frontend URL to the OAuth
+  client's Authorized JavaScript origins in Google Cloud Console.
+- **"Google sign-in is not configured on this server.":** `GOOGLE_OAUTH_CLIENT_ID` is
+  missing on the backend.
+- **"Google sign-in could not be verified.":** the two variables hold different client
+  IDs, or the token expired. Confirm both match.
+- **Error on first Google sign-in against a local SQLite file:** an older `affinity.db`
+  still has `password_hash NOT NULL`. Delete the file so it is recreated (SQLite is
+  scratch storage). Postgres is migrated automatically. See doc 23 §8.3.
 
 ---
 

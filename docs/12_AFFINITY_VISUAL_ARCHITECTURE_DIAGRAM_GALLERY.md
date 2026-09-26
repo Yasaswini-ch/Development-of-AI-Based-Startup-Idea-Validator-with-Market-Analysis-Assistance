@@ -272,6 +272,8 @@ flowchart LR
 ```mermaid
 flowchart TD
     Visitor["Visitor"] -->|optional| SignIn["POST /auth/signup or /auth/login\n(bcrypt + 30-day JWT)"]
+    Visitor -->|optional| Google["POST /auth/google\n(Google ID token, verified server-side)"]
+    Google --> Me
     Visitor -->|anonymous| Validate["POST /validate"]
     SignIn --> Me["GET /auth/me\n{ id, email, isAdmin }"]
     Me --> Menu["AccountMenu dropdown"]
