@@ -38,6 +38,7 @@ from agent import events, metrics
 from agent.auth import (
     AuthError,
     is_admin,
+    account_profile,
     login as auth_login,
     login_with_google as auth_login_with_google,
     optional_user,
@@ -557,7 +558,11 @@ def auth_google_route(payload: GoogleAuthRequest, request: Request):
 
 @app.get("/auth/me")
 def auth_me(current_user: dict = Depends(require_user)):
-    return {**current_user, "isAdmin": is_admin(current_user["id"])}
+    return {
+        **current_user,
+        "isAdmin": is_admin(current_user["id"]),
+        **account_profile(current_user["id"]),
+    }
 
 
 @app.get("/me/history")

@@ -18,6 +18,11 @@
   --color-info-hover: #256356;
   --color-success: #5c8a6b;
   --color-danger: #8c3a2e;
+  /* Caution states: inferred claims, medium risk, grounding notices. Text
+     uses --color-warning (readable on surface/panel); dots, bars and icons
+     use the brighter --color-warning-bright. */
+  --color-warning: #94600f;
+  --color-warning-bright: #d49a32;
 }
 
 body {

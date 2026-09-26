@@ -5,7 +5,7 @@ const _GENERIC_EVIDENCE = 'Grounded in the retrieved market sources.'
 
 const TIER = [
   { label: 'High opportunity', style: 'bg-success/10 text-success border-success/40', bar: 'bg-success', width: 'w-full' },
-  { label: 'Mid opportunity',  style: 'bg-accent/10 text-accent border-accent/30',   bar: 'bg-accent',  width: 'w-2/3'  },
+  { label: 'Mid opportunity',  style: 'bg-info/10 text-info border-info/30',         bar: 'bg-info',    width: 'w-2/3'  },
   { label: 'Watch',            style: 'bg-border text-muted-strong border-border',    bar: 'bg-border',  width: 'w-1/3'  },
 ]
 
@@ -60,7 +60,7 @@ export default function WhiteSpaceAnalysis({ data }) {
                     {item.title}
                   </h4>
                 </div>
-                <span className={`shrink-0 rounded-full border px-2.5 py-1 font-mono text-[9px] uppercase tracking-wide ${tier.style}`}>
+                <span className={`shrink-0 rounded-full border px-2.5 py-1 font-mono text-[10.5px] uppercase tracking-wide ${tier.style}`}>
                   {tier.label}
                 </span>
               </div>

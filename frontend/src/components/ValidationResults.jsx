@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import useCountUp from '../hooks/useCountUp'
 import { IconTrendingUp, IconUsers, IconShield, IconNewspaper, IconGlobe, IconDownload, IconLink } from './icons'
-import ConfidenceGauge from './ConfidenceGauge'
 import MarketOpportunity from './MarketOpportunity'
 import CompetitorAnalysis from './CompetitorAnalysis'
 import WhiteSpaceAnalysis from './WhiteSpaceAnalysis'
@@ -20,6 +19,8 @@ import AssumptionTracker from './AssumptionTracker'
 import BearCase from './BearCase'
 import RevenueModels from './RevenueModels'
 import VerdictCard from './VerdictCard'
+import VoiceOfMarketSection from './VoiceOfMarketCard'
+import MvpDeliveryRoadmap from './MvpDeliveryRoadmap'
 
 const INITIAL_VISIBLE = 3
 const RESEARCH_ANGLES = [
@@ -217,9 +218,9 @@ function SectionNav({ sections }) {
 
 function GroundingNotice({ message }) {
   return (
-    <div className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
-      <span className="mt-0.5 shrink-0 text-amber-500">⚠</span>
-      <p className="text-sm leading-relaxed text-amber-800">{message}</p>
+    <div className="flex items-start gap-3 rounded-xl border border-warning/40 bg-warning/5 px-4 py-3">
+      <span className="mt-0.5 shrink-0 text-warning-bright">⚠</span>
+      <p className="text-sm leading-relaxed text-warning">{message}</p>
     </div>
   )
 }
@@ -307,13 +308,8 @@ export default function ValidationResults({
       {/* Idea dossier — shows back what was submitted so founders can verify interpretation */}
       <IdeaDossier idea={idea} targetCustomer={targetCustomer} problem={problem} />
 
-      {/* KPI strip — at-a-glance numbers before the full report */}
-      <StatsStrip
-        results={results}
-        competitors={competitors}
-        whiteSpace={whiteSpace}
-        marketOpportunity={marketOpportunity}
-      />
+      {/* The decision first: verdict + the report's one headline score */}
+      <VerdictCard data={verdict} />
 
       <div className="flex flex-wrap items-center gap-6 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
         <div className="min-w-0 flex-1">
@@ -341,7 +337,13 @@ export default function ValidationResults({
         )}
       </div>
 
-      <VerdictCard data={verdict} />
+      {/* KPI strip — counts only; the headline score lives on the verdict */}
+      <StatsStrip
+        results={results}
+        competitors={competitors}
+        whiteSpace={whiteSpace}
+        marketOpportunity={marketOpportunity}
+      />
 
       <div>
         <ConfidenceDashboard data={confidence} />
@@ -404,7 +406,12 @@ export default function ValidationResults({
 
         {activeTab === 'market' && (
           <div className="space-y-8">
-            <SectionNav sections={[{ id: 'sec-market', label: 'Market signal' }, { id: 'sec-competitors', label: 'Competitive field' }]} />
+            <SectionNav sections={[
+              { id: 'sec-market', label: 'Market signal' },
+              ...(marketOpportunity?.viabilityIndex?.dimensions?.length > 0 ? [{ id: 'sec-dynamics', label: 'Viability breakdown' }] : []),
+              { id: 'sec-competitors', label: 'Competitive field' },
+              ...(competitors?.comparisonMatrix?.length > 0 ? [{ id: 'sec-compare', label: 'How you compare' }] : []),
+            ]} />
             <div id="sec-market" className="scroll-mt-16 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
               <SectionDivider label="Market signal" />
               <MarketOpportunity data={marketOpportunity} error={errors?.marketOpportunity} sourceMap={sourceMap} />
@@ -423,13 +430,18 @@ export default function ValidationResults({
             )}
             <div className="rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
               {segments.length > 0 ? (
-                <CustomerPersonas segments={segments} />
+                <CustomerPersonas segments={segments} sourceMap={sourceMap} />
               ) : (
                 <p className="rounded-xl border border-dashed border-border bg-surface p-6 text-center text-sm text-muted">
                   Customer segments were not produced for this run.
                 </p>
               )}
             </div>
+            {marketOpportunity?.voiceOfMarket?.length > 0 && (
+              <div className="rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
+                <VoiceOfMarketSection quotes={marketOpportunity.voiceOfMarket} sourceMap={sourceMap} />
+              </div>
+            )}
           </div>
         )}
 
@@ -469,7 +481,15 @@ export default function ValidationResults({
             ]} />
             <div id="sec-mvp" className="scroll-mt-16 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
               <SectionDivider label="MVP blueprint" />
-              <MvpRecommendations data={mvp} error={errors?.mvp} sourceMap={sourceMap} />
+              <MvpRecommendations
+                data={mvp}
+                error={errors?.mvp}
+                sourceMap={sourceMap}
+                onOpenRoadmap={() => {
+                  setActiveTab('experiments')
+                  window.scrollTo?.({ top: 0, behavior: 'smooth' })
+                }}
+              />
             </div>
             <div id="sec-revenue" className="scroll-mt-16 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
               <SectionDivider label="Revenue models" />
@@ -477,19 +497,33 @@ export default function ValidationResults({
             </div>
             <div id="sec-gtm" className="scroll-mt-16 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
               <SectionDivider label="Go-to-market playbook" />
-              <GtmStrategy data={gtm} error={errors?.gtm} sourceMap={sourceMap} />
+              <GtmStrategy data={gtm} error={errors?.gtm} sourceMap={sourceMap} roadmap={mvp?.deliveryRoadmap} />
             </div>
           </div>
         )}
 
         {activeTab === 'experiments' && (
-          <div className="rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
-            <SectionDivider label="Experiments & roadmap" />
-            <ExperimentsActionPlan
-              experiments={experiments}
-              actionPlan={actionPlan}
-              error={errors?.experiments}
-            />
+          <div className="space-y-8">
+            {mvp?.deliveryRoadmap?.phases?.length > 0 && (
+              <SectionNav sections={[
+                { id: 'sec-timeline', label: 'Build timeline' },
+                { id: 'sec-experiments', label: 'Validation plan' },
+              ]} />
+            )}
+            {mvp?.deliveryRoadmap?.phases?.length > 0 && (
+              <div id="sec-timeline" className="scroll-mt-16 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
+                <SectionDivider label="Build timeline" />
+                <MvpDeliveryRoadmap data={mvp.deliveryRoadmap} />
+              </div>
+            )}
+            <div id="sec-experiments" className="scroll-mt-16 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
+              <SectionDivider label="Experiments & validation plan" />
+              <ExperimentsActionPlan
+                experiments={experiments}
+                actionPlan={actionPlan}
+                error={errors?.experiments}
+              />
+            </div>
           </div>
         )}
       </div>

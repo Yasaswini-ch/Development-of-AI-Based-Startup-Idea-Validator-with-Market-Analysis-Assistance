@@ -1,8 +1,10 @@
-// Dedicated panel for the customer segments already produced by the market
-// agent. MarketOpportunity.jsx also renders SegmentCards inline, but they
-// get buried under market-size numbers. This panel surfaces them at the top
-// level as the primary customer-persona view, matching the output depth
-// founders actually need to validate who they're building for.
+import Citation from './Citation'
+import ProvenanceBadge from './ProvenanceBadge'
+
+// The one place customer segments are shown (the Market & Rivals tab used to
+// repeat them as SegmentCards under the market-size numbers). Each persona
+// carries its own citation and Grounded/Inferred badge, since this is now
+// the only view of the segment claims.
 
 function toBullets(text) {
   if (!text) return []
@@ -27,8 +29,8 @@ function BulletList({ items }) {
   )
 }
 
-function PersonaCard({ segment, index }) {
-  const { segment: name, painPoints, motivations, buyingBehavior } = segment
+function PersonaCard({ segment, index, sourceMap }) {
+  const { segment: name, painPoints, motivations, buyingBehavior, sourceIds } = segment
 
   return (
     <div className="rounded-2xl border border-border-strong bg-panel p-6">
@@ -36,7 +38,11 @@ function PersonaCard({ segment, index }) {
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/10 font-mono text-xs font-semibold text-accent">
           {String(index + 1).padStart(2, '0')}
         </span>
-        <h4 className="font-serif text-base font-semibold text-text">{name}</h4>
+        <h4 className="font-serif text-base font-semibold text-text">
+          {name}
+          {sourceMap && sourceIds?.length > 0 && <Citation sourceIds={sourceIds} sourceMap={sourceMap} />}
+        </h4>
+        <ProvenanceBadge sourceIds={sourceIds} className="ml-auto shrink-0" />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
@@ -57,7 +63,7 @@ function PersonaCard({ segment, index }) {
   )
 }
 
-export default function CustomerPersonas({ segments }) {
+export default function CustomerPersonas({ segments, sourceMap }) {
   if (!segments || segments.length === 0) return null
 
   return (
@@ -75,7 +81,7 @@ export default function CustomerPersonas({ segments }) {
       </div>
       <div className="space-y-4">
         {segments.map((seg, i) => (
-          <PersonaCard key={i} segment={seg} index={i} />
+          <PersonaCard key={i} segment={seg} index={i} sourceMap={sourceMap} />
         ))}
       </div>
     </div>

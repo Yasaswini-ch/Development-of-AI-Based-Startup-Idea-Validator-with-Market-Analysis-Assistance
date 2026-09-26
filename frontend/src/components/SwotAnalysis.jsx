@@ -16,8 +16,8 @@ const QUADRANTS = [
     label: 'Weaknesses',
     sub: 'Gaps to address early',
     Icon: IconAlertTriangle,
-    dot: 'bg-amber-400',
-    itemDot: 'bg-amber-400',
+    dot: 'bg-warning-bright',
+    itemDot: 'bg-warning-bright',
   },
   {
     key: 'opportunities',
@@ -39,7 +39,7 @@ const QUADRANTS = [
 
 const SEV = {
   low:     { label: 'Low',     style: 'bg-success/10 text-success border-success/30' },
-  medium:  { label: 'Medium',  style: 'bg-amber-100 text-amber-700 border-amber-300' },
+  medium:  { label: 'Medium',  style: 'bg-warning/10 text-warning border-warning/40' },
   high:    { label: 'High',    style: 'bg-danger/10 text-danger border-danger/30' },
   unknown: { label: '—',       style: 'bg-panel text-muted-strong border-border-strong' },
 }
@@ -78,7 +78,7 @@ export default function SwotAnalysis({ data, error, sourceMap }) {
                 <span className={`h-2.5 w-2.5 rounded-full ${dot}`} />
                 <div>
                   <p className="font-mono text-[11px] font-semibold uppercase tracking-widest text-text">{label}</p>
-                  <p className="font-mono text-[9px] text-muted">{sub}</p>
+                  <p className="font-mono text-[10.5px] text-muted">{sub}</p>
                 </div>
               </div>
 
@@ -118,9 +118,9 @@ export default function SwotAnalysis({ data, error, sourceMap }) {
           <div className="overflow-hidden rounded-2xl border border-border-strong">
             {/* Header row */}
             <div className="grid grid-cols-[1fr_auto_auto] gap-4 border-b border-border bg-surface px-5 py-2.5">
-              <span className="font-mono text-[9px] uppercase tracking-widest text-muted">Risk</span>
-              <span className="font-mono text-[9px] uppercase tracking-widest text-muted">Severity</span>
-              <span className="font-mono text-[9px] uppercase tracking-widest text-muted">Likelihood</span>
+              <span className="font-mono text-[10.5px] uppercase tracking-widest text-muted">Risk</span>
+              <span className="font-mono text-[10.5px] uppercase tracking-widest text-muted">Severity</span>
+              <span className="font-mono text-[10.5px] uppercase tracking-widest text-muted">Likelihood</span>
             </div>
             {risks.map((item, i) => {
               const s = sev(item.severity)
@@ -136,10 +136,10 @@ export default function SwotAnalysis({ data, error, sourceMap }) {
                     {item.risk}
                     {sourceMap && <Citation sourceIds={item.sourceIds} sourceMap={sourceMap} />}
                   </p>
-                  <span className={`shrink-0 rounded-full border px-2.5 py-1 font-mono text-[9px] uppercase tracking-wide ${s.style}`}>
+                  <span className={`shrink-0 rounded-full border px-2.5 py-1 font-mono text-[10.5px] uppercase tracking-wide ${s.style}`}>
                     {s.label}
                   </span>
-                  <span className={`shrink-0 rounded-full border px-2.5 py-1 font-mono text-[9px] uppercase tracking-wide ${l.style}`}>
+                  <span className={`shrink-0 rounded-full border px-2.5 py-1 font-mono text-[10.5px] uppercase tracking-wide ${l.style}`}>
                     {l.label}
                   </span>
                 </div>

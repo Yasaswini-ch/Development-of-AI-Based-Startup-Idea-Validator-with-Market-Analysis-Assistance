@@ -140,6 +140,7 @@ def build_strategic_wedges(
         blueprints.append(
             {
                 "opportunityTitle": f"A focused wedge for {name}",
+                "segment": name,
                 "convictionPercent": conviction_percent,
                 "vectors": {
                     "observedFriction": friction,

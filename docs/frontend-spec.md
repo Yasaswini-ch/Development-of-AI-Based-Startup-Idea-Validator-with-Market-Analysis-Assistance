@@ -36,13 +36,13 @@
 >
 > | Component | Tab / parent | Renders |
 > |---|---|---|
-> | `ProvenanceBadge.jsx` | Market & Rivals (market size, viability axes) | Grounded / Inferred pill; accepts a computed `provenance` or bare `sourceIds` |
-> | `VoiceOfMarketCard.jsx` | Market & Rivals, after Customer Segments | `marketOpportunity.voiceOfMarket` quote cards, 2 columns |
-> | `MarketViabilityIndex.jsx` | Market & Rivals, last block of `MarketOpportunity` | `marketOpportunity.viabilityIndex` scorecard (dots, rating, rationale, citation, badge) and composite |
+> | `ProvenanceBadge.jsx` | Every tab (market size, viability axes, personas, uncited claims, wedges, Estimate labels) | The one evidence scale: Grounded / Partly grounded / Inferred; accepts a computed `provenance`, bare `sourceIds`, or a `status`/`label` override |
+> | `VoiceOfMarketCard.jsx` | Customers, after the personas | `marketOpportunity.voiceOfMarket` quotes with dimension label, speaker and citation |
+> | `MarketViabilityIndex.jsx` | Market & Rivals, last block of `MarketOpportunity` | `marketOpportunity.viabilityIndex` scorecard (dots, rating, rationale, citation, badge) and a small "x.x / 5 average"; anchor `sec-dynamics` |
 > | `ComparisonMatrix` in `CompetitorAnalysis.jsx` | Market & Rivals, Competitive field | `competitors.comparisonMatrix` table (deep mode) |
-> | `StrategicWedgeCard.jsx` | Gaps & Exposure, after the whitespace cards | `whiteSpace.blueprints`, collapsed by default, conviction pill |
-> | `MvpDeliveryRoadmap.jsx` | Build & Ship, end of `MvpRecommendations` | `mvp.deliveryRoadmap` phase cards and team sizing |
-> | `GtmCommercialModel.jsx` | Build & Ship, end of `GtmStrategy` | `gtm.commercialModel` 4 stat tiles and 3 pricing tiers |
+> | `StrategicWedgeCard.jsx` | Gaps & Exposure, after the whitespace cards | `whiteSpace.blueprints`; first card open, others show the wedge and key risk; conviction pill on the evidence scale |
+> | `MvpDeliveryRoadmap.jsx` | Roadmap tab, above the validation plan (`MvpRecommendations` links to it) | `mvp.deliveryRoadmap` phase cards with week ranges from `lib/timeline.js`, Estimate pill, team sizing |
+> | `GtmCommercialModel.jsx` | Build & Ship, end of `GtmStrategy` | `gtm.commercialModel` Estimate pill, "Based on" chips from `basis`, 4 stat tiles and 3 pricing tiers |
 > | `GoogleSignInButton.jsx` | `LandingPage.jsx` (signed-out visitors) and `AuthPanel.jsx` (above the email form) | Google Identity Services button; renders nothing without `VITE_GOOGLE_CLIENT_ID` |
 >
 > Every new component returns `null` when its field is missing, so older sessions still

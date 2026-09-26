@@ -1,9 +1,13 @@
 import { IconMessageCircle } from './icons'
+import Citation from './Citation'
 
 // Pillar 1: Direct Voice-of-Market Excerpts (AFFINITY 5-pillar spec §4.1A).
 // Renders the verbatim quotes backend/agent/voice_of_market.py extracts
-// from real search snippets - prominent quote styling with attribution,
-// instead of hiding this text behind Citation.jsx's hover popover only.
+// from real search snippets, in the Customers tab next to the personas they
+// describe. The quote is the hero; what kind of signal it is (friction,
+// demand, tailwind) is spelled out as a text label rather than only a
+// border colour, and each quote carries the same src-N citation marker as
+// every other claim in the report.
 
 function hostnameOf(url) {
   try {
@@ -13,55 +17,66 @@ function hostnameOf(url) {
   }
 }
 
-const _SENTIMENT_STYLE = {
-  negative_towards_incumbent: 'border-l-amber-400/60',
-  positive_market_signal: 'border-l-success/60',
-  neutral: 'border-l-border-strong',
+const DIMENSION_STYLE = {
+  'Observed Friction': 'text-danger',
+  'Demand Signal': 'text-info',
+  'Structural Tailwind': 'text-success',
 }
 
-function VoiceOfMarketCard({ quote }) {
-  const borderClass = _SENTIMENT_STYLE[quote.sentiment] || _SENTIMENT_STYLE.neutral
+function VoiceOfMarketCard({ quote, sourceMap }) {
   const host = hostnameOf(quote.url)
+  // speakerOrSource is either a community name ("Reddit thread") or just
+  // the hostname again - only show it when it adds something.
+  const speaker = quote.speakerOrSource && quote.speakerOrSource !== host ? quote.speakerOrSource : null
 
   return (
-    <div className={`rounded-xl border border-border bg-surface p-4 border-l-4 ${borderClass}`}>
-      <p className="font-serif text-sm italic leading-relaxed text-text">&ldquo;{quote.quote}&rdquo;</p>
-      <div className="mt-2.5 flex items-center justify-between gap-2">
-        <span className="font-mono text-[10px] uppercase tracking-wide text-muted">
-          {quote.speakerOrSource}
-        </span>
+    <figure className="flex flex-col rounded-xl border border-border bg-surface p-4">
+      {quote.taggedDimension && (
+        <p className={`font-mono text-[10.5px] uppercase tracking-widest ${DIMENSION_STYLE[quote.taggedDimension] || 'text-muted'}`}>
+          {quote.taggedDimension}
+        </p>
+      )}
+      <blockquote className="mt-1.5 flex-1 font-serif text-[15px] italic leading-relaxed text-text">
+        &ldquo;{quote.quote}&rdquo;
+        {sourceMap && quote.sourceId && <Citation sourceIds={[quote.sourceId]} sourceMap={sourceMap} />}
+      </blockquote>
+      <figcaption className="mt-3 flex min-w-0 items-center gap-1.5 text-xs text-muted">
+        <span aria-hidden="true">—</span>
+        {speaker && (
+          <>
+            <span className="shrink-0">{speaker}</span>
+            {quote.url && <span aria-hidden="true">·</span>}
+          </>
+        )}
         {quote.url ? (
-          <a
-            href={quote.url}
-            target="_blank"
-            rel="noreferrer"
-            className="truncate font-mono text-[10px] uppercase tracking-wide text-accent hover:text-accent-hover"
-          >
-            {host}
+          <a href={quote.url} target="_blank" rel="noreferrer" className="truncate text-accent hover:text-accent-hover">
+            {host || quote.url}
           </a>
-        ) : null}
-      </div>
-    </div>
+        ) : (
+          !speaker && <span>{quote.speakerOrSource}</span>
+        )}
+      </figcaption>
+    </figure>
   )
 }
 
 // Renders nothing (not even an empty-state) when there are no quotes -
-// this section is a bonus on top of the main market narrative, not a
-// required one, so an idea with thin community/review coverage just
-// doesn't show it rather than displaying a "no quotes found" message.
-export default function VoiceOfMarketSection({ quotes }) {
+// this section is a bonus on top of the personas, not a required one, so
+// an idea with thin community/review coverage just doesn't show it.
+export default function VoiceOfMarketSection({ quotes, sourceMap }) {
   const list = quotes || []
   if (list.length === 0) return null
 
   return (
-    <div className="mt-6">
-      <h3 className="mb-3 flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-widest text-muted">
+    <div>
+      <h3 className="mb-1 flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-widest text-muted">
         <IconMessageCircle className="h-3.5 w-3.5 text-accent" />
         Voice of the Market
       </h3>
+      <p className="mb-4 text-sm text-muted">What people in the sources actually said, word for word.</p>
       <div className="grid gap-3 sm:grid-cols-2">
         {list.map((quote, index) => (
-          <VoiceOfMarketCard key={quote.sourceId + index} quote={quote} />
+          <VoiceOfMarketCard key={quote.sourceId + index} quote={quote} sourceMap={sourceMap} />
         ))}
       </div>
     </div>

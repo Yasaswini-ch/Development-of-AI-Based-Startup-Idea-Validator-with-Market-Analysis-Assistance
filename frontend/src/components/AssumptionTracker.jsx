@@ -3,7 +3,7 @@ import Citation from './Citation'
 
 const UNCERTAINTY_STYLES = {
   high:   { bar: 'bg-danger',        badge: 'border-danger/40 bg-danger/10 text-danger',          label: 'HIGH' },
-  medium: { bar: 'bg-amber-400',     badge: 'border-amber-400/50 bg-amber-50 text-amber-700',     label: 'MEDIUM' },
+  medium: { bar: 'bg-warning-bright',     badge: 'border-warning/40 bg-warning/5 text-warning',     label: 'MEDIUM' },
   low:    { bar: 'bg-success',       badge: 'border-success/40 bg-success/10 text-success',        label: 'LOW' },
 }
 
@@ -29,16 +29,16 @@ function AssumptionCard({ item, index, sourceMap }) {
           <div className="min-w-0 flex-1">
             {/* badges */}
             <div className="mb-2 flex flex-wrap items-center gap-2">
-              <span className={`rounded-full border px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wide ${style.badge}`}>
+              <span className={`rounded-full border px-2 py-0.5 font-mono text-[10.5px] font-bold uppercase tracking-wide ${style.badge}`}>
                 {style.label} uncertainty
               </span>
               {item.category && (
-                <span className="rounded-full border border-border bg-panel px-2 py-0.5 font-mono text-[9px] uppercase tracking-wide text-muted">
+                <span className="rounded-full border border-border bg-panel px-2 py-0.5 font-mono text-[10.5px] uppercase tracking-wide text-muted">
                   {CATEGORY_LABELS[item.category] ?? item.category}
                 </span>
               )}
               {item.timeToValidate && (
-                <span className="rounded-full border border-accent/30 bg-accent/5 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wide text-accent">
+                <span className="rounded-full border border-accent/30 bg-accent/5 px-2 py-0.5 font-mono text-[10.5px] uppercase tracking-wide text-accent">
                   ⏱ {item.timeToValidate}
                 </span>
               )}

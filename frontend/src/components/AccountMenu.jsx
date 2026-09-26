@@ -1,5 +1,31 @@
 import { useEffect, useRef, useState } from 'react'
-import { IconUser, IconLogOut, IconColumns, IconChevronDown } from './icons'
+import { IconLogOut, IconColumns, IconChevronDown } from './icons'
+
+// Google accounts show their Google photo (avatarUrl, only ever set from a
+// verified ID token - see backend/agent/auth.py); password accounts, or a
+// photo that fails to load, show the email's first letter instead.
+function Avatar({ user }) {
+  const [broken, setBroken] = useState(false)
+  if (user.avatarUrl && !broken) {
+    return (
+      <img
+        src={user.avatarUrl}
+        alt=""
+        referrerPolicy="no-referrer"
+        onError={() => setBroken(true)}
+        className="h-6 w-6 shrink-0 rounded-full border border-border object-cover"
+      />
+    )
+  }
+  return (
+    <span
+      aria-hidden="true"
+      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent font-sans text-[11px] font-semibold uppercase text-white"
+    >
+      {(user.email || '?').charAt(0)}
+    </span>
+  )
+}
 
 // Replaces the old row of separate History / Compare ideas / Dashboard /
 // Platform health pills with a single account button that opens a dropdown -
@@ -51,18 +77,22 @@ export default function AccountMenu({ currentUser, onNavigate, onSignOut }) {
         title={`Signed in as ${currentUser.email}`}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex items-center gap-1.5 rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-text transition-colors hover:border-accent hover:text-accent"
+        className="flex items-center gap-1.5 rounded-full border border-border bg-panel py-0.5 pl-0.5 pr-2.5 font-mono text-[11px] uppercase tracking-wide text-text transition-colors hover:border-accent hover:text-accent"
       >
-        <IconUser className="h-3 w-3 text-accent" />
-        <span className="max-w-[9rem] truncate normal-case">{currentUser.email}</span>
+        <Avatar user={currentUser} />
+        <span className="hidden max-w-[9rem] truncate normal-case sm:inline">{currentUser.email}</span>
+        <span className="sr-only sm:hidden">Account menu</span>
         <IconChevronDown className={`h-3 w-3 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-[calc(100%+0.5rem)] z-20 w-48 overflow-hidden rounded-xl border border-border bg-panel py-1 shadow-lg"
+          className="absolute right-0 top-[calc(100%+0.5rem)] z-20 w-56 overflow-hidden rounded-xl border border-border bg-panel py-1 shadow-lg"
         >
+          <p className="truncate border-b border-border px-3 pb-2 pt-1.5 text-xs text-muted" title={currentUser.email}>
+            {currentUser.email}
+          </p>
           {items.map((item) => (
             <button
               key={item.view}

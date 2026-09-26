@@ -21,7 +21,7 @@ _VECTOR_KEYS = {
     "asymmetricWedge",
     "defensibilityMoat",
 }
-_BLUEPRINT_KEYS = {"opportunityTitle", "convictionPercent", "vectors", "keyRisk", "supportingSourceIds"}
+_BLUEPRINT_KEYS = {"opportunityTitle", "segment", "convictionPercent", "vectors", "keyRisk", "supportingSourceIds"}
 
 _RESULTS = [
     {"url": "https://example.com/report", "snippet": "Market growing fast."},

@@ -142,18 +142,25 @@ supports, each with its citation. A missing tier means the sources didn't give t
 number, not that it's zero.
 
 ### 4.6 Grounded vs. Inferred badges
-A green **Grounded** pill means the claim cites at least one real source (hover to see
-how many). An amber **Inferred** pill means it was estimated from heuristics with no
-direct source match. Treat inferred claims as hypotheses to check.
+The report uses one evidence scale everywhere. A green **Grounded** pill means the claim
+cites at least one real source (hover to see how many). An amber **Partly grounded** pill
+(wedge cards) means some links are sourced and some estimated. A grey **Inferred** pill
+means it was estimated from heuristics with no direct source match; treat those claims as
+hypotheses to check. Economics and the delivery roadmap carry a grey **Estimate** pill for
+the same reason.
 
-### 4.7 Voice of the Market (Market & Rivals tab)
+### 4.7 Voice of the Market (Customers tab)
 Up to four short quotes copied word-for-word from the search results, one per source,
-with pain and frustration quotes first. Click the site name to open the source. The
+with pain and frustration quotes first. Each quote is labelled with the dimension it was
+tagged as (for example *Observed Friction*) and carries a citation marker; click the site
+name to open the source. The
 section is hidden when no source contains a usable sentence.
 
 ### 4.8 Market Viability & Dynamics (Market & Rivals tab)
 Five axes scored 1–5 with one sentence each: Demand Urgency, Expansion Velocity, Target
-Accessibility, Barrier to Entry / Moat and Capital Efficiency, plus a 0–100 composite.
+Accessibility, Barrier to Entry / Moat and Capital Efficiency, plus their average out of 5.
+The report's one headline score is the verdict score at the top; the Market tab shows
+the opportunity score as small secondary text.
 This is a more detailed view than the Dashboard radar in §4.4 and uses different axes.
 Capital Efficiency is always *Inferred* because it's read from how you describe the idea.
 
@@ -162,18 +169,21 @@ A table of up to five dimensions comparing your idea with each profiled competit
 "unknown" means the sources didn't say, not that the competitor lacks the feature.
 
 ### 4.10 Strategic Wedge Blueprints (Gaps & Exposure tab)
-Click a card to expand the chain *Observed Friction → Incumbent Blindspot → Structural
+The first card opens by default; the others show the wedge and key risk until you
+click to expand the chain *Observed Friction → Incumbent Blindspot → Structural
 Tailwind → Asymmetric Wedge → Defensibility Moat* for one customer segment. The
 conviction % is the share of the four evidence-based links that are actually backed by
 a source or profiled competitor data, so 25% means most of the chain is a guess. The
 amber box names the weakest link.
 
-### 4.11 Delivery Roadmap and Commercial Economics (Build & Ship tab)
-The roadmap turns the MVP features into Alpha, Beta and GA phases with a length in weeks
+### 4.11 Delivery Roadmap (Roadmap tab) and Commercial Economics (Build & Ship tab)
+The roadmap sits at the top of the Roadmap tab, above the validation plan, and every
+timeline in the report (roadmap phases, GTM launch phases, the 7/30/90-day plan) is
+labelled on the same week axis. The roadmap turns the MVP features into Alpha, Beta and GA phases with a length in weeks
 and an exit gate for each. Commercial Economics shows an estimated CAC range, target
 ARPU, payback period, LTV:CAC and three pricing tiers. Both are **rule-of-thumb
 estimates** from your competitors' price level, GTM channel fit and SWOT risk, not a
-financial forecast. Use them as a starting point for your own model.
+financial forecast; the "Based on" chips show which inputs were used. Use them as a starting point for your own model.
 
 ### 4.12 Platform Health (admins only)
 Admins (accounts listed in the backend's `ADMIN_EMAILS`) see a 7/30/90-day view of
