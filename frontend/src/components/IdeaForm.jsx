@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { IconLightbulb, IconUsers, IconAlertTriangle, IconCheckCircle } from './icons'
+import { assessIdeaClarity } from '../lib/ideaClarity'
 
 const IDEA_MAX = 2000
 
@@ -37,6 +38,10 @@ export default function IdeaForm({ onSubmit, isLoading, loadingProgress, disable
   const [problem, setProblem] = useState('')
   const [error, setError] = useState('')
   const [errorField, setErrorField] = useState('')
+  // A vague idea gets flagged, not blocked - the founder can submit anyway
+  // by clicking again. Prevents spending a research pass and several LLM
+  // calls on a pitch too thin to ground the analysis in.
+  const [clarityWarning, setClarityWarning] = useState(null)
 
   function handleSubmit(e) {
     e.preventDefault()
@@ -57,6 +62,15 @@ export default function IdeaForm({ onSubmit, isLoading, loadingProgress, disable
     }
     setError('')
     setErrorField('')
+
+    if (!clarityWarning) {
+      const clarity = assessIdeaClarity(idea)
+      if (!clarity.clear) {
+        setClarityWarning(clarity.reason)
+        return
+      }
+    }
+    setClarityWarning(null)
     onSubmit({ idea, targetCustomer, problem, email: '' })
   }
 
@@ -82,13 +96,24 @@ export default function IdeaForm({ onSubmit, isLoading, loadingProgress, disable
             rows={10}
             maxLength={IDEA_MAX}
             value={idea}
-            onChange={(e) => setIdea(e.target.value)}
+            onChange={(e) => {
+              setIdea(e.target.value)
+              if (clarityWarning) setClarityWarning(null)
+            }}
             placeholder="Describe your startup concept in as much detail as you'd like — the core workflow, target customer pain, monetization mechanism, key assumptions, competitors you're aware of, anything that helps the research agents dig deeper."
             className={`w-full resize-y rounded-lg bg-surface border px-3.5 py-3 text-sm leading-relaxed text-text placeholder:text-muted outline-none transition-colors focus:border-accent ${
               errorField === 'idea' ? 'border-danger' : 'border-border'
             }`}
           />
           {errorField === 'idea' && <p className="mt-1.5 text-sm text-danger">{error}</p>}
+          {clarityWarning && (
+            <div className="mt-1.5 flex items-start gap-2 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2.5 text-sm text-text">
+              <IconAlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
+              <p>
+                {clarityWarning} <span className="text-muted">Submit again to validate as written.</span>
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

@@ -8,6 +8,7 @@ using ReportLab.
 import io
 import logging
 from typing import Any, Dict
+from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
@@ -83,6 +84,14 @@ def generate_dossier_pdf(dossier_data: Dict[str, Any]) -> bytes:
     summary_text = dossier_data.get("summary", "Automated feasibility evaluation compiled from live web search retrieval.")
     story.append(Paragraph("1. Executive Summary & Opportunity Score", section_heading))
     story.append(Paragraph(f"<b>Feasibility Opportunity Score:</b> {opp_score} / 100", body_style))
+    verdict = dossier_data.get("verdict") or {}
+    if verdict.get("label"):
+        story.append(Paragraph(
+            f"<b>Verdict: {escape(verdict['label'])}.</b> {escape(verdict.get('headline', ''))}",
+            body_style,
+        ))
+        if verdict.get("nextStep"):
+            story.append(Paragraph(f"<b>Next step:</b> {escape(verdict['nextStep'])}", body_style))
     story.append(Paragraph(f"<b>Executive Summary:</b> {summary_text}", body_style))
     story.append(Spacer(1, 8))
 
@@ -118,14 +127,30 @@ def generate_dossier_pdf(dossier_data: Dict[str, Any]) -> bytes:
     comp_list = competitors_data.get("competitors") or []
     if comp_list:
         story.append(Paragraph("3. Competitor Landscape & Positioning", section_heading))
-        c_table_data = [["Competitor Name", "Pricing Tier", "Feature Breadth"]]
+        # Profiled competitors (competitor_agent._profile_with_llm) carry a
+        # stated pricing note and weaknesses; NER-only ones fall back to
+        # the rough price bucket and feature breadth.
+        profiled = bool(competitors_data.get("profiled"))
+        if profiled:
+            c_table_data = [["Competitor", "Type", "Pricing", "Key weakness"]]
+        else:
+            c_table_data = [["Competitor Name", "Pricing Tier", "Feature Breadth"]]
         for c in comp_list[:5]:
-            c_table_data.append([
-                Paragraph(f"<b>{c.get('name', '')}</b>", body_style),
-                Paragraph(c.get('priceBucket', c.get('estimatedPrice', 'unknown')), body_style),
-                Paragraph(c.get('featureBreadth', 'unknown'), body_style),
-            ])
-        ct = Table(c_table_data, colWidths=[200, 160, 160])
+            if profiled:
+                weaknesses = c.get("weaknesses") or []
+                c_table_data.append([
+                    Paragraph(f"<b>{escape(c.get('name', ''))}</b>", body_style),
+                    Paragraph(escape(c.get("classification", "unknown")), body_style),
+                    Paragraph(escape(c.get("pricing") or c.get("estimatedPrice", "unknown")), body_style),
+                    Paragraph(escape(weaknesses[0] if weaknesses else "unknown"), body_style),
+                ])
+            else:
+                c_table_data.append([
+                    Paragraph(f"<b>{c.get('name', '')}</b>", body_style),
+                    Paragraph(c.get('priceBucket', c.get('estimatedPrice', 'unknown')), body_style),
+                    Paragraph(c.get('featureBreadth', 'unknown'), body_style),
+                ])
+        ct = Table(c_table_data, colWidths=[130, 70, 130, 190] if profiled else [200, 160, 160])
         ct.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#F1F5F9")),
             ('TEXTCOLOR', (0, 0), (-1, 0), primary_color),

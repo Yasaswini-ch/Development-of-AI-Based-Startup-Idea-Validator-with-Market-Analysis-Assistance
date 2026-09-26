@@ -45,7 +45,7 @@ from agent.auth import (
     signup as auth_signup,
 )
 from agent.chat_graph import ChatRateLimitError, run_chat_turn
-from agent.db import cache_table, get_engine
+from agent.db import cache_table, database_backend, get_engine
 from agent.email_delivery import is_valid_email, send_canonical_report_email, send_report_email
 from agent.graph import NEEDS_DEEP_ANALYSIS, pipeline
 from agent.idea_category import categorize_idea
@@ -455,6 +455,7 @@ def _create_validation_session(payload: ValidateRequest, response: dict, user_id
             # produced real assumptions/revenueModels data.
             "assumptions": response.get("assumptions"),
             "revenueModels": response.get("revenueModels"),
+            "verdict": response.get("verdict"),
         },
         user_id=user_id,
     )
@@ -486,6 +487,9 @@ def health():
     return {
         "status": "ok",
         "service": "Affinity API",
+        # "sqlite" on a deployed instance means DATABASE_URL isn't set and
+        # data will not survive a redeploy - see agent/db.py.
+        "database": database_backend(),
     }
 
 
@@ -634,6 +638,7 @@ def _run_pipeline_and_build_response(payload: ValidateRequest, cache_key: str, a
         # Novel features
         "assumptions": state.get("assumptions"),
         "revenueModels": state.get("revenueModels"),
+        "verdict": state.get("verdict"),
         "errors": state.get("errors", {}),
         "mode": state.get("mode", "deep"),
     }

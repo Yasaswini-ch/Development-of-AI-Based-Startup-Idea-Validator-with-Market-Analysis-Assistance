@@ -93,6 +93,10 @@ import urllib.request
 
 from .structured_output import extract_json_object
 
+# crewai/llm are imported lazily inside _profile_with_llm: every other
+# path in this module is deliberately dependency-light (spaCy only), and
+# tests that exercise NER alone shouldn't have to import the LLM stack.
+
 logger = logging.getLogger(__name__)
 
 _MAX_COMPETITORS = 4
@@ -513,7 +517,160 @@ def _refine_with_gemini(idea: str, entries: list[dict]) -> dict[str, dict]:
     return data or {}
 
 
-def analyze_competitors(idea: str, target_customer: str, problem: str, results: list) -> dict:
+_CLASSIFICATIONS = {"direct", "indirect", "unknown"}
+_MAX_LIST_ITEMS = 3
+_MAX_MATRIX_ROWS = 5
+
+
+def _short_text(value, limit: int = 160) -> str | None:
+    if not isinstance(value, str):
+        return None
+    cleaned = " ".join(value.split())
+    return cleaned[:limit] if cleaned else None
+
+
+def _short_list(value) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    items = [_short_text(v, 120) for v in value]
+    return [v for v in items if v][:_MAX_LIST_ITEMS]
+
+
+def _valid_profile_shape(data: dict, names: set[str]) -> bool:
+    """Only the top-level shape is strict (a "profiles" object keyed by
+    names we actually asked about); individual fields are sanitized by
+    _clean_profile instead, so one malformed field drops that field rather
+    than the whole profiling pass."""
+    profiles = data.get("profiles")
+    if not isinstance(profiles, dict) or not profiles:
+        return False
+    if not set(profiles.keys()) <= names:
+        return False
+    return all(isinstance(v, dict) for v in profiles.values())
+
+
+def _clean_profile(raw: dict) -> dict:
+    classification = raw.get("classification")
+    return {
+        "classification": classification if classification in _CLASSIFICATIONS else "unknown",
+        "pricing": _short_text(raw.get("pricing"), 80) or "unknown",
+        "businessModel": _short_text(raw.get("businessModel"), 80) or "unknown",
+        "strengths": _short_list(raw.get("strengths")),
+        "weaknesses": _short_list(raw.get("weaknesses")),
+        "gap": _short_text(raw.get("gap"), 240),
+    }
+
+
+def _clean_matrix(raw, names: set[str]) -> list[dict]:
+    """Keep only rows with a dimension and an idea cell, and only cells
+    for competitors we actually profiled - a model-invented competitor
+    name in the matrix is dropped, same rule as sanitize_source_ids."""
+    if not isinstance(raw, list):
+        return []
+    rows = []
+    for row in raw[:_MAX_MATRIX_ROWS]:
+        if not isinstance(row, dict):
+            continue
+        dimension = _short_text(row.get("dimension"), 60)
+        idea_cell = _short_text(row.get("idea"), 140)
+        cells = row.get("competitors")
+        if not dimension or not idea_cell or not isinstance(cells, dict):
+            continue
+        rows.append(
+            {
+                "dimension": dimension,
+                "idea": idea_cell,
+                "competitors": {
+                    name: _short_text(cells.get(name), 140) or "unknown" for name in names if name in cells
+                },
+            }
+        )
+    return rows
+
+
+def _profile_with_llm(
+    idea: str,
+    target_customer: str,
+    problem: str,
+    entries: list[dict],
+    allow_local: bool = False,
+) -> dict | None:
+    """One bounded LLM call that turns NER's bare names into competitor
+    profiles (direct/indirect, pricing, business model, strengths,
+    weaknesses, an idea-specific gap) plus an idea-vs-competitor comparison
+    matrix - grounded in the same per-competitor local text the regex
+    heuristics read, never the model's general knowledge.
+
+    Strictly additive: returns None on any failure (quota exhausted, bad
+    JSON, missing dependency) and the caller keeps the NER-only result, so
+    this can never turn a working competitor section into a failed one or
+    trigger the deep-analysis short-circuit other strategy agents use.
+    """
+    if not entries:
+        return None
+    try:
+        from crewai import Agent, Crew, Process, Task
+
+        from .llm import get_llm, kickoff_with_fallback
+        from .prompts.loader import load_prompt
+    except Exception:
+        logger.warning("Competitor profiling unavailable (LLM stack not importable)", exc_info=True)
+        return None
+
+    names = {e["name"] for e in entries}
+    listing = "\n".join(f'- "{e["name"]}": {e["text"][:500]}' for e in entries)
+
+    def build_crew(model: str):
+        analyst = Agent(
+            role="Competitive Intelligence Analyst",
+            goal="Profile each competitor strictly from its own source text and compare it with the startup idea.",
+            backstory=load_prompt("competitor_profile_system"),
+            llm=get_llm(max_tokens=900, model=model),
+            verbose=False,
+        )
+        task = Task(
+            description=load_prompt(
+                "competitor_profile_task",
+                idea=idea,
+                target_customer=target_customer or "not specified",
+                problem=problem or "not specified",
+                listing=listing,
+            ),
+            expected_output=load_prompt("competitor_profile_output"),
+            agent=analyst,
+        )
+        return Crew(agents=[analyst], tasks=[task], process=Process.sequential, verbose=False)
+
+    def validator(data: dict) -> bool:
+        return _valid_profile_shape(data, names)
+
+    try:
+        output = kickoff_with_fallback(
+            build_crew,
+            allow_local=allow_local,
+            validate=lambda o: extract_json_object(o.raw, validator) is not None,
+        )
+        data = extract_json_object(output.raw, validator)
+    except Exception:
+        logger.warning("Competitor profiling failed, keeping NER-only competitors", exc_info=True)
+        return None
+    if data is None:
+        return None
+
+    return {
+        "profiles": {name: _clean_profile(raw) for name, raw in data["profiles"].items()},
+        "comparisonMatrix": _clean_matrix(data.get("comparisonMatrix"), names),
+    }
+
+
+def analyze_competitors(
+    idea: str,
+    target_customer: str,
+    problem: str,
+    results: list,
+    profile: bool = False,
+    allow_local: bool = False,
+) -> dict:
     """Identify competitors from `results` via local NER - no LLM call, no
     API dependency, so this never fails due to rate limits or provider
     outages. An empty `competitors: []` is a genuine, valid outcome (the
@@ -526,6 +683,12 @@ def analyze_competitors(idea: str, target_customer: str, problem: str, results: 
     "unknown" - separate API key/quota from Groq, optional (skipped
     entirely without GEMINI_API_KEY), and never overrides a value the
     regex heuristics already found, only fills genuine gaps.
+
+    With profile=True (the full "deep" pipeline), _profile_with_llm adds
+    richer per-competitor fields (classification, pricing, businessModel,
+    strengths, weaknesses, a real idea-specific gap) and a top-level
+    comparisonMatrix. Any profiling failure leaves the NER-only result
+    exactly as before, with "profiled": False.
     """
     if _nlp is None:
         return {"competitors": []}
@@ -560,4 +723,29 @@ def analyze_competitors(idea: str, target_customer: str, problem: str, results: 
             }
         )
 
-    return {"competitors": competitors}
+    result = {"competitors": competitors}
+    if not profile or not competitors:
+        return result
+
+    profiled = _profile_with_llm(
+        idea,
+        target_customer,
+        problem,
+        [{"name": c["name"], "text": mentions[c["name"]]["local_text"] or c["offering"]} for c in competitors],
+        allow_local=allow_local,
+    )
+    if profiled is None:
+        result["profiled"] = False
+        return result
+
+    for competitor in competitors:
+        extra = profiled["profiles"].get(competitor["name"])
+        if not extra:
+            continue
+        gap = extra.pop("gap")
+        competitor.update(extra)
+        if gap:
+            competitor["gap"] = gap
+    result["comparisonMatrix"] = profiled["comparisonMatrix"]
+    result["profiled"] = True
+    return result

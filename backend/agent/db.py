@@ -11,6 +11,7 @@ however many backend instances are running, which the in-memory version
 never could be.
 """
 
+import logging
 import os
 import time
 
@@ -19,6 +20,8 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.sql import false as sql_false
 
 _DEFAULT_SQLITE_URL = "sqlite:///./affinity.db"
+
+logger = logging.getLogger(__name__)
 
 metadata = MetaData()
 
@@ -121,11 +124,8 @@ def get_engine() -> Engine:
     if _engine is not None:
         return _engine
 
-    url = os.environ.get("DATABASE_URL", _DEFAULT_SQLITE_URL)
-    if url.startswith("postgres://"):
-        url = url.replace("postgres://", "postgresql+psycopg://", 1)
-    elif url.startswith("postgresql://") and "+psycopg" not in url:
-        url = url.replace("postgresql://", "postgresql+psycopg://", 1)
+    url = _resolve_database_url()
+    _check_persistence(url)
 
     connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
 
@@ -156,6 +156,62 @@ def get_engine() -> Engine:
     _migrate_missing_columns(_engine)
     _bootstrap_admin_emails(_engine)
     return _engine
+
+
+def _resolve_database_url() -> str:
+    # An empty DATABASE_URL (e.g. a Render env var that exists but whose
+    # linked database was deleted) is treated the same as an unset one.
+    url = os.environ.get("DATABASE_URL", "").strip() or _DEFAULT_SQLITE_URL
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql+psycopg://", 1)
+    elif url.startswith("postgresql://") and "+psycopg" not in url:
+        url = url.replace("postgresql://", "postgresql+psycopg://", 1)
+    return url
+
+
+def _is_truthy(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+# The SQLite fallback writes to the container's own disk, which Render's
+# free tier (and most other PaaS hosts without a mounted volume) wipes on
+# every redeploy or restart - taking every user account, saved validation
+# and admin flag with it. It used to kick in silently whenever DATABASE_URL
+# was missing, so a deployment that lost its database link looked healthy
+# while throwing its data away. Now it's always logged, and
+# REQUIRE_PERSISTENT_DB=1 turns it into a startup failure instead: a failed
+# deploy is recoverable, a silently wiped users table isn't.
+def _check_persistence(url: str) -> None:
+    if not url.startswith("sqlite"):
+        logger.info("Database: using %s", database_backend(url))
+        return
+
+    if _is_truthy(os.environ.get("REQUIRE_PERSISTENT_DB")):
+        raise RuntimeError(
+            "REQUIRE_PERSISTENT_DB is set but DATABASE_URL is not a Postgres URL - refusing to start on the "
+            "local SQLite fallback, whose data would be lost on the next redeploy. Set DATABASE_URL to a "
+            "persistent Postgres database (see backend/.env.example)."
+        )
+
+    # Render sets RENDER=true in every service's environment.
+    if _is_truthy(os.environ.get("RENDER")):
+        logger.warning(
+            "Database: DATABASE_URL is not set, falling back to SQLite at %s. On Render this file is NOT "
+            "persistent - users, history and admin flags will be lost on the next redeploy.",
+            url,
+        )
+    else:
+        logger.info("Database: using local SQLite at %s", url)
+
+
+def database_backend(url: str | None = None) -> str:
+    """Which kind of database is (or would be) in use - "postgresql" or
+    "sqlite" - never the URL itself, since that carries the password.
+    Surfaced on GET /health so a deployment's persistence can be checked
+    from outside without a shell.
+    """
+    resolved = url if url is not None else _resolve_database_url()
+    return "sqlite" if resolved.startswith("sqlite") else resolved.split(":", 1)[0].split("+", 1)[0]
 
 
 # `metadata.create_all()` only creates tables that don't exist yet - it never
@@ -236,6 +292,7 @@ def now() -> float:
 
 __all__ = [
     "cache_table",
+    "database_backend",
     "events_table",
     "get_engine",
     "jobs_table",
