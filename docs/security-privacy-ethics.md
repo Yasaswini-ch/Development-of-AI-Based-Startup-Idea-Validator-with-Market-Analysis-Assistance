@@ -74,6 +74,12 @@ Full detail in [doc 19](19_AFFINITY_MILESTONE_3_POSTGRESQL_AUTH_AND_DATA_PERSIST
 - **Optional accounts.** Email + password (minimum 8 characters), bcrypt-hashed. Anonymous
   validation still works. Login returns the same error for unknown email and wrong
   password, so accounts can't be enumerated. Auth endpoints are rate-limited per IP.
+- **Sign in with Google (optional).** The browser hands the backend a Google ID token,
+  never an email. `agent/google_auth.py` verifies its signature and audience with the
+  `google-auth` library and rejects unverified emails; the account email and avatar come
+  only from the verified claims. Google's own error text is not echoed to the client.
+  Accounts are matched by email, so a Google sign-in reuses an existing password account
+  with the same address (Google's `email_verified` is the trust anchor).
 - **Tokens.** HS256 JWT signed with `AUTH_SECRET_KEY`, valid 30 days, stored in the
   browser's `localStorage` (readable by scripts on the page, the usual trade-off against
   an httpOnly cookie). No server-side revocation.
@@ -92,7 +98,7 @@ Full detail in [doc 19](19_AFFINITY_MILESTONE_3_POSTGRESQL_AUTH_AND_DATA_PERSIST
 | Async job result | `jobs` | 2 hours; 200 rows max |
 | Response cache | `validation_cache` | 30 minutes |
 | Operational events | `events` | 90 days; 200,000 rows max |
-| Account (email, password hash, admin flag) | `users` | Until deleted by an operator |
+| Account (email, password hash or none, admin flag, auth provider, Google avatar URL) | `users` | Until deleted by an operator |
 
 > Render's free Postgres is deleted 30 days after creation, which removes all of the
 > above at once. See [Known Limitations](known-limitations-and-future-work.md).

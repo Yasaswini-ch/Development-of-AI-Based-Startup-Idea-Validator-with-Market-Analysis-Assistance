@@ -112,9 +112,10 @@ ideas. The Compare Ideas view shows the headline viability score per idea.
 > into `staging` on 2026-09-26, after this doc's features) added a separate
 > `marketOpportunity.viabilityIndex`: five different axes (Demand Urgency, Expansion
 > Velocity, Target Accessibility, Barrier to Entry / Moat, Capital Efficiency) scored
-> 1–5 with rationales and citations, shown in the Market tab by
+> 1–5 with rationales and citations, shown in the Market & Rivals tab by
 > `MarketViabilityIndex.jsx`. The `marketViability` axes above are unchanged and still
-> feed the Dashboard radar.
+> feed the Dashboard radar. Formulas for the index:
+> [doc 23 §4](23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOOGLE_SSO.md#4-pillar-2-market-viability--dynamics-index).
 
 ## 5. Admin Platform Health
 

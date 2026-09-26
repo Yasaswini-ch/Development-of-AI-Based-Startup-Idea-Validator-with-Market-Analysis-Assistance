@@ -1,9 +1,13 @@
 # Frontend Design Spec — Idea Submission Interface
 
-> **Note (post-implementation):** the palette/typography sections below are the original
-> spec. What actually shipped is a monochrome, JetBrains-Mono "technical dashboard"
-> theme (near-black background, uppercase mono labels, pill buttons, live status
-> readouts) — see the actual component code in `frontend/src/` for the current design.
+> **Note (post-implementation, corrected 2026-09-26):** the palette/typography sections
+> below are the original spec. What actually shipped is a **light, warm "editorial
+> dossier"** theme defined as tokens in `frontend/src/index.css` (Tailwind v4 `@theme`):
+> cream page `surface` `#f6f2ec`, off-white `panel` `#fffdfa`, coral `accent` `#e0654b`,
+> teal `info`, sage `success`, brick `danger`. Three fonts: **Fraunces** (serif, headings
+> and big numbers), **Inter** (body) and **JetBrains Mono** (small uppercase labels and
+> pills). There is no dark mode. An earlier version of this note described a near-black
+> monochrome theme; that is no longer accurate.
 
 > **Update 2026-09-26: views beyond the submission form.** This spec only covered the
 > Milestone 1 submission page. The app now also has:
@@ -24,6 +28,25 @@
 >
 > See [doc 22](22_AFFINITY_MILESTONE_5_ANALYTICS_DASHBOARDS_AND_ACCESS_CONTROL.md) for
 > details.
+
+> **Update 2026-09-26: five-pillar components.** The results view is a pill tab bar
+> (Evidence, Market & Rivals, Customers, Gaps & Exposure, Build & Ship, Roadmap) under the idea dossier,
+> KPI strip, executive summary, verdict card and confidence dashboard. Sprints 1–4 added,
+> inside existing tabs:
+>
+> | Component | Tab / parent | Renders |
+> |---|---|---|
+> | `ProvenanceBadge.jsx` | Market & Rivals (market size, viability axes) | Grounded / Inferred pill; accepts a computed `provenance` or bare `sourceIds` |
+> | `VoiceOfMarketCard.jsx` | Market & Rivals, after Customer Segments | `marketOpportunity.voiceOfMarket` quote cards, 2 columns |
+> | `MarketViabilityIndex.jsx` | Market & Rivals, last block of `MarketOpportunity` | `marketOpportunity.viabilityIndex` scorecard (dots, rating, rationale, citation, badge) and composite |
+> | `ComparisonMatrix` in `CompetitorAnalysis.jsx` | Market & Rivals, Competitive field | `competitors.comparisonMatrix` table (deep mode) |
+> | `StrategicWedgeCard.jsx` | Gaps & Exposure, after the whitespace cards | `whiteSpace.blueprints`, collapsed by default, conviction pill |
+> | `MvpDeliveryRoadmap.jsx` | Build & Ship, end of `MvpRecommendations` | `mvp.deliveryRoadmap` phase cards and team sizing |
+> | `GtmCommercialModel.jsx` | Build & Ship, end of `GtmStrategy` | `gtm.commercialModel` 4 stat tiles and 3 pricing tiers |
+> | `GoogleSignInButton.jsx` | `LandingPage.jsx` (signed-out visitors) and `AuthPanel.jsx` (above the email form) | Google Identity Services button; renders nothing without `VITE_GOOGLE_CLIENT_ID` |
+>
+> Every new component returns `null` when its field is missing, so older sessions still
+> render. Contracts: [doc 23](23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOOGLE_SSO.md).
 
 **Stack**: React (Vite) + Tailwind CSS. No component library — build custom for a
 distinct, non-templated feel.

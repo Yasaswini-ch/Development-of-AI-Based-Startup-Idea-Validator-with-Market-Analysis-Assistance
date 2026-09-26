@@ -11,6 +11,7 @@
 - [3. Entity Filtering & Product Context Rules](#3-entity-filtering--product-context-rules)
 - [4. Pricing & Feature Breadth Classification Heuristics](#4-pricing--feature-breadth-classification-heuristics)
 - [5. 3x3 Positioning Grid Algorithm](#5-3x3-positioning-grid-algorithm)
+- [6. Deep-Mode Competitor Profiles & Parity Grid](#6-deep-mode-competitor-profiles--parity-grid)
 
 ---
 
@@ -115,3 +116,31 @@ Low Price    [  Competitor  ]   [  Competitor  ]   [  Competitor  ]
 
 - **Unplaced Competitors:** Competitors with `"unknown"` price or breadth are listed cleanly below the grid rather than being placed arbitrarily.
 - **Positioning White-Space:** Empty grid cells highlight direct structural market opportunities for founders.
+
+---
+
+## 6. Deep-Mode Competitor Profiles & Parity Grid
+
+*Added 2026-09-26.* Name discovery above is still 100% local NER. In **deep mode**
+(`/validate` with `mode` other than `"quick"`), `analyze_competitors(..., profile=True)`
+adds one bounded LLM call, `_profile_with_llm`, grounded only in each competitor's own
+source text (the same text the price/breadth heuristics read):
+
+| Field | Values |
+|---|---|
+| `classification` | `direct`, `indirect` or `unknown` |
+| `pricing`, `businessModel` | short text (≤80 chars), `"unknown"` when the source is silent |
+| `strengths`, `weaknesses` | short lists |
+| `gap` | an idea-specific gap, replacing the generic disclosure text |
+
+It also returns a top-level `comparisonMatrix` of at most 5 rows
+(`{dimension, idea, competitors: {name: cell}}`); cells for competitor names the model
+invented are dropped. On any failure the NER-only result is kept with `profiled: false`,
+so profiling can never turn a working section into a failed one.
+
+The frontend shows the extra fields on each competitor card and renders the matrix as
+**How your idea compares**, between the cards and the 3x3 grid, with a note that
+"unknown" means the sources were silent. The first profiled competitor's weaknesses also
+feed the Strategic Wedge's "Incumbent Blindspot" (see
+[doc 23 §6](23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOOGLE_SSO.md#6-pillar-4-5-vector-strategic-wedge-blueprints)).
+Tests: `backend/tests/test_competitor_profiling.py`.

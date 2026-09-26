@@ -44,6 +44,7 @@ DATABASE_URL           set automatically from the Blueprint database
 AUTH_SECRET_KEY        generated automatically by the Blueprint (generateValue)
 ADMIN_EMAILS           optional - comma-separated emails to promote to admin
 REQUIRE_PERSISTENT_DB  optional - set to 1 to refuse to start without Postgres
+GOOGLE_OAUTH_CLIENT_ID optional - enables "Sign in with Google"; see "Google sign-in" below
 
 # Optional - email delivery of reports (SendGrid HTTP API). Without these,
 # /validate still accepts an email and returns 202/jobId past the threshold
@@ -77,8 +78,12 @@ Branch: staging
 Environment variables:
 
 ```text
-VITE_API_URL    backend Render URL
+VITE_API_URL           backend Render URL
+VITE_GOOGLE_CLIENT_ID  optional - same value as the backend's GOOGLE_OAUTH_CLIENT_ID
 ```
+
+`VITE_*` values are baked in at build time, so changing one needs a frontend redeploy,
+not just a restart.
 
 ## Database (PostgreSQL on Render)
 
@@ -150,6 +155,29 @@ on the free tier, so promote admins with an environment variable:
 Removing an email from the list does **not** demote an existing admin; do that with
 SQL (`UPDATE users SET is_admin = false WHERE email = '...'`).
 
+## Google sign-in (optional)
+
+Without these two variables the Google button simply doesn't render and email/password
+sign-in works as before.
+
+1. In [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services →
+   Credentials, create an **OAuth client ID** of type *Web application*.
+2. Under **Authorized JavaScript origins**, add the frontend URL (for example
+   `https://startup-validator-frontend.onrender.com`) and `http://localhost:5173` for
+   local development. No redirect URI is needed; the button uses Google Identity
+   Services' popup flow and returns an ID token directly.
+3. Set the client ID as `GOOGLE_OAUTH_CLIENT_ID` on the backend and
+   `VITE_GOOGLE_CLIENT_ID` on the frontend (both are declared in `render.yaml` with
+   `sync: false`, so Render shows an empty field for each). Redeploy the frontend.
+4. Check: the landing page (signed out) and the account page both show "Sign in with
+   Google", and signing in returns you to the app signed in. A 401 "Google sign-in is not configured on this
+   server." means the backend variable is missing; an origin error inside Google's
+   popup means step 2 is missing the URL you're on.
+
+Signing in with Google uses the same account as an existing email/password sign-up with
+that email. See
+[doc 23 §8](docs/23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOOGLE_SSO.md#8-platform-layer-google-sign-in).
+
 ## After Creating Services
 
 Render may assign URLs that differ from the placeholder values in `render.yaml`.
@@ -180,7 +208,11 @@ accounts.
 
 Then open the frontend URL, submit a sample idea, and confirm the UI shows sources,
 market opportunity (including any TAM/SAM/SOM tiers), competitors, confidence,
-white-space analysis, SWOT, MVP, and GTM sections. Send a `/chat` follow-up and verify
+white-space analysis, SWOT, MVP, and GTM sections. A deep-mode run should also show the
+Voice of the Market quotes and Market Viability & Dynamics scorecard (Market & Rivals tab), the
+Strategic Wedge Blueprints (Gaps & Exposure tab), and the Delivery Roadmap and Commercial
+Economics blocks (Build & Ship tab); quotes and blueprints can legitimately be empty for ideas
+with thin source coverage. Send a `/chat` follow-up and verify
 the advisor replies. Sign up, open the account menu, and check that **Dashboard**
 loads. If your email is in `ADMIN_EMAILS`, check that **Platform health** loads too.
 

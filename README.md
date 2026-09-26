@@ -12,6 +12,12 @@ identified locally via NER, an evidence-backed SWOT/risk analysis, MVP feature
 recommendations, a GTM strategy, and a session-based conversational advisor for
 follow-up questions — plus a downloadable PDF dossier and optional email delivery.
 
+Each report also marks every key claim as **Grounded** (backed by a cited source) or
+**Inferred**, quotes what the market actually says in its own words, scores five market
+dynamics with a reason for each, compares your idea feature-by-feature against named
+competitors, lays out strategic wedge blueprints, and estimates unit economics, pricing
+tiers and a stage-gated MVP delivery roadmap. You can sign in with email or Google.
+
 ## How it works
 
 ![How the AI Startup Validator Works](docs/images/How%20the%20AI%20Startup%20Validator%20Works.png)
@@ -37,7 +43,13 @@ follow-up questions — plus a downloadable PDF dossier and optional email deliv
    Dashboard: Overview, Comparison matrix, Validation history and Score trends. The
    Overview includes a radar of the five Market Viability axes (market demand,
    execution risk, growth velocity, **competition clarity** and **timing**).
-8. **Admins watch platform health** — accounts listed in `ADMIN_EMAILS` also see
+8. **Five-pillar strategy layer** — deterministic post-processing (no extra LLM calls)
+   adds Voice-of-Market quotes and a Market Viability & Dynamics Index to the Market
+   tab, 5-vector strategic wedge blueprints to the Gaps & Exposure tab, and commercial
+   economics plus an Alpha/Beta/GA delivery roadmap to the Build & Ship tab. Deep mode also
+   profiles competitors and builds an idea-vs-competitor parity grid. See
+   [doc 23](docs/23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOOGLE_SSO.md).
+9. **Admins watch platform health** — accounts listed in `ADMIN_EMAILS` also see
    **Platform health**: validation volume, cache hit rate, LLM success rate and model
    usage, per-node latency, idea categories, recent errors and email delivery, built
    from a durable `events` log (`backend/agent/events.py`). See
