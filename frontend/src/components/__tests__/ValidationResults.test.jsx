@@ -43,7 +43,7 @@ describe('ValidationResults', () => {
     const user = userEvent.setup()
     renderResults()
 
-    await user.click(screen.getByRole('button', { name: /roadmap/i }))
+    await user.click(screen.getByRole('tab', { name: /roadmap/i }))
 
     expect(screen.getByText(mockValidation.experiments[0].hypothesis)).toBeInTheDocument()
     expect(screen.getByText(/Next 7 days/)).toBeInTheDocument()
@@ -53,10 +53,16 @@ describe('ValidationResults', () => {
     const user = userEvent.setup()
     renderResults()
 
-    await user.click(screen.getByRole('button', { name: /market & rivals/i }))
+    await user.click(screen.getByRole('tab', { name: /market & rivals/i }))
 
     // The first market trend cites src-1, so its claim renders a citation marker.
     expect(screen.getByText(mockValidation.marketOpportunity.trends[0].text)).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: /show source for this claim/i }).length).toBeGreaterThan(0)
+  })
+
+  it('labels each tab count with what it counts', () => {
+    renderResults()
+    expect(screen.getByRole('tab', { name: /evidence/i })).toHaveAttribute('title', `${mockValidation.results.length} sources`)
+    expect(screen.getByRole('tab', { name: /build & ship/i })).not.toHaveAttribute('title')
   })
 })
