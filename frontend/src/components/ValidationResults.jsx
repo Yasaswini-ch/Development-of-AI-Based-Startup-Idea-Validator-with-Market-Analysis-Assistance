@@ -187,6 +187,23 @@ const TABS = [
   { key: 'experiments', label: 'Roadmap' },
 ]
 
+// A tab's count badge: how many items the tab holds, with a tooltip saying
+// what is being counted, since each tab counts something different. Neutral
+// on the active tab too - a coral badge read like an unread-notification dot.
+// Tabs whose content isn't a list of items (Build & Ship, Roadmap) get none.
+function tabBadge(key, { results, competitorCount, marketOpportunity, whiteSpace }) {
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+  const counts = {
+    sources: [results.length, 'source'],
+    market: [competitorCount, 'competitor'],
+    customers: [marketOpportunity?.segments?.length ?? 0, 'customer segment'],
+    opportunity: [whiteSpace?.opportunities?.length ?? 0, 'market gap'],
+  }
+  if (!counts[key]) return null
+  const [count, word] = counts[key]
+  return { count, title: plural(count, word) }
+}
+
 function SectionDivider({ label }) {
   return (
     <h3 className="mb-4 flex items-center gap-2 border-b border-border-strong pb-2.5 font-mono text-[11px] font-semibold uppercase tracking-widest text-text">
@@ -359,16 +376,17 @@ export default function ValidationResults({
 
       {/* Pill tab switcher */}
       <div className="sticky top-0 z-10 max-w-full overflow-x-auto bg-surface/95 py-2 backdrop-blur-sm">
-        <div className="inline-flex min-w-max gap-0.5 rounded-full bg-border p-1">
+        <div role="tablist" aria-label="Report sections" className="inline-flex min-w-max gap-0.5 rounded-full bg-border p-1">
           {TABS.map((t) => {
           const active = activeTab === t.key
-          const segmentCount = marketOpportunity?.segments?.length ?? 0
-          const count = t.key === 'sources' ? results.length : t.key === 'market' ? competitorCount : t.key === 'customers' ? segmentCount : null
+          const badge = tabBadge(t.key, { results, competitorCount, marketOpportunity, whiteSpace })
           return (
             <button
               key={t.key}
+              role="tab"
               onClick={() => setActiveTab(t.key)}
               aria-selected={active}
+              title={badge?.title}
               className={`flex items-center gap-2 rounded-full px-5 py-2 font-serif text-[15px] transition-colors ${
                 active
                   ? 'border border-border-strong bg-panel italic text-text shadow-sm'
@@ -376,13 +394,14 @@ export default function ValidationResults({
               }`}
             >
               {t.label}
-              {count !== null && (
+              {badge && (
                 <span
-                  className={`rounded-full px-1.5 py-0.5 font-mono text-[10px] ${
-                    active ? 'bg-accent text-white' : 'bg-panel text-muted'
+                  aria-label={badge.title}
+                  className={`rounded-full px-1.5 py-0.5 font-mono text-[10.5px] not-italic ${
+                    active ? 'bg-border text-text' : 'bg-panel text-muted'
                   }`}
                 >
-                  {count}
+                  {badge.count}
                 </span>
               )}
             </button>
