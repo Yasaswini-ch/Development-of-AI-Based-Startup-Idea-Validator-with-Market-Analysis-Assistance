@@ -20,3 +20,15 @@ def strip_reasoning(text: str) -> str:
     if marker in text:
         text = text.rsplit(marker, 1)[-1]
     return text.strip()
+
+
+def provenance(source_ids) -> dict:
+    """Pillar 1 provenance rule, shared with the frontend's
+    <ProvenanceBadge />: a claim is "grounded" only when it still cites at
+    least one source after sanitize/verification, otherwise "inferred"
+    (synthesized from heuristics, no direct search match). Computed here
+    too so API consumers other than the React app - the PDF export, the
+    email report - get the same label without re-deriving it.
+    """
+    count = len(source_ids) if isinstance(source_ids, list) else 0
+    return {"status": "grounded" if count > 0 else "inferred", "sourceCount": count}
