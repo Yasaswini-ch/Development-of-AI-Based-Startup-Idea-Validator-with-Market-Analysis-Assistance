@@ -53,7 +53,7 @@ function adaptReportToValidation(report) {
     results: report.sources || [],
     marketOpportunity: report.marketOpportunity,
     competitors: report.competitors,
-    whiteSpace: null,
+    whiteSpace: report.whiteSpace,
     swot: report.swot,
     mvp: report.mvp,
     gtm: report.gtm,
@@ -62,6 +62,8 @@ function adaptReportToValidation(report) {
     contradictions: report.contradictions,
     experiments: report.experiments,
     actionPlan: report.actionPlan,
+    assumptions: report.assumptions,
+    revenueModels: report.revenueModels,
     sessionId: report.sessionId,
     errors: report.sectionErrors || {},
   }
