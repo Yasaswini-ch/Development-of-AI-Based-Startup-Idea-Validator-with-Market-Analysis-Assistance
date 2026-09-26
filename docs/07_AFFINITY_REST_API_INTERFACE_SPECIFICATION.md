@@ -88,21 +88,33 @@ Health probe endpoint.
     }
   ],
   "confidence": {
-    "marketGrowth": { "agree": 4, "total": 5 },
-    "competitivePressure": { "agree": 2, "total": 4 }
+    "agreeingSources": 6,
+    "totalSources": 8,
+    "percentage": 75,
+    "label": "6/8 sources agree",
+    "perAngle": { "Market size & trends": { "agreeingSources": 3, "totalSources": 6, "percentage": 50, "label": "3/6 sources agree" } },
+    "sourceCoverage": { "claimsWithSource": 18, "totalClaims": 24, "percentage": 75 },
+    "averageRelevance": 0.71,
+    "crossSourceAgreement": { "claimsWithMultipleSources": 7, "totalClaims": 24, "percentage": 29 },
+    "directEvidenceRatio": { "direct": 18, "inferred": 6, "percentage": 75 },
+    "sourceRecency": { "sourcesWithKnownDate": 5, "totalSources": 12, "medianAgeDays": 94.5 }
   },
   "marketOpportunity": {
     "marketSize": "The invoicing software market is valued at $2.4B globally with an 11% CAGR.",
+    "tam": { "text": "$2.4B global invoicing software market (2026)", "sourceIds": ["src-1"] },
+    "sam": null,
+    "som": null,
     "trends": [
-      "Automated SMS payment reminders",
-      "Instant deposit releases upon gallery approval"
+      { "text": "Automated SMS payment reminders", "sourceIds": ["src-1"] },
+      { "text": "Instant deposit releases upon gallery approval", "sourceIds": ["src-1"] }
     ],
     "segments": [
       {
         "segment": "Wedding Photographers",
         "painPoints": "Clients delay final balance payments",
         "motivations": "Automate contract signing and deposit collection",
-        "buyingBehavior": "Prefer monthly subscriptions priced under $25/month"
+        "buyingBehavior": "Prefer monthly subscriptions priced under $25/month",
+        "sourceIds": ["src-1"]
       }
     ],
     "opportunityScore": 78

@@ -1,6 +1,6 @@
 # 20. Milestone 3: PDF Dossier Exporter
 
-**Document Version:** 2.0 (corrected — see note below)
+**Document Version:** 2.1 (updated 2026-09-26 — see notes below)
 **Status:** Implemented & Operational
 **Target Audience:** Backend Engineers, Frontend Engineers
 
@@ -10,10 +10,15 @@
 > `/api/v1/validations/{id}/export-pdf`-style endpoints with `Authorization: Bearer`
 > tokens, `?theme=dark|light&branding=true` query params, a Playwright/headless-Chromium
 > rendering option, and a code sample that didn't match the real module. None of that
-> exists — there is no authentication anywhere in this app, no theme/branding query
+> exists: the PDF endpoints take no auth header, there are no theme/branding query
 > params, no Playwright dependency, and the actual `generate_dossier_pdf()` function
 > looks nothing like what was shown. This version describes the real
 > `backend/agent/pdf_exporter.py` and its two real endpoints.
+>
+> **Update 2026-09-26:** version 2 of this note also said "there is no authentication
+> anywhere in this app". That is no longer true. The app now has optional JWT accounts
+> and an admin role (see [doc 19](19_AFFINITY_MILESTONE_3_POSTGRESQL_AUTH_AND_DATA_PERSISTENCE.md)).
+> The PDF endpoints themselves still don't require a token, as described below.
 
 ## 1. What Actually Exists
 
@@ -37,10 +42,12 @@ GET /validate/{sessionId}/pdf
   -> 200, application/pdf, Content-Disposition: attachment; filename="Affinity_Report_{sessionId}.pdf"
 ```
 
-Neither endpoint requires an access token or any auth header — this app has no
-authentication layer at all (see doc 19's corrected version). Both are rate-limited
-per IP (`EXPORT_PDF_RATE_LIMIT_PER_MINUTE`, default 10/minute) rather than gated by a
-token.
+Neither endpoint requires an access token. The app does have optional JWT accounts
+(see doc 19 §4), but PDF export deliberately stays open: the session id is a random
+UUID that works as a capability link, so a report link emailed to a founder downloads
+without signing in. The flip side is that anyone holding a session id can download
+that report. Both endpoints are rate-limited per IP (`EXPORT_PDF_RATE_LIMIT_PER_MINUTE`,
+default 10/minute).
 
 > **Correction:** `POST /reports/{sessionId}/email` no longer renders a PDF at all -
 > it assembles the canonical report (`agent/report_assembler.py`) and emails its
@@ -55,7 +62,8 @@ Four sections, built directly from whatever fields are present in the input dict
 (every field access is defensive — a missing section is simply skipped, not an error):
 
 1. **Header + Executive Summary** — idea title, target customer, the opportunity
-   score (read from `marketOpportunity.opportunityScore`), and the `summary` string.
+   score (read from `marketOpportunity.opportunityScore`), the go/no-go `verdict` and
+   its next step when present, and the `summary` string.
 2. **Market Size & Growth** — `marketOpportunity.marketSize` and a table of up to 3
    customer segments (`segment`, `painPoints`).
 3. **Competitor Landscape** — a table of up to 5 competitors with `name`,

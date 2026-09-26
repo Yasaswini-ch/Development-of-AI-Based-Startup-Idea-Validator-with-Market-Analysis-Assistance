@@ -88,12 +88,13 @@ flowchart TD
 
 ### Tier 1: Presentation Layer (`frontend/`)
 - **Technology:** React 18, Vite, Vanilla Tailwind CSS.
-- **Role:** Renders submission forms, tabbed validation results (`ValidationResults.jsx`), 3x3 competitor positioning grids, source agreement badges, and white-space cards.
-- **State Persistence:** Uses `sessionStorage` (`affinity:lastValidation`) to survive active tab reloads without persisting data to disk.
+- **Role:** Renders submission forms, tabbed validation results (`ValidationResults.jsx`), 3x3 competitor positioning grids, the confidence dashboard, TAM/SAM/SOM tiers, and white-space cards.
+- **Account views (signed-in only):** a single account menu (`AccountMenu.jsx`) replaces the old row of nav buttons and opens History, Compare ideas, **Dashboard** (`AnalyticsDashboard.jsx`: Overview, Comparison matrix, Validation history, Score trends) and, for admins only, **Platform health** (`PlatformHealth.jsx`).
+- **State Persistence:** Uses `sessionStorage` for the current result so it survives a tab reload; the auth token, device history and compare basket live in `localStorage`.
 
 ### Tier 2: API Gateway Layer (`backend/main.py`)
 - **Technology:** FastAPI, Uvicorn, Pydantic, Python `hashlib`.
-- **Role:** Exposes `/validate`, `/chat`, `/reports/{sessionId}` (+ `/email`), PDF export, job-status polling, `/health`, and `/` endpoints. Enforces CORS policies (`FRONTEND_ORIGIN`), validates input payloads, applies per-IP rate limiting, tags every request with an `X-Request-ID`, and manages a SHA-256 keyed 30-minute database-backed response cache.
+- **Role:** Exposes `/validate`, `/chat`, `/reports/{sessionId}` (+ `/email`), `/reports/compare`, PDF export, job-status polling, `/auth/*`, `/me/history`, `/me/analytics`, admin-only `/admin/platform-metrics`, `/health`, and `/` endpoints. Enforces CORS policies (`FRONTEND_ORIGIN`), validates input payloads, applies per-IP rate limiting, tags every request with an `X-Request-ID`, and manages a SHA-256 keyed 30-minute database-backed response cache.
 
 ### Tier 3: Agent Orchestration Layer (`backend/agent/`)
 - **Technology:** LangGraph, CrewAI, spaCy (`en_core_web_sm`).
@@ -101,7 +102,7 @@ flowchart TD
 
 ### Tier 4: Persistence Layer (`backend/agent/db.py`)
 - **Technology:** SQLAlchemy, Postgres (production) / SQLite (local, tests).
-- **Role:** Backs validation sessions, background jobs (async/email path), and the response cache — replacing what used to be process-local dicts that didn't survive a restart or work across more than one backend instance.
+- **Role:** Backs user accounts (with the `is_admin` flag), validation sessions, background jobs (async/email path), the response cache, and the `events` operational log behind Platform Health — replacing what used to be process-local dicts that didn't survive a restart or work across more than one backend instance.
 
 ### Tier 5: Cloud Services & External APIs
 - **Groq Cloud API:** Provides inference for the Market Opportunity, SWOT, MVP, and GTM agents (`qwen/qwen3.8-27b` primary, two same-provider fallback models, then `gemini/gemini-3.6-flash` as a genuinely separate provider/quota fallback tier).
@@ -128,7 +129,11 @@ flowchart TD
 | `white_space.py` | [`backend/agent/white_space.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/white_space.py) | Algorithmic synthesis of unaddressed feature opportunities | Synthesis Engine |
 | `opportunity_score.py` | [`backend/agent/opportunity_score.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/opportunity_score.py) | Mathematical formulation of consolidated 0–100 score | Math Engine |
 | `db.py` | [`backend/agent/db.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/db.py) | SQLAlchemy engine (Postgres prod / SQLite local) backing sessions, jobs, cache | Persistence |
-| `llm.py` | [`backend/agent/llm.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/llm.py) | Groq model fallback chain, `reasoning_effort` tuning, latency/token logging | Inference Wrapper |
+| `viability_score.py` | [`backend/agent/viability_score.py`](../backend/agent/viability_score.py) | Market Viability Score: headline from demand/risk/velocity, plus `competitionClarity` and `timing` axes reported separately | Math Engine |
+| `auth.py` | [`backend/agent/auth.py`](../backend/agent/auth.py) | Signup/login, bcrypt hashing, JWT issue/verify, `require_user` / `require_admin`, `ADMIN_EMAILS` self-promotion | Security |
+| `events.py` | [`backend/agent/events.py`](../backend/agent/events.py) | Durable append-only event log (latency, model used, cache, errors, categories, email) with 90-day TTL | Persistence |
+| `user_analytics.py` / `platform_metrics.py` | [`backend/agent/`](../backend/agent/) | Aggregations behind the founder Dashboard and admin Platform Health | Analytics |
+| `llm.py` | [`backend/agent/llm.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/llm.py) | Groq → Gemini model fallback chain with per-attempt shape validation, `reasoning_effort` tuning, latency/token logging | Inference Wrapper |
 
 > **Note:** an earlier, separately-built `agent/confidence.py` module (regex pattern
 > matching over search text) was never actually wired into the live pipeline - the

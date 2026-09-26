@@ -74,19 +74,42 @@ interface ValidateResponse {
     angle: string;
   }>;
   confidence: {
-    marketGrowth: { agree: number; total: number };
-    competitivePressure: { agree: number; total: number };
+    // Headline: recomputed over the sources the claims actually cite
+    // (see confidence-and-evidence-scoring-methodology.md)
+    agreeingSources: number;
+    totalSources: number;
+    percentage: number;
+    label: string;
+    perAngle: Record<string, { agreeingSources: number; totalSources: number; percentage: number; label: string }>; // raw search pool
+    sourceCoverage: { claimsWithSource: number; totalClaims: number; percentage: number };
+    averageRelevance: number | null;
+    crossSourceAgreement: { claimsWithMultipleSources: number; totalClaims: number; percentage: number };
+    directEvidenceRatio: { direct: number; inferred: number; percentage: number };
+    sourceRecency: { sourcesWithKnownDate: number; totalSources: number; medianAgeDays: number | null };
   } | null;
   marketOpportunity: {
-    marketSize: string;
-    trends: string[];
+    marketSize: string; // narrative sentence
+    tam: { text: string; sourceIds: string[] } | null; // null when no source supports it
+    sam: { text: string; sourceIds: string[] } | null;
+    som: { text: string; sourceIds: string[] } | null;
+    trends: Array<{ text: string; sourceIds: string[] }>;
     segments: Array<{
       segment: string;
       painPoints: string;
       motivations: string;
       buyingBehavior: string;
+      sourceIds: string[];
     }>;
     opportunityScore: number; // 0 to 100
+  } | null;
+  marketViability: {
+    score: number; // 0.4*marketDemand + 0.3*(100-executionRisk) + 0.3*growthVelocity
+    label: string;
+    marketDemand: number;
+    executionRisk: number; // higher = riskier
+    growthVelocity: number;
+    competitionClarity: number; // reported only, not in score
+    timing: number; // reported only, not in score
   } | null;
   competitors: {
     competitors: Array<{
