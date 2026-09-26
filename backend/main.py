@@ -316,15 +316,9 @@ class LoginRequest(BaseModel):
 
 
 class ValidateRequest(BaseModel):
-    # Unlike ChatRequest.message below, idea previously had no length
-    # bound at all - an empty/whitespace-only idea passed straight through
-    # to retrieval.collect() and built degenerate search queries (e.g. a
-    # bare " market size" with no actual subject) against real external
-    # search APIs instead of being rejected up front. max_length guards the
-    # same prompt-bloat concern ChatRequest.message already has.
-    idea: str = Field(max_length=500)
-    targetCustomer: str = Field(default="", max_length=200)
-    problem: str = Field(default="", max_length=500)
+    idea: str = Field(max_length=2500)
+    targetCustomer: str = Field(default="", max_length=600)
+    problem: str = Field(default="", max_length=1500)
     email: str = ""
     # Track G.2 - "quick" runs only market/competitor/white-space analysis
     # (no SWOT/MVP/GTM/contradictions/experiments/action-plan); "deep" is

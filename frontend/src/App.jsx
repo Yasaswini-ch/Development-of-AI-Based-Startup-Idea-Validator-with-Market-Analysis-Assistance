@@ -290,7 +290,15 @@ export default function App() {
       }
 
       if (!res.ok) {
-        setErrorMessage(data.error || 'Something went wrong. Please try again.')
+        let msg = data.error
+        if (!msg && data.detail) {
+          if (Array.isArray(data.detail)) {
+            msg = data.detail.map((d) => d.msg || `${d.loc?.join('.')}: ${d.type}`).join(', ')
+          } else {
+            msg = String(data.detail)
+          }
+        }
+        setErrorMessage(msg || 'Something went wrong. Please try again.')
         return
       }
 
