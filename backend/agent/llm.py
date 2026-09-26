@@ -52,7 +52,7 @@ _LLM_CALL_TIMEOUT_SECONDS = float(os.environ.get("LLM_CALL_TIMEOUT_SECONDS", "30
 # already in .env - is the real fix for "every model I can reach shares one
 # account's budget." See get_llm's docstring for why this was previously
 # reverted and why the retest changed that.
-FALLBACK_MODELS = ("groq/openai/gpt-oss-20b", "groq/openai/gpt-oss-120b", "gemini/gemini-3.6-flash")
+FALLBACK_MODELS = ("groq/openai/gpt-oss-20b", "groq/openai/gpt-oss-120b", "gemini/gemini-3.6-flash", "gemini/gemini-3.8-flash")
 _MAX_RETRY_WAIT_SECONDS = 30
 
 # Last-resort tier, tried only when a caller opts in via
@@ -109,6 +109,7 @@ _REASONING_EFFORT = {
     "groq/openai/gpt-oss-20b": "low",
     "groq/openai/gpt-oss-120b": "low",
     "gemini/gemini-3.6-flash": "none",
+    "gemini/gemini-3.8-flash": "none",
 }
 
 
@@ -199,6 +200,47 @@ def _retry_after_seconds(exc: Exception) -> float | None:
     return float(match.group(1)) if match else None
 
 
+def _is_switch_worthy_error(exc: Exception) -> bool:
+    """True when the error was caused by model/provider limits, availability,
+    network issues, or output shape validation — meaning trying another model
+    in the fallback chain is the right recovery. Unrelated internal code bugs
+    (like a bug in a caller's custom validator) return False so they fail loudly.
+    """
+    if isinstance(exc, _ShapeValidationError):
+        return True
+    if _is_rate_limit_error(exc) or _is_model_not_found_error(exc):
+        return True
+    text = str(exc).lower()
+    exc_type = type(exc).__name__.lower()
+    provider_error_indicators = (
+        "timeout",
+        "connection",
+        "connecterror",
+        "badrequest",
+        "internalserver",
+        "serviceunavailable",
+        "overloaded",
+        "quota",
+        "capacity",
+        "authentication",
+        "unauthorized",
+        "apierror",
+        "geminiexception",
+        "groqexception",
+        "litellm",
+        "400",
+        "401",
+        "403",
+        "404",
+        "429",
+        "500",
+        "502",
+        "503",
+        "504",
+    )
+    return any(ind in text or ind in exc_type for ind in provider_error_indicators)
+
+
 def _kickoff_with_metrics(model: str, build_crew):
     """Runs one crew.kickoff() call and logs latency + token usage - the
     real numbers Track F's optimization pass needs to tune prompt/limit
@@ -256,15 +298,23 @@ def kickoff_with_fallback(build_crew, primary: str | None = None, allow_local: b
     trying the remaining ones). Only once every model in the chain -
     shape-invalid or rate-limited - is exhausted does this raise
     NeedsDeepAnalysisError (allow_local False) or fall through to
-    LOCAL_MODEL (allow_local True).
+    LOCAL_MODEL / retry (allow_local True).
     """
     try:
         return _kickoff_cloud_chain(build_crew, primary, validate=validate)
     except Exception as exc:
         if not allow_local:
             raise NeedsDeepAnalysisError(str(exc)) from exc
-        logger.warning("Cloud path exhausted or invalid, trying local model %s", LOCAL_MODEL)
-        return _kickoff_with_metrics(LOCAL_MODEL, build_crew)
+        try:
+            logger.warning("Cloud path exhausted or invalid, trying local model %s", LOCAL_MODEL)
+            return _kickoff_with_metrics(LOCAL_MODEL, build_crew)
+        except Exception as local_exc:
+            logger.warning(
+                "Local model %s unavailable (%s), retrying cloud models after brief cooldown...",
+                LOCAL_MODEL, local_exc,
+            )
+            time.sleep(3)
+            return _kickoff_cloud_chain(build_crew, primary, validate=validate)
 
 
 class _ShapeValidationError(Exception):
@@ -335,12 +385,7 @@ def _kickoff_cloud_chain(build_crew, primary: str | None = None, validate=None):
             return run(model)
         except Exception as exc:
             last_exc = exc
-            # model_not_found and a shape-validation failure switch
-            # immediately too (see _is_model_not_found_error and
-            # _ShapeValidationError above) - but only ever waits out a
-            # cooldown for an actual rate limit, since no wait fixes a
-            # missing model or a malformed response.
-            if not (_is_rate_limit_error(exc) or _is_model_not_found_error(exc) or isinstance(exc, _ShapeValidationError)):
+            if not _is_switch_worthy_error(exc):
                 raise
 
             if not is_last:
