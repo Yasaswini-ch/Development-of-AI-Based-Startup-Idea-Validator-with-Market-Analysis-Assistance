@@ -23,9 +23,11 @@ describe('StatsStrip market gaps tile', () => {
       ],
     }
     render(<StatsStrip results={results} whiteSpace={whiteSpace} />)
-    // CircleStat counts up from 0, so wait for the animation to settle.
-    await waitFor(() => expect(statValue('Market gaps')).toBe('3'), { timeout: 2000 })
-  })
+    // CircleStat counts up from 0, so wait for the animation to settle. The
+    // count-up runs on requestAnimationFrame, which jsdom slows down when
+    // the whole suite runs in parallel, so the timeout is generous.
+    await waitFor(() => expect(statValue('Market gaps')).toBe('3'), { timeout: 8000 })
+  }, 10000)
 
   it('shows 0 when white-space analysis is missing', () => {
     render(<StatsStrip results={results} whiteSpace={null} />)

@@ -1,34 +1,17 @@
 import { useState } from 'react'
 import { IconLightbulb, IconUsers, IconAlertTriangle, IconCheckCircle } from './icons'
 import { assessIdeaClarity } from '../lib/ideaClarity'
+import ThoughtLine from './ThoughtLine'
 
 const IDEA_MAX = 2000
 
+// While the pipeline runs: one breathing "Validating your idea" line with a
+// live timer, and the phases reached so far underneath (ThoughtLine.jsx).
 function LoadingSteps({ phases, currentIndex }) {
   return (
-    <ul className="space-y-1.5 rounded-lg border border-border bg-surface px-3.5 py-3">
-      {phases.map((phase, i) => {
-        const done = i < currentIndex
-        const active = i === currentIndex
-        return (
-          <li
-            key={phase}
-            className={`flex items-center gap-2 font-mono text-xs uppercase tracking-wide transition-colors ${
-              done ? 'text-success' : active ? 'text-info' : 'text-muted/50'
-            }`}
-          >
-            {done ? (
-              <IconCheckCircle className="h-3.5 w-3.5 shrink-0" />
-            ) : (
-              <span
-                className={`h-1.5 w-1.5 shrink-0 rounded-full ${active ? 'pulse-dot bg-info' : 'bg-muted/30'}`}
-              />
-            )}
-            <span className={active ? 'cursor-blink' : ''}>{phase}</span>
-          </li>
-        )
-      })}
-    </ul>
+    <div className="rounded-lg border border-border bg-surface px-4 py-3.5">
+      <ThoughtLine label="Validating your idea" steps={phases.slice(0, currentIndex + 1)} />
+    </div>
   )
 }
 
