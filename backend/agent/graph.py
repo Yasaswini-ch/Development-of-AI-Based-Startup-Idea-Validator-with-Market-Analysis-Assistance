@@ -19,6 +19,8 @@ from .revenue_agent import analyze_revenue_models
 from .opportunity_score import calculate_opportunity_score
 from .structured_output import compact_sources
 from .swot_agent import analyze_swot
+from .commercial_model import build_commercial_model
+from .delivery_roadmap import build_delivery_roadmap
 from .verdict import build_verdict
 from .viability_score import calculate_market_viability, calculate_viability_index
 from .voice_of_market import extract_voice_of_market
@@ -711,6 +713,17 @@ def mvp_node(state: PipelineState) -> PipelineState:
             "mvp": None,
             "errors": {"mvp": _friendly_error_message(exc)},
         }
+
+    # Pillar 5B: stage-gated delivery roadmap, deterministic and built from
+    # this node's own already-prioritized features (see
+    # delivery_roadmap.py) - own try/except, same reasoning as
+    # commercial_model above.
+    try:
+        value["deliveryRoadmap"] = build_delivery_roadmap(value)
+    except Exception as exc:
+        logger.exception("[mvp] delivery roadmap FAILED")
+        _record_node_failure("delivery_roadmap", exc)
+
     logger.info("[mvp] COMPLETE")
     metrics.increment("node.mvp.success")
     return {"mvp": value}
@@ -744,6 +757,21 @@ def gtm_node(state: PipelineState) -> PipelineState:
             "gtm": None,
             "errors": {"gtm": _friendly_error_message(exc)},
         }
+
+    # Pillar 5A: unit economics + pricing tiers, deterministic (see
+    # commercial_model.py) - its own try/except so a bug here can't take
+    # down the LLM-backed GTM result already computed above.
+    try:
+        value["commercialModel"] = build_commercial_model(
+            state["idea"],
+            state.get("competitors"),
+            value.get("channels"),
+            state.get("swot"),
+        )
+    except Exception as exc:
+        logger.exception("[gtm] commercial model FAILED")
+        _record_node_failure("commercial_model", exc)
+
     logger.info("[gtm] COMPLETE")
     metrics.increment("node.gtm.success")
     return {"gtm": value}
