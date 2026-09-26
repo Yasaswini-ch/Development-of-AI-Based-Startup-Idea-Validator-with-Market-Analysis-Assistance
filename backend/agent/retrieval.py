@@ -153,6 +153,8 @@ def _compact_subject(
     so max_words must remain supported.
     """
 
+    # Strip leading generic prefixes like "AI-powered" so the compact
+    # subject starts with the concrete product/problem words.
     text = _remove_leading_generic(idea).lower()
     industry_text = _clean_text(industry).lower()
 
@@ -373,7 +375,10 @@ def build_search_angles(
     location: str = "",
 ) -> List[Tuple[str, List[str]]]:
     """
-    Build multiple search queries around the startup idea.
+    Build grouped search queries around the startup idea.
+
+    Returns:
+        List of (angle_name, queries_for_angle) tuples.
 
     Queries intentionally target:
     - market

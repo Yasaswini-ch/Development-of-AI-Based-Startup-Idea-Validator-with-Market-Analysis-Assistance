@@ -279,23 +279,16 @@ def confidence_node(
         item["agreeingSources"]
         for item in per_angle.values()
     )
+    agreement_percentage = round(
+        (agreeing_sources / total_sources) * 100
+    ) if total_sources else 0
 
     confidence = {
         "agreeingSources": agreeing_sources,
         "sourceCount": total_sources,
         "totalSources": total_sources,
-        "sourceCoverage": (
-            100 if total_sources else 0
-        ),
-        "percentage": round(
-            (
-                agreeing_sources
-                / total_sources
-            )
-            * 100
-        )
-        if total_sources
-        else 0,
+        "sourceCoverage": agreement_percentage,
+        "percentage": agreement_percentage,
         "perAngle": per_angle,
     }
 
