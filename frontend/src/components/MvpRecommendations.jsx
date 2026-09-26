@@ -2,23 +2,107 @@ import { IconAlertTriangle, IconLightbulb } from './icons'
 import DegradedBanner from './DegradedBanner'
 import Citation from './Citation'
 
+// Impact/effort are intensities, not good/bad or evidence - so a neutral
+// ink scale rather than coral/amber, which the app reserves for actions and
+// caution states.
 const LEVEL_STYLES = {
-  low: 'border-border bg-panel text-muted',
-  medium: 'border-amber-300 bg-amber-50 text-amber-700',
-  high: 'border-accent/30 bg-accent/5 text-accent',
+  low:     'border-border bg-panel text-muted',
+  medium:  'border-border-strong bg-panel text-muted-strong',
+  high:    'border-text/30 bg-text/5 text-text',
   unknown: 'border-border bg-panel text-muted',
 }
 
 function Badge({ label, value }) {
   const level = LEVEL_STYLES[value] ? value : 'unknown'
   return (
-    <span className={`rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide ${LEVEL_STYLES[level]}`}>
+    <span className={`rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide ${LEVEL_STYLES[level]}`}>
       {label}: {level}
     </span>
   )
 }
 
-export default function MvpRecommendations({ data, error, sourceMap }) {
+function priorityFor(impact, effort) {
+  if (impact === 'high' && effort !== 'high') return 'P0'
+  if (impact === 'high' || (impact === 'medium' && effort !== 'high')) return 'P1'
+  return 'P2'
+}
+
+const PHASE_META = {
+  P0: {
+    label: 'P0 — Launch',
+    sub: 'Phase 1 (Alpha), build first',
+    dot: 'bg-accent',
+    ring: 'border-accent/40 bg-accent/5',
+    badge: 'bg-accent text-white',
+    line: 'bg-accent/30',
+  },
+  P1: {
+    label: 'P1 — Shortly after',
+    sub: 'Phase 1 (Alpha), after the P0 features',
+    dot: 'bg-info',
+    ring: 'border-info/30 bg-info/5',
+    badge: 'border border-info/40 bg-info/10 text-info',
+    line: 'bg-info/20',
+  },
+  P2: {
+    label: 'P2 — Future',
+    sub: 'Phase 1 (Alpha), first to cut if time runs short',
+    dot: 'bg-border-strong',
+    ring: 'border-border-strong bg-surface',
+    badge: 'border border-border-strong bg-panel text-muted-strong',
+    line: 'bg-border',
+  },
+}
+
+function FeatureCard({ item, meta, sourceMap }) {
+  return (
+    <article className={`rounded-xl border p-5 ${meta.ring}`}>
+      <div className="flex items-start gap-2.5">
+        <span className={`mt-1 rounded px-1.5 py-0.5 font-mono text-[10px] font-bold ${meta.badge}`}>
+          {item._priority}
+        </span>
+        <IconLightbulb className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+        <h3 className="font-serif text-base font-semibold leading-snug text-text">
+          {item.feature}
+          {sourceMap && <Citation sourceIds={item.sourceIds} sourceMap={sourceMap} />}
+        </h3>
+      </div>
+      {item.rationale && (
+        <p className="mt-3 text-sm leading-relaxed text-muted">{item.rationale}</p>
+      )}
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Badge label="Impact" value={item.impact} />
+        <Badge label="Effort" value={item.effort} />
+      </div>
+    </article>
+  )
+}
+
+function ExtraFeatureRow({ item, tier, sourceMap }) {
+  return (
+    <div className="flex items-start gap-3 rounded-xl border border-border bg-surface p-4">
+      <span className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 font-mono text-[10.5px] font-bold ${tier.badge}`}>
+        {tier.key}
+      </span>
+      <div className="min-w-0">
+        <p className="text-sm font-medium leading-snug text-text">
+          {item.feature}
+          {sourceMap && <Citation sourceIds={item.sourceIds} sourceMap={sourceMap} />}
+        </p>
+        {item.rationale && (
+          <p className="mt-1 text-xs leading-relaxed text-muted">{item.rationale}</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+const EXTRA_META = {
+  niceToHave: { key: 'BETA', label: 'Phase 2 (closed beta)', badge: 'border border-info/40 bg-info/10 text-info', dot: 'bg-info' },
+  deferred:   { key: 'V2',   label: 'Later (v2)',            badge: 'border border-border-strong bg-panel text-muted-strong', dot: 'bg-border-strong' },
+}
+
+export default function MvpRecommendations({ data, error, sourceMap, onOpenRoadmap }) {
   if (data === null || data === undefined) {
     return (
       <div className="flex flex-col items-center justify-center p-2 text-center">
@@ -36,27 +120,80 @@ export default function MvpRecommendations({ data, error, sourceMap }) {
     return <p className="text-center text-sm text-muted">No MVP features were recommended.</p>
   }
 
+  // Tag each feature with its computed priority, then group
+  const tagged = features.map((f) => ({ ...f, _priority: priorityFor(f.impact, f.effort) }))
+  const phases = ['P0', 'P1', 'P2'].map((p) => ({
+    key: p,
+    meta: PHASE_META[p],
+    items: tagged.filter((f) => f._priority === p),
+  })).filter((ph) => ph.items.length > 0)
+
+  const niceToHave = Array.isArray(data.niceToHave) ? data.niceToHave : []
+  const deferred = Array.isArray(data.deferred) ? data.deferred : []
+  const hasExtra = niceToHave.length > 0 || deferred.length > 0
+
   return (
     <div>
       {data.degraded && <DegradedBanner />}
-      <div className="grid gap-3 sm:grid-cols-2">
-        {features.map((item, index) => (
-          <article key={index} className="rounded-xl border border-border bg-surface p-5">
-            <div className="flex items-start gap-2">
-              <IconLightbulb className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
-              <h3 className="text-sm font-semibold leading-snug text-text">
-                {item.feature}
-                {sourceMap && <Citation sourceIds={item.sourceIds} sourceMap={sourceMap} />}
-              </h3>
-            </div>
-            <p className="mt-3 text-sm leading-relaxed text-muted">{item.rationale}</p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Badge label="Impact" value={item.impact} />
-              <Badge label="Effort" value={item.effort} />
-            </div>
-          </article>
+
+      {/* Phase legend */}
+      <div className="mb-6 flex flex-wrap gap-3">
+        {phases.map(({ key, meta }) => (
+          <div key={key} className="flex items-center gap-2">
+            <span className={`h-2 w-2 rounded-full ${meta.dot}`} />
+            <span className="font-mono text-[10px] uppercase tracking-widest text-muted">{meta.label}</span>
+          </div>
         ))}
       </div>
+
+      {/* Phase groups */}
+      <div className="space-y-8">
+        {phases.map(({ key, meta, items }, pi) => (
+          <div key={key} className="relative pl-6">
+            {/* Vertical timeline line connecting phases */}
+            {pi < phases.length - 1 && (
+              <div className={`absolute left-[7px] top-8 h-full w-0.5 ${meta.line}`} />
+            )}
+
+            {/* Phase header with dot */}
+            <div className="mb-4 flex items-center gap-3">
+              <span className={`absolute left-0 h-3.5 w-3.5 rounded-full border-2 border-surface ${meta.dot}`} />
+              <div>
+                <p className="font-mono text-[11px] font-semibold uppercase tracking-widest text-text">{meta.label}</p>
+                <p className="text-xs text-muted">{meta.sub}</p>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              {items.map((item, i) => (
+                <FeatureCard key={i} item={item} meta={meta} sourceMap={sourceMap} />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Nice to have + Deferred v2 */}
+      {hasExtra && (
+        <div className="mt-8 space-y-4">
+          <div className="flex items-center gap-2 border-t border-border pt-6">
+            <span className="font-mono text-[11px] uppercase tracking-widest text-muted">After the MVP</span>
+          </div>
+          {[...niceToHave.map((f) => ({ ...f, _tier: 'niceToHave' })), ...deferred.map((f) => ({ ...f, _tier: 'deferred' }))].map((item, i) => (
+            <ExtraFeatureRow key={i} item={item} tier={EXTRA_META[item._tier]} sourceMap={sourceMap} />
+          ))}
+        </div>
+      )}
+
+      {data.deliveryRoadmap?.phases?.length > 0 && onOpenRoadmap && (
+        <p className="mt-8 border-t border-border pt-4 text-sm text-muted">
+          These features are laid out week by week in the{' '}
+          <button type="button" onClick={onOpenRoadmap} className="font-medium text-accent underline-offset-2 hover:underline">
+            Roadmap tab
+          </button>
+          .
+        </p>
+      )}
     </div>
   )
 }

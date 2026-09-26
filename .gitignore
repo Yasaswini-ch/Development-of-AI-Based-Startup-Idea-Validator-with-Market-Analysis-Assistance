@@ -5,7 +5,8 @@ __pycache__/
 *.log
 
 # Local SQLite dev database (DATABASE_URL falls back to this if unset)
-backend/*.db
+# Covers both backend/affinity.db and any root-level *.db created during dev
+*.db
 
 # Node / frontend
 node_modules/
@@ -29,7 +30,15 @@ docs/claude-code-prompts.md
 
 # Agent handoff doc - local reference only, not for the shared repo
 AGENTS.md
+
+# Local task tracker and team planning docs - not for the shared repo
+PENDING-TASKS.md
+Affinity_updated.xlsx
+Milestone4-Task-Division.docx
 docs/AFFINITY_GEMINI_IMAGE_GENERATION_PROMPTS.md
+
+# Competitive differentiators plan - not for other teams to see on GitHub
+docs/unique-features-plan.md
 
 backend/venv/
 

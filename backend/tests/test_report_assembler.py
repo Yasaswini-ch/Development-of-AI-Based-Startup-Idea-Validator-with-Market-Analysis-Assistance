@@ -90,6 +90,21 @@ class ReportAssemblerTests(unittest.TestCase):
         self.assertEqual(len(report["experiments"]), 1)
         self.assertEqual(report["actionPlan"]["next7Days"], "...")
 
+    def test_assumptions_and_revenue_models_are_carried_through(self):
+        # Regression: these were computed by assumption_tracker_node/
+        # revenue_models_node and returned in the live /validate response,
+        # but were never written into session context or read back here -
+        # every stored/replayed report (history, PDF, email) silently lost
+        # them even for a run that produced real data.
+        context = _full_context(
+            assumptions={"assumptions": [{"assumption": "...", "category": "demand", "uncertainty": "high"}]},
+            revenueModels={"models": [{"name": "SaaS Subscription", "fit": "high"}]},
+        )
+        report = assemble_report("session-5", context)
+
+        self.assertEqual(len(report["assumptions"]["assumptions"]), 1)
+        self.assertEqual(report["revenueModels"]["models"][0]["name"], "SaaS Subscription")
+
     def test_report_to_pdf_input_flattens_ideasummary_back_to_the_shape_pdf_exporter_expects(self):
         report = assemble_report("session-5", _full_context())
         pdf_input = report_to_pdf_input(report)
@@ -138,7 +153,8 @@ class ReportEndpointTests(unittest.TestCase):
         self.assertTrue(body["deliveryId"])
         send_email.assert_called_once()
         # Never reruns retrieval/any agent - only the already-stored session
-        # context and a PDF render happen in this path.
+        # context is read in this path (no PDF generation here anymore -
+        # see GET /validate/{sessionId}/pdf for direct download instead).
 
     @patch("main.send_canonical_report_email", return_value=False)
     def test_email_report_returns_502_when_delivery_fails(self, _send_email):
@@ -147,6 +163,62 @@ class ReportEndpointTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 502)
         self.assertEqual(response.json()["status"], "failed")
+
+
+class CompareReportsEndpointTests(unittest.TestCase):
+    """POST /reports/compare - Multi-Idea Comparison Matrix (doc 21)."""
+
+    def setUp(self):
+        clear_sessions()
+        main._clear_rate_limits()
+        self.client = TestClient(main.app)
+
+    def test_rejects_fewer_than_2_session_ids(self):
+        session_id = create_session(_full_context())
+        response = self.client.post("/reports/compare", json={"sessionIds": [session_id]})
+        self.assertEqual(response.status_code, 422)
+
+    def test_rejects_more_than_the_max_session_ids(self):
+        ids = [create_session(_full_context()) for _ in range(6)]
+        response = self.client.post("/reports/compare", json={"sessionIds": ids})
+        self.assertEqual(response.status_code, 422)
+
+    def test_dedupes_identical_session_ids_and_still_requires_2_distinct(self):
+        session_id = create_session(_full_context())
+        response = self.client.post("/reports/compare", json={"sessionIds": [session_id, session_id]})
+        self.assertEqual(response.status_code, 422)
+
+    def test_returns_bundled_reports_for_two_real_sessions(self):
+        id_a = create_session(_full_context(idea="Idea A"))
+        id_b = create_session(_full_context(idea="Idea B", gtm={"positioning": "Idea B positioning", "channels": [], "earlyCustomerApproach": ""}))
+
+        response = self.client.post("/reports/compare", json={"sessionIds": [id_a, id_b]})
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(len(body["reports"]), 2)
+        self.assertEqual(body["missing"], [])
+        session_ids_in_response = {r["sessionId"] for r in body["reports"]}
+        self.assertEqual(session_ids_in_response, {id_a, id_b})
+
+    def test_reports_expired_or_unknown_sessions_as_missing_not_a_hard_failure(self):
+        id_a = create_session(_full_context())
+        id_b = create_session(_full_context())
+
+        response = self.client.post("/reports/compare", json={"sessionIds": [id_a, id_b, "does-not-exist"]})
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(len(body["reports"]), 2)
+        self.assertEqual(body["missing"], ["does-not-exist"])
+
+    def test_returns_404_when_fewer_than_2_sessions_are_actually_found(self):
+        id_a = create_session(_full_context())
+
+        response = self.client.post("/reports/compare", json={"sessionIds": [id_a, "does-not-exist"]})
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["missing"], ["does-not-exist"])
 
 
 if __name__ == "__main__":

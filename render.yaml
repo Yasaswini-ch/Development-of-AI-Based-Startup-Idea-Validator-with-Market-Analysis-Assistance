@@ -20,12 +20,33 @@ services:
         sync: false
       - key: TAVILY_API_KEY
         sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: SENDGRID_API_KEY
+        sync: false
+      - key: SENDGRID_FROM_EMAIL
+        sync: false
+      # Signs the JWT auth tokens issued by agent/auth.py - Render generates
+      # and stores a random value for this on first deploy (rather than
+      # `sync: false`, which would require someone to paste one in by hand)
+      # since there's no external account to create a matching key on.
+      # Rotating it invalidates every signed-in session, so it isn't
+      # regenerated on later deploys.
+      - key: AUTH_SECRET_KEY
+        generateValue: true
       - key: FRONTEND_ORIGIN
         value: https://startup-validator-frontend-5qcr.onrender.com
       - key: DATABASE_URL
         fromDatabase:
           name: startup-validator-db
           property: connectionString
+      # Google OAuth client ID (agent/google_auth.py) - sync: false since
+      # this is created per-project in Google Cloud Console, not something
+      # Render can generate; enter the same value here and on the frontend
+      # service's VITE_GOOGLE_CLIENT_ID below. Left unset -> the Google
+      # Sign-In button just doesn't render, email/password auth still works.
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
 
   - type: web
     name: startup-validator-frontend
@@ -37,6 +58,10 @@ services:
     envVars:
       - key: VITE_API_URL
         value: https://startup-validator-backend-pruu.onrender.com
+      # Same client ID as the backend service's GOOGLE_OAUTH_CLIENT_ID
+      # above - both must match.
+      - key: VITE_GOOGLE_CLIENT_ID
+        sync: false
     routes:
       - type: rewrite
         source: /*

@@ -6,12 +6,10 @@ computed context (see session_store.create_session). Per the shared
 artifact mesh rules in that doc: this node only synthesizes existing
 artifacts, it never re-derives analysis or calls an LLM/search provider.
 
-contradictions/experiments/actionPlan are Tracks B/C, built separately by
-other agents (agent/contradiction_detector.py, agent/experiment_generator.py,
-agent/action_plan.py) and not yet wired into the pipeline as of this
-module's creation - they default to empty here and will populate
-automatically the moment main.py's session context starts carrying them,
-no change needed in this file when that lands.
+contradictions/experiments/actionPlan (Tracks B/C) and assumptions/
+revenueModels (the assumption tracker + revenue model suggester) are all
+wired into the pipeline and flow through main.py's session context like
+every other section.
 """
 
 import uuid
@@ -50,8 +48,9 @@ def assemble_report(session_id: str, context: dict) -> dict:
 
     `context` is exactly session_store's stored context dict (idea,
     targetCustomer, problem, summary, sources, confidence,
-    marketOpportunity, competitors, whiteSpace, swot, mvp, gtm, and -
-    once Tracks B/C land - contradictions/experiments/actionPlan).
+    marketOpportunity, competitors, whiteSpace, swot, mvp, gtm,
+    marketViability, contradictions, experiments, actionPlan,
+    assumptions, revenueModels, verdict).
     """
     market_opportunity = context.get("marketOpportunity") or {}
 
@@ -67,16 +66,18 @@ def assemble_report(session_id: str, context: dict) -> dict:
         "marketOpportunity": context.get("marketOpportunity"),
         "competitors": context.get("competitors"),
         "opportunityScore": market_opportunity.get("opportunityScore", 0),
+        "whiteSpace": context.get("whiteSpace"),
         "swot": context.get("swot"),
         "mvp": context.get("mvp"),
         "gtm": context.get("gtm"),
+        "marketViability": context.get("marketViability"),
         "confidence": context.get("confidence"),
-        # Tracks B/C - default empty until contradiction_detector.py /
-        # experiment_generator.py / action_plan.py are wired into the
-        # pipeline and their output starts flowing into session context.
         "contradictions": context.get("contradictions") or [],
         "experiments": context.get("experiments") or [],
         "actionPlan": context.get("actionPlan"),
+        "assumptions": context.get("assumptions"),
+        "revenueModels": context.get("revenueModels"),
+        "verdict": context.get("verdict"),
         "sources": context.get("sources") or [],
         "sectionErrors": _section_errors(context),
         "degradedSections": _degraded_sections(context),
@@ -101,7 +102,9 @@ def report_to_pdf_input(report: dict) -> dict:
         "summary": idea_summary.get("summary", ""),
         "marketOpportunity": report.get("marketOpportunity"),
         "competitors": report.get("competitors"),
+        "whiteSpace": report.get("whiteSpace"),
         "swot": report.get("swot"),
         "mvp": report.get("mvp"),
         "gtm": report.get("gtm"),
+        "verdict": report.get("verdict"),
     }

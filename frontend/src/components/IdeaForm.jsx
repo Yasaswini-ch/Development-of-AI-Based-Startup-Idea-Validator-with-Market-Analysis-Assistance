@@ -1,29 +1,60 @@
 import { useState } from 'react'
 import { IconLightbulb, IconUsers, IconAlertTriangle, IconCheckCircle } from './icons'
+import { assessIdeaClarity } from '../lib/ideaClarity'
+import ThoughtLine from './ThoughtLine'
 
-const IDEA_MAX = 300
-const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+const IDEA_MAX = 2000
 
-export default function IdeaForm({ onSubmit, isLoading, loadingStep, disabled }) {
+// While the pipeline runs: one breathing "Validating your idea" line with a
+// live timer, and the phases reached so far underneath (ThoughtLine.jsx).
+function LoadingSteps({ phases, currentIndex }) {
+  return (
+    <div className="rounded-lg border border-border bg-surface px-4 py-3.5">
+      <ThoughtLine label="Validating your idea" steps={phases.slice(0, currentIndex + 1)} />
+    </div>
+  )
+}
+
+export default function IdeaForm({ onSubmit, isLoading, loadingProgress, disabled }) {
   const [idea, setIdea] = useState('')
   const [targetCustomer, setTargetCustomer] = useState('')
   const [problem, setProblem] = useState('')
-  const [email, setEmail] = useState('')
-  const [wantsEmail, setWantsEmail] = useState(false)
   const [error, setError] = useState('')
+  const [errorField, setErrorField] = useState('')
+  // A vague idea gets flagged, not blocked - the founder can submit anyway
+  // by clicking again. Prevents spending a research pass and several LLM
+  // calls on a pitch too thin to ground the analysis in.
+  const [clarityWarning, setClarityWarning] = useState(null)
 
   function handleSubmit(e) {
     e.preventDefault()
     if (!idea.trim()) {
       setError('Please describe your startup idea before validating.')
+      setErrorField('idea')
       return
     }
-    if (wantsEmail && !EMAIL_PATTERN.test(email.trim())) {
-      setError('Please enter a valid email address, or turn off email delivery.')
+    if (!targetCustomer.trim()) {
+      setError('Please describe your target customer before validating.')
+      setErrorField('targetCustomer')
+      return
+    }
+    if (!problem.trim()) {
+      setError('Please describe the problem being solved before validating.')
+      setErrorField('problem')
       return
     }
     setError('')
-    onSubmit({ idea, targetCustomer, problem, email: wantsEmail ? email.trim() : '' })
+    setErrorField('')
+
+    if (!clarityWarning) {
+      const clarity = assessIdeaClarity(idea)
+      if (!clarity.clear) {
+        setClarityWarning(clarity.reason)
+        return
+      }
+    }
+    setClarityWarning(null)
+    onSubmit({ idea, targetCustomer, problem, email: '' })
   }
 
   return (
@@ -40,83 +71,76 @@ export default function IdeaForm({ onSubmit, isLoading, loadingStep, disabled })
             </label>
             <span className="flex items-center gap-2 font-mono text-[11px] text-muted">
               {idea.length} / {IDEA_MAX}
-              {idea.trim() && <IconCheckCircle className="h-4 w-4 text-accent" />}
+              {idea.trim() && <IconCheckCircle className="h-4 w-4 text-success" />}
             </span>
           </div>
           <textarea
             id="idea"
-            rows={3}
+            rows={10}
             maxLength={IDEA_MAX}
             value={idea}
-            onChange={(e) => setIdea(e.target.value)}
-            placeholder="An AI tool that validates business ideas using market data"
-            className={`w-full rounded-lg bg-surface border px-3.5 py-2.5 text-sm text-text placeholder:text-muted outline-none transition-colors focus:border-accent ${
-              error ? 'border-danger' : 'border-border'
+            onChange={(e) => {
+              setIdea(e.target.value)
+              if (clarityWarning) setClarityWarning(null)
+            }}
+            placeholder="Describe your startup concept in as much detail as you'd like — the core workflow, target customer pain, monetization mechanism, key assumptions, competitors you're aware of, anything that helps the research agents dig deeper."
+            className={`w-full resize-y rounded-lg bg-surface border px-3.5 py-3 text-sm leading-relaxed text-text placeholder:text-muted outline-none transition-colors focus:border-accent ${
+              errorField === 'idea' ? 'border-danger' : 'border-border'
             }`}
           />
-          {error && <p className="mt-1.5 text-sm text-danger">{error}</p>}
-        </div>
-
-        <div>
-          <div className="mb-1.5 flex items-center justify-between">
-            <label htmlFor="targetCustomer" className="flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider text-muted">
-              <IconUsers className="h-3.5 w-3.5 text-accent" />
-              Target customer
-            </label>
-            {targetCustomer.trim() && <IconCheckCircle className="h-4 w-4 text-accent" />}
-          </div>
-          <input
-            id="targetCustomer"
-            type="text"
-            value={targetCustomer}
-            onChange={(e) => setTargetCustomer(e.target.value)}
-            placeholder="Early-stage founders"
-            className="w-full rounded-lg bg-surface border border-border px-3.5 py-2.5 text-sm text-text placeholder:text-muted outline-none transition-colors focus:border-accent"
-          />
-        </div>
-
-        <div>
-          <div className="mb-1.5 flex items-center justify-between">
-            <label htmlFor="problem" className="flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider text-muted">
-              <IconAlertTriangle className="h-3.5 w-3.5 text-accent" />
-              Problem being solved
-            </label>
-            {problem.trim() && <IconCheckCircle className="h-4 w-4 text-accent" />}
-          </div>
-          <textarea
-            id="problem"
-            rows={2}
-            value={problem}
-            onChange={(e) => setProblem(e.target.value)}
-            placeholder="What painful problem does this startup solve?"
-            className="w-full rounded-lg bg-surface border border-border px-3.5 py-2.5 text-sm text-text placeholder:text-muted outline-none transition-colors focus:border-accent"
-          />
-        </div>
-
-        <div>
-          <label className="flex items-start gap-2.5 rounded-lg border border-border bg-surface px-3.5 py-3">
-            <input
-              type="checkbox"
-              checked={wantsEmail}
-              onChange={(e) => setWantsEmail(e.target.checked)}
-              className="mt-0.5 h-4 w-4 shrink-0 accent-accent"
-            />
-            <span className="text-sm text-text">
-              <span className="block">Email me the report if it takes a while</span>
-              <span className="block text-xs text-muted">
-                For a longer-running analysis, we'll keep working and send the full report to your inbox instead of making you wait.
-              </span>
-            </span>
-          </label>
-          {wantsEmail && (
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              className="mt-2 w-full rounded-lg bg-surface border border-border px-3.5 py-2.5 text-sm text-text placeholder:text-muted outline-none transition-colors focus:border-accent"
-            />
+          {errorField === 'idea' && <p className="mt-1.5 text-sm text-danger">{error}</p>}
+          {clarityWarning && (
+            <div className="mt-1.5 flex items-start gap-2 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2.5 text-sm text-text">
+              <IconAlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
+              <p>
+                {clarityWarning} <span className="text-muted">Submit again to validate as written.</span>
+              </p>
+            </div>
           )}
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <div className="mb-1.5 flex items-center justify-between">
+              <label htmlFor="targetCustomer" className="flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider text-muted">
+                <IconUsers className="h-3.5 w-3.5 text-accent" />
+                Target customer <span className="text-accent">*</span>
+              </label>
+              {targetCustomer.trim() && <IconCheckCircle className="h-4 w-4 text-success" />}
+            </div>
+            <input
+              id="targetCustomer"
+              type="text"
+              value={targetCustomer}
+              onChange={(e) => setTargetCustomer(e.target.value)}
+              placeholder="e.g. In-house General Counsels at mid-market SaaS"
+              className={`w-full rounded-lg bg-surface border px-3.5 py-2.5 text-sm text-text placeholder:text-muted outline-none transition-colors focus:border-accent ${
+                errorField === 'targetCustomer' ? 'border-danger' : 'border-border'
+              }`}
+            />
+            {errorField === 'targetCustomer' && <p className="mt-1.5 text-sm text-danger">{error}</p>}
+          </div>
+
+          <div>
+            <div className="mb-1.5 flex items-center justify-between">
+              <label htmlFor="problem" className="flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider text-muted">
+                <IconAlertTriangle className="h-3.5 w-3.5 text-accent" />
+                Problem being solved <span className="text-accent">*</span>
+              </label>
+              {problem.trim() && <IconCheckCircle className="h-4 w-4 text-success" />}
+            </div>
+            <input
+              id="problem"
+              type="text"
+              value={problem}
+              onChange={(e) => setProblem(e.target.value)}
+              placeholder="What painful problem does this startup solve?"
+              className={`w-full rounded-lg bg-surface border px-3.5 py-2.5 text-sm text-text placeholder:text-muted outline-none transition-colors focus:border-accent ${
+                errorField === 'problem' ? 'border-danger' : 'border-border'
+              }`}
+            />
+            {errorField === 'problem' && <p className="mt-1.5 text-sm text-danger">{error}</p>}
+          </div>
         </div>
 
         <button
@@ -124,14 +148,10 @@ export default function IdeaForm({ onSubmit, isLoading, loadingStep, disabled })
           disabled={isLoading || disabled}
           className="w-full rounded-full bg-accent px-4 py-2.5 font-mono text-sm font-semibold uppercase tracking-wide text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {isLoading ? 'Validating…' : disabled ? 'One moment…' : 'Validate idea'}
+          {isLoading ? 'Validating…' : disabled ? 'One moment…' : 'Validate startup idea →'}
         </button>
 
-        {isLoading && (
-          <p className="text-center font-mono text-xs uppercase tracking-widest text-muted cursor-blink">
-            {loadingStep}
-          </p>
-        )}
+        {isLoading && <LoadingSteps phases={loadingProgress.phases} currentIndex={loadingProgress.currentIndex} />}
       </div>
     </form>
   )

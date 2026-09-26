@@ -25,7 +25,11 @@ The Affinity API provides REST endpoints for automated startup validation.
 
 ## 2. CORS & Security Policy
 
-- **Authentication:** Public endpoints (`/validate` does not require an API key).
+- **Authentication:** `/validate` does not require an API key; an optional bearer token
+  saves the run to an account. Accounts use `POST /auth/signup`, `POST /auth/login`, or
+  `POST /auth/google` (Google ID token in, same `{ token, user }` out). See
+  [doc 19 §4](19_AFFINITY_MILESTONE_3_POSTGRESQL_AUTH_AND_DATA_PERSISTENCE.md#4-authentication--access-control)
+  and [doc 23 §8](23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOOGLE_SSO.md#8-platform-layer-google-sign-in).
 - **CORS Allowed Origins:** Managed via `FRONTEND_ORIGIN` env variable (defaults to `http://localhost:5173`).
 - **Methods Allowed:** `GET`, `POST`, `OPTIONS`.
 
@@ -75,6 +79,15 @@ Health probe endpoint.
 ```
 
 #### Success Response `200 OK`
+
+> **Five-pillar additions (2026-09-26).** The interface below predates the Sprint 1–4
+> work on `staging`. Responses now also carry `marketOpportunity.voiceOfMarket`,
+> `marketOpportunity.viabilityIndex`, `whiteSpace.blueprints`, `mvp.deliveryRoadmap`,
+> `gtm.commercialModel`, and (deep mode) competitor profile fields plus
+> `competitors.comparisonMatrix` / `profiled`. All are optional and additive. Full
+> schemas: [doc 23 §9](23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOOGLE_SSO.md#9-where-each-field-lives-in-the-response) and
+> [`architecture.md` §4](architecture.md#4-api-contract).
+
 ```json
 {
   "summary": "Found 12 relevant sources for \"AI-powered invoice management\", covering Market size & trends, Competitors, Industry news.",
@@ -88,21 +101,33 @@ Health probe endpoint.
     }
   ],
   "confidence": {
-    "marketGrowth": { "agree": 4, "total": 5 },
-    "competitivePressure": { "agree": 2, "total": 4 }
+    "agreeingSources": 6,
+    "totalSources": 8,
+    "percentage": 75,
+    "label": "6/8 sources agree",
+    "perAngle": { "Market size & trends": { "agreeingSources": 3, "totalSources": 6, "percentage": 50, "label": "3/6 sources agree" } },
+    "sourceCoverage": { "claimsWithSource": 18, "totalClaims": 24, "percentage": 75 },
+    "averageRelevance": 0.71,
+    "crossSourceAgreement": { "claimsWithMultipleSources": 7, "totalClaims": 24, "percentage": 29 },
+    "directEvidenceRatio": { "direct": 18, "inferred": 6, "percentage": 75 },
+    "sourceRecency": { "sourcesWithKnownDate": 5, "totalSources": 12, "medianAgeDays": 94.5 }
   },
   "marketOpportunity": {
     "marketSize": "The invoicing software market is valued at $2.4B globally with an 11% CAGR.",
+    "tam": { "text": "$2.4B global invoicing software market (2026)", "sourceIds": ["src-1"] },
+    "sam": null,
+    "som": null,
     "trends": [
-      "Automated SMS payment reminders",
-      "Instant deposit releases upon gallery approval"
+      { "text": "Automated SMS payment reminders", "sourceIds": ["src-1"] },
+      { "text": "Instant deposit releases upon gallery approval", "sourceIds": ["src-1"] }
     ],
     "segments": [
       {
         "segment": "Wedding Photographers",
         "painPoints": "Clients delay final balance payments",
         "motivations": "Automate contract signing and deposit collection",
-        "buyingBehavior": "Prefer monthly subscriptions priced under $25/month"
+        "buyingBehavior": "Prefer monthly subscriptions priced under $25/month",
+        "sourceIds": ["src-1"]
       }
     ],
     "opportunityScore": 78

@@ -104,6 +104,26 @@ export function IconX(props) {
   )
 }
 
+export function IconDownload(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M12 3v12" />
+      <path d="m7 10 5 5 5-5" />
+      <path d="M5 21h14" />
+    </svg>
+  )
+}
+
+export function IconLink(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M9 15 15 9" />
+      <path d="M11 6.5 12.5 5a3.54 3.54 0 0 1 5 5L16 11.5" />
+      <path d="M13 17.5 11.5 19a3.54 3.54 0 0 1-5-5L8 12.5" />
+    </svg>
+  )
+}
+
 export function IconInfo(props) {
   return (
     <svg {...base} {...props}>
@@ -143,6 +163,69 @@ export function IconListChecks(props) {
       <path d="M11 7h10" />
       <path d="M11 13h10" />
       <path d="M11 19h10" />
+    </svg>
+  )
+}
+
+export function IconUser(props) {
+  return (
+    <svg {...base} {...props}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21c0-4 3.5-7 8-7s8 3 8 7" />
+    </svg>
+  )
+}
+
+export function IconLogOut(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="M16 17l5-5-5-5" />
+      <path d="M21 12H9" />
+    </svg>
+  )
+}
+
+export function IconColumns(props) {
+  return (
+    <svg {...base} {...props}>
+      <rect x="3" y="4" width="18" height="16" rx="1.5" />
+      <path d="M9 4v16" />
+      <path d="M15 4v16" />
+    </svg>
+  )
+}
+
+export function IconChevronDown(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  )
+}
+
+export function IconFlag(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M5 21V4" />
+      <path d="M5 4h11l-2 4 2 4H5" />
+    </svg>
+  )
+}
+
+export function IconSparkles(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M12 3.5 13.6 8.4 18.5 10 13.6 11.6 12 16.5 10.4 11.6 5.5 10 10.4 8.4Z" />
+      <path d="M18.5 15.5 19.2 17.3 21 18 19.2 18.7 18.5 20.5 17.8 18.7 16 18 17.8 17.3Z" />
+    </svg>
+  )
+}
+
+export function IconCheck(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="m5 12.5 4.5 4.5L19 7.5" />
     </svg>
   )
 }

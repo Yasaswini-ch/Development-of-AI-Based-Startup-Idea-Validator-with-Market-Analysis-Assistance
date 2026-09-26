@@ -1,397 +1,394 @@
+<div align="center">
+
 # Affinity
+
+### Evidence-grounded startup idea validation, powered by a multi-agent AI pipeline
 
 **Before you build it, measure the affinity.**
 
-![AI-Based Startup Idea Validator — Team Nova](docs/images/Cover%20Page%20Diagram.jpeg)
+[![CI](https://github.com/Yasaswini-ch/Development-of-AI-Based-Startup-Idea-Validator-with-Market-Analysis-Assistance/actions/workflows/ci.yml/badge.svg?branch=staging)](https://github.com/Yasaswini-ch/Development-of-AI-Based-Startup-Idea-Validator-with-Market-Analysis-Assistance/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
+![LangGraph](https://img.shields.io/badge/LangGraph-orchestration-1C3C3C)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-persistence-4169E1?logo=postgresql&logoColor=white)
+![Deployed on Render](https://img.shields.io/badge/deployed%20on-Render-46E3B7?logo=render&logoColor=black)
 
-An AI-based startup idea validator with market analysis assistance. A founder enters a
-startup idea, target customer, and problem statement, and gets back real search results
-across 5 research angles, a structured market opportunity analysis (size, trends,
-customer segments with pain points/motivations/buying behavior), a competitor comparison
-identified locally via NER, an evidence-backed SWOT/risk analysis, MVP feature
-recommendations, a GTM strategy, and a session-based conversational advisor for
-follow-up questions — plus a downloadable PDF dossier and optional email delivery.
+[**Live app**](https://startup-validator-frontend-5qcr.onrender.com) ·
+[API](https://startup-validator-backend-pruu.onrender.com/health) ·
+[Documentation](docs/README.md) ·
+[Architecture](docs/architecture.md) ·
+[API reference](docs/api-reference.md)
+
+<img src="docs/images/Cover%20Page%20Diagram.jpeg" alt="Affinity: AI-Based Startup Idea Validator" width="820" />
+
+</div>
+
+---
+
+## Table of contents
+
+- [Overview](#overview)
+- [Key capabilities](#key-capabilities)
+- [How it works](#how-it-works)
+- [Architecture](#architecture)
+- [Engineering principles](#engineering-principles)
+- [Tech stack](#tech-stack)
+- [Getting started](#getting-started)
+- [Configuration](#configuration)
+- [API](#api)
+- [Testing and CI](#testing-and-ci)
+- [Deployment](#deployment)
+- [Repository layout](#repository-layout)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+
+---
+
+## Overview
+
+Most founders validate ideas with gut feel, a few searches and a generic chatbot answer
+that sounds confident whether or not it is true. **Affinity** replaces that with a
+structured, auditable research pipeline.
+
+A founder describes an idea, a target customer and the problem it solves. In one request,
+Affinity searches the live web across five research angles, then runs a LangGraph
+pipeline of specialised agents over that evidence. The output is a full validation
+dossier: market sizing and segments, competitor landscape, whitespace gaps, SWOT and
+risk, viability scoring, MVP scope, go-to-market strategy, experiments, a 7/30/90-day
+action plan and unit economics.
+
+Every key claim is labelled **Grounded** (traced to a cited source) or **Inferred**, and
+every AI-generated section has a deterministic fallback, so a report is never silently
+fabricated and never comes back blank.
+
+## Key capabilities
+
+| Area | What you get |
+|---|---|
+| **Live market research** | Real-time search across 5 angles (market size, competitors, industry news, customer demand, existing solutions), with per-angle source agreement scoring |
+| **Market opportunity** | Market size, trends, and customer segments with pain points, motivations and buying behaviour, grounded only in retrieved sources |
+| **Competitive intelligence** | Competitor discovery via local NER, deep-mode competitor profiles, and an idea-vs-competitor feature parity grid |
+| **Whitespace and strategy** | Evidence-backed market gaps, 5-vector strategic wedge blueprints, and a Market Viability & Dynamics Index |
+| **Risk and viability** | Source-cited SWOT, risk register, opportunity score, viability score, contradiction detection and a final verdict |
+| **Build and launch plan** | MVP feature recommendations, GTM strategy, validation experiments, a 7/30/90-day action plan, assumption tracker, revenue models, pricing tiers and an Alpha/Beta/GA delivery roadmap |
+| **Voice of Market** | Direct quotes from what the market actually says, attached to the claims they support |
+| **Conversational advisor** | Session-aware follow-up chat that reuses the validation's evidence and only searches again when the question needs fresh data |
+| **Reports** | Publication-ready PDF dossier, email delivery, and side-by-side comparison of saved ideas |
+| **Accounts and analytics** | Email or Google sign-in, validation history, comparison matrix and score trends, plus an admin Platform Health dashboard |
 
 ## How it works
 
-![How the AI Startup Validator Works](docs/images/How%20the%20AI%20Startup%20Validator%20Works.png)
+<img src="docs/images/How%20the%20AI%20Startup%20Validator%20Works.png" alt="How the AI Startup Validator works" width="820" />
 
-1. **Founder enters a startup idea** — idea, target customer, and problem, through the
-   web app.
-2. **The system searches the web** — live results across 5 research angles (market size,
-   competitors, industry news, customer demand, existing solutions), Tavily first with a
-   free DuckDuckGo/Wikipedia/Hacker News fallback chain.
-3. **AI analyzes market opportunity** — size, trends, and customer segments, grounded
-   only in the retrieved sources, never invented.
-4. **AI discovers competitors** — via local spaCy NER, not an LLM call, so the shared
-   Groq quota isn't split across a fifth agent.
-5. **AI evaluates risks & signals** — SWOT/risk analysis, an opportunity score, and
-   white-space (opportunity-gap) analysis, all grounded in the pipeline's own upstream
-   artifacts.
-6. **The system generates a validation report** — MVP feature recommendations, a GTM
-   strategy, a confidence dashboard, and (optionally) a downloadable PDF or emailed
-   report.
-
-A failure at any LLM-backed step doesn't crash the request or leave that section blank:
-every agent that calls an LLM has a deterministic, evidence-based fallback (see
-`backend/agent/deterministic_fallback.py`) that's honestly labeled `"degraded": true`
-rather than silently passed off as a full AI-reasoned result.
+1. **Submit.** The founder enters an idea, target customer and problem statement.
+2. **Research.** The retrieval layer expands the idea into five research angles, queries
+   the web (Tavily, falling back to DuckDuckGo, Wikipedia and Hacker News), de-duplicates
+   results and filters out low-signal sources.
+3. **Analyse.** A LangGraph pipeline runs market, competitor, whitespace, SWOT and
+   viability stages over that shared evidence, each grounded in the artifacts produced
+   upstream.
+4. **Plan.** MVP and GTM agents run in parallel, then contradiction detection,
+   experiments, the action plan, assumptions and revenue models are derived from the
+   combined results.
+5. **Score and deliver.** A confidence dashboard measures source coverage, relevance and
+   cross-source agreement, a verdict is computed, and the report is returned to the UI,
+   exported as a PDF, or emailed for long-running jobs.
 
 ## Architecture
 
-![Complete System Architecture](docs/images/System_Architecture_diagram.png)
+<img src="docs/images/System_Architecture_diagram.png" alt="System architecture" width="820" />
 
-The precise node-by-node pipeline, as actually implemented in
-[`backend/agent/graph.py`](backend/agent/graph.py):
+### Validation pipeline
+
+The node graph as implemented in [`backend/agent/graph.py`](backend/agent/graph.py):
 
 ```mermaid
 flowchart TD
-    User(["Founder"]) -->|submits idea| Frontend["React + Tailwind\nfrontend/"]
-    Frontend -->|POST /validate| Backend["FastAPI\nbackend/main.py"]
-    Backend --> Pipeline["LangGraph Pipeline\nagent/graph.py"]
-
-    Pipeline --> Retrieval["Multi-angle Retrieval\nagent/retrieval.py"]
-    Retrieval --> Tavily["Tavily API\n(primary)"]
-    Retrieval -.fallback.-> Free["DuckDuckGo + Wikipedia\n+ Hacker News\n(zero-cost)"]
-
-    Retrieval --> Confidence["Confidence Indicator\n(per-angle source agreement)"]
-    Confidence --> MO["Market Opportunity Agent\nagent/market_agent.py"]
-    MO --> CD["Competitor Discovery\nagent/competitor_agent.py\n(local spaCy NER, no LLM call)"]
-    CD --> OS["Opportunity Score\nagent/opportunity_score.py"]
-    OS --> WS["White-space Analysis\nagent/white_space.py\n(deterministic, no LLM call)"]
-    WS --> SWOT["SWOT / Risk Agent\nagent/swot_agent.py\n(sourceIds per claim)"]
-    SWOT --> MVP["MVP Agent\nagent/mvp_agent.py"]
-    MVP --> GTM["GTM Agent\nagent/gtm_agent.py"]
-    GTM --> ConfDash["Confidence Dashboard\nsource coverage, relevance,\ncross-source agreement"]
-
-    MO --> LLM["Groq LLM\nqwen3.8-27b (primary)"]
-    LLM -.rate limit: switch model.-> LLM2["Groq LLM\ngpt-oss-20b / gpt-oss-120b (fallback)"]
-
-    ConfDash --> Response["summary + results + confidence +\nmarketOpportunity + competitors +\nswot + mvp + gtm + errors"]
-    Response --> Backend
-    Backend -->|JSON + sessionId| Frontend
-    Frontend -->|renders results,\nor inline 'unavailable' state| User
-
-    Backend -.session/job/cache.-> DB[("Postgres\n(SQLite locally)\nagent/db.py")]
-    Frontend -->|POST /chat| ChatGraph["Chat turn graph\nagent/chat_graph.py"]
-    ChatGraph --> DB
+    START([POST /validate]) --> WS[Web search<br/>5 research angles]
+    WS --> CI[Confidence indicator]
+    CI --> MO[Market opportunity<br/>LLM]
+    MO --> CD[Competitor discovery<br/>spaCy NER]
+    CD --> OS[Opportunity score]
+    OS --> WSP[Whitespace analysis<br/>+ strategic wedges]
+    WSP --> SW[SWOT and risk<br/>LLM, source-cited]
+    SW --> VS[Viability score]
+    VS --> MVP[MVP recommendation<br/>LLM]
+    VS --> GTM[GTM strategy<br/>LLM]
+    MVP --> CT[Contradiction detector]
+    GTM --> CT
+    CT --> EX[Experiment generator]
+    EX --> AP[Action plan]
+    AP --> AS[Assumption tracker]
+    AS --> RV[Revenue models]
+    RV --> CF[Confidence dashboard]
+    CF --> VD[Verdict]
+    VD --> END([Validation report])
 ```
 
-A failure in any LLM-backed node doesn't crash the request — on a Groq rate limit, the
-call immediately switches to the next Groq model with its own separate quota (see
-Reasoning LLM below); only once every model in the chain fails does that section fall
-back to its deterministic summary, with the failure noted in `errors.<section>`, and the
-frontend shows an inline "unavailable" state for just that section while the rest of the
-response still renders. Competitor Discovery and White-space have no LLM call to fail
-this way — they're local, deterministic steps, so they always return real data.
+MVP and GTM have no dependency on each other, so they fan out from the viability stage
+and run concurrently, removing a full LLM round trip from every request's critical path.
 
-![Evidence-Based AI Startup Validation](docs/images/Evidence_based_validation%20diagram.png)
+### System topology
 
-Every SWOT claim and risk carries a `sourceIds` array pointing back to the specific
-search result(s) it's grounded in (see `backend/agent/structured_output.py`'s
-`compact_sources`) — a `sourceId` the model invents that wasn't actually in its given
-context is dropped before it ever reaches a caller, never silently trusted.
-
-| Layer        | Tech                                  |
-|--------------|----------------------------------------|
-| Frontend     | React + Tailwind CSS (`frontend/`) |
-| Backend      | FastAPI (`backend/`) — exposes `POST /validate`, `POST /chat`, PDF export, and job-status polling, with a database-backed response cache, per-IP rate limiting, and request-id tracing |
-| Agent framework | [CrewAI](https://www.crewai.com) — bounded reasoning agents for Market Opportunity, SWOT/Risk, MVP recommendations, GTM strategy, and advisor responses. Web Search summaries, Competitor Discovery, and White-space analysis remain local/deterministic to avoid unnecessary calls |
-| Orchestration | [LangGraph](https://www.langchain.com/langgraph) — main validation pipeline plus a separate conditional chat graph (`backend/agent/graph.py`, `chat_graph.py`) |
-| Search       | Tavily API (primary), with DuckDuckGo + Wikipedia + Hacker News as a zero-cost fallback chain — fetched directly (not LLM-mediated) across 5 search angles, academic sources filtered out (`backend/agent/tools.py`, `retrieval.py`) |
-| Competitor identification | Local NER ([spaCy](https://spacy.io) `en_core_web_sm`), not an LLM call — reads competitor names directly off the already-fetched search results, by deliberate design: zero API cost, zero rate limit, and it frees the entire shared Groq quota for Market Opportunity instead of splitting it across two agents. `estimatedPrice`/`featureBreadth` are always `"unknown"` as a result — an honest trade, not a bug — the UI hides those badges and the positioning grid when nothing is classified |
-| Reasoning LLM | [Groq](https://console.groq.com) — primary `qwen/qwen3.8-27b` plus two same-provider fallback models. Per-agent output limits, compact upstream artifacts, disabled/low reasoning effort, caching, and deterministic search intent reduce quota pressure. Every call's latency and token usage is logged (`backend/agent/llm.py`) |
-| Database     | Postgres in production (SQLite locally/in tests) via SQLAlchemy — `backend/agent/db.py`. Set `DATABASE_URL`; unset falls back to a local `affinity.db` SQLite file. Connection pool size is configurable (`DB_POOL_*` env vars) for running multiple backend instances |
-| Advisor state | Bounded sessions with a separate LangGraph chat flow, stored in the same database (`backend/agent/session_store.py`); sessions still expire on a TTL, but now survive a restart and are shared across every backend instance |
-| Report export | ReportLab-generated PDF dossier (`backend/agent/pdf_exporter.py`), and optional async email delivery via Resend for long-running validations (`backend/agent/email_delivery.py`, `job_store.py`) |
-| Deployment   | [Render](https://render.com) — two web services plus a managed Postgres database, config in `render.yaml` |
-| Version control | Git / GitHub |
-
-The product UI intentionally doesn't name any of the underlying frameworks/providers —
-status and footer text describe capability generically ("Multi-agent Pipeline," "Live
-Web Search") rather than saying "CrewAI," "Groq," or "Tavily."
-
-![Technology Stack](docs/images/Technology%20Stack%20diagram.jpeg)
-
-The original single-file Streamlit prototype (`app.py`) is kept for reference but is
-superseded by the `frontend/` + `backend/` split going forward.
-
-## API
-
-The frontend primarily talks to `POST /validate`. Full field-level contract (types,
-required/optional, error shapes) is in
-[`docs/architecture.md`](docs/architecture.md#4-api-contract) — below is a real example
-of what goes over the wire.
-
-**Request**
-
-```bash
-curl -X POST https://startup-validator-backend-pruu.onrender.com/validate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "idea": "A subscription box for eco-friendly cleaning products",
-    "targetCustomer": "environmentally conscious households",
-    "problem": "plastic waste from cleaning product packaging"
-  }'
+```mermaid
+flowchart LR
+    U([Founder]) --> FE[React 19 + Tailwind 4<br/>Vite SPA]
+    FE -->|REST + JSON| API[FastAPI service]
+    API --> G[LangGraph<br/>validation pipeline]
+    API --> C[LangGraph<br/>advisor chat graph]
+    G --> S[Search providers<br/>Tavily / DDG / Wikipedia / HN]
+    G --> L[LLM router<br/>Groq primary, model fallback chain]
+    C --> L
+    API --> DB[(PostgreSQL<br/>SQLite locally)]
+    API --> PDF[ReportLab<br/>PDF dossier]
+    API --> M[SendGrid<br/>report email]
 ```
 
-**Response `200 OK`** (abridged — full shape also includes `swot`, `mvp`, `gtm`,
-`whiteSpace`, and `sessionId`)
+## Engineering principles
 
-```json
-{
-  "summary": "The eco-friendly cleaning subscription market is growing steadily, driven by rising consumer demand for sustainable household products...",
-  "results": [
-    {
-      "title": "Sustainable Cleaning Products Market Size Report, 2026",
-      "snippet": "The global sustainable cleaning products market was valued at $4.2B in 2025 and is projected to grow at a CAGR of 11.3%...",
-      "url": "https://example.com/market-report",
-      "angle": "Market size & trends",
-      "score": 0.87
-    }
-  ],
-  "confidence": {
-    "agreeingSources": 8,
-    "totalSources": 10,
-    "percentage": 80,
-    "perAngle": { "...": "one entry per research angle" },
-    "sourceCoverage": { "claimsWithSource": 6, "totalClaims": 9, "percentage": 67 },
-    "averageRelevance": 0.74,
-    "crossSourceAgreement": { "claimsWithMultipleSources": 2, "totalClaims": 9, "percentage": 22 },
-    "directEvidenceRatio": { "direct": 6, "inferred": 3, "percentage": 67 },
-    "sourceRecency": { "sourcesWithKnownDate": 4, "totalSources": 10, "medianAgeDays": 42.5 }
-  },
-  "marketOpportunity": {
-    "marketSize": "The global market was valued at $2.1 billion in 2024 and is growing at 12% annually.",
-    "trends": ["Rising demand for subscription-based delivery", "Increased focus on eco-friendly packaging"],
-    "segments": [
-      {
-        "segment": "Urban millennials",
-        "painPoints": "Limited time to research and compare options",
-        "motivations": "Convenience and sustainability credentials",
-        "buyingBehavior": "Research online, prefer subscription models over one-off purchases"
-      }
-    ],
-    "opportunityScore": 63
-  },
-  "competitors": {
-    "competitors": [
-      {
-        "name": "Acme Meal Co",
-        "offering": "Subscription meal kits with pre-portioned ingredients delivered weekly.",
-        "url": "https://example.com/acme-meal-co",
-        "gap": "No options for large families or bulk ordering.",
-        "estimatedPrice": "unknown",
-        "featureBreadth": "unknown"
-      }
-    ]
-  },
-  "errors": {
-    "marketOpportunity": null,
-    "competitors": null
-  }
-}
-```
+**Grounded by construction.** Every SWOT claim and risk carries a `sourceIds` array that
+points to the search results it came from. Source ids the model invents that were never
+in its context are dropped before they reach the caller
+([`structured_output.py`](backend/agent/structured_output.py)).
 
-`results` is grouped client-side by `angle` (one of `Market size & trends`,
-`Competitors`, `Industry news`, `Customer demand`, `How others solve this`) — that's
-what powers the "grouped by research angle" sections in the UI. `score` is a 0–1
-relevance value used for the animated count-up on each result card. `marketOpportunity`
-comes back `null` (not an object) only if its LLM call fails outright *and* the
-deterministic fallback path is bypassed — in practice a real response always contains at
-least the fallback shape, labeled `"degraded": true`, with the failure noted in
-`errors.marketOpportunity`. `competitors` has no LLM call to fail this way (it's local
-NER), so an empty `competitors: []` array (not `null`) is the normal "sources didn't
-name an identifiable company" outcome, not a failure — `estimatedPrice`/`featureBreadth`
-will also always be `"unknown"` in real responses for the same reason (see Competitor
-identification above), unlike the illustrative example above.
+**Degrade honestly, never fail blank.** Every LLM-backed agent has a deterministic,
+evidence-based fallback ([`deterministic_fallback.py`](backend/agent/deterministic_fallback.py)).
+Fallback output is labelled `"degraded": true` and the cause is reported in
+`errors.<section>`, so the UI can mark that section while the rest of the report renders.
 
-Every SWOT strength/weakness/opportunity/threat/risk is `{"text": "...", "sourceIds":
-["src-2"]}` rather than a bare string, so a founder (or the UI) can trace any claim back
-to the source it came from.
+**Resilient LLM routing.** On a rate limit or failure the router switches immediately to
+the next model with its own quota (Groq `qwen3.8-27b`, then `gpt-oss-20b`,
+`gpt-oss-120b`, then Gemini Flash), with an optional local Ollama model. Latency and token
+usage are logged per call ([`llm.py`](backend/agent/llm.py)).
 
-**Error responses** — same shape either way, only the status code and message differ:
+**Deterministic where it can be.** Competitor discovery, whitespace analysis, strategic
+wedges, scoring, experiments and the action plan run without extra LLM calls. That keeps
+cost and latency down and makes those stages reproducible and testable.
 
-```json
-// 400 — empty/missing idea
-{ "error": "idea is required" }
+**Stateless, horizontally scalable API.** Sessions, background jobs and the response
+cache live in Postgres, so any backend instance can serve any request.
 
-// 429 — per-IP rate limit exceeded
-{ "error": "Too many validation requests. Please wait a minute and try again." }
+**Observable and protected.** Every request gets an `X-Request-ID` header and a
+structured log line. Per-IP rate limits cover validation, chat, auth, PDF export and
+email, and inputs are length-bounded at the schema layer. A durable events log powers
+the admin Platform Health dashboard.
 
-// 502 — every search source (Tavily + all fallbacks) failed
-{ "error": "Search is temporarily unavailable. Please try again shortly." }
-```
+<img src="docs/images/Evidence_based_validation%20diagram.png" alt="Evidence-based validation" width="820" />
 
-Every response — success or error — carries an `X-Request-ID` header, and every request
-is logged with that same id, method, path, status, and duration
-(`backend/main.py`'s tracing middleware), so a single request's log lines can be
-correlated with what a caller actually saw.
+## Tech stack
 
-The frontend renders `EmptyState` when `results` comes back as an empty array (valid
-request, zero matches) and `ErrorState` with a retry button for any non-200 response.
+| Layer | Technology |
+|---|---|
+| Frontend | React 19, Tailwind CSS 4, Vite 8, Vitest + Testing Library, oxlint |
+| API | FastAPI, Pydantic v2 |
+| Orchestration | LangGraph (validation pipeline and a separate advisor chat graph) |
+| Agents | CrewAI agents for market, SWOT/risk, MVP, GTM, assumptions and revenue |
+| LLMs | Groq (`qwen/qwen3.8-27b` primary, `gpt-oss` fallbacks), Gemini Flash fallback, optional local Ollama |
+| Retrieval | Tavily, with a free DuckDuckGo, Wikipedia and Hacker News fallback chain |
+| NLP | spaCy `en_core_web_sm` for local competitor entity recognition |
+| Persistence | PostgreSQL in production, SQLite locally, via SQLAlchemy 2 |
+| Auth | Email/password and Google Sign-In |
+| Reports | ReportLab PDF generation, SendGrid email delivery |
+| CI/CD | GitHub Actions, Render Blueprint (`render.yaml`) |
 
-`POST /validate` also returns `sessionId`. The frontend uses the session ID with
-`POST /chat` (`{ sessionId, message }`) for follow-up questions. Chat performs one
-bounded search only for messages that explicitly require fresh information; other turns
-reuse the stored validation artifacts. If `email` is supplied and the pipeline is still
-running past a threshold, `/validate` returns `202` with a `jobId` instead of holding the
-connection open — poll `GET /validate/status/{jobId}`, or wait for the emailed report.
+<img src="docs/images/Technology%20Stack%20diagram.jpeg" alt="Technology stack" width="820" />
 
-The same `sessionId` also downloads a publication-ready PDF report via
-`GET /validate/{sessionId}/pdf` (ReportLab, `backend/agent/pdf_exporter.py`).
-`POST /export-pdf` accepts a validation response body directly (validated against a real
-schema, not an arbitrary dict), for callers that already have the payload without a live
-session.
-
-## Project Structure
-
-```
-.
-├── frontend/            # React + Tailwind app (idea submission UI)
-├── backend/             # FastAPI app + CrewAI/LangGraph agent pipeline
-│   ├── main.py              # /validate, /chat, PDF export routes; rate limiting; request tracing
-│   └── agent/
-│       ├── graph.py                  # LangGraph pipeline: state + node wiring, incl. the confidence dashboard node
-│       ├── chat_graph.py             # Separate LangGraph chat flow for the conversational advisor
-│       ├── market_agent.py           # Market Opportunity Agent
-│       ├── competitor_agent.py       # Competitor Discovery - local spaCy NER, no LLM call
-│       ├── swot_agent.py             # SWOT & Risk Agent - sourceIds per claim
-│       ├── mvp_agent.py              # MVP Feature Recommendation Agent
-│       ├── gtm_agent.py              # Go-To-Market Strategy Agent
-│       ├── opportunity_score.py      # Opportunity Score post-processing node
-│       ├── white_space.py            # White-space/opportunity-gap analysis - deterministic, no LLM call
-│       ├── deterministic_fallback.py # Non-LLM fallback content for every LLM-backed agent
-│       ├── output_guard.py           # Reasoning-leak stripping used by the LLM-backed agents
-│       ├── structured_output.py      # Shared JSON-extraction/repair + compact_sources (sourceId assignment)
-│       ├── retrieval.py              # 5-angle query expansion, dedup, academic-source filter
-│       ├── tools.py                  # Tavily (primary) + DuckDuckGo/Wikipedia/Hacker News fallback
-│       ├── llm.py                    # LLM provider/model selection + rate-limit fallback + latency/token logging
-│       ├── db.py                     # SQLAlchemy engine (Postgres/SQLite) backing sessions/jobs/cache
-│       ├── session_store.py          # Validation + chat sessions (database-backed)
-│       ├── job_store.py              # Background validation jobs for the async/email path (database-backed)
-│       ├── pdf_exporter.py           # ReportLab PDF dossier generation
-│       └── email_delivery.py         # Resend-based report email delivery
-│   └── tests/                        # Unit, contract, async, and integration/concurrency tests
-├── docs/
-│   ├── architecture.md       # system design, data flow, API contract
-│   ├── images/                # architecture/pitch diagrams (see below)
-│   └── ...                    # milestone plans, API/cost metrics, security notes, and more
-├── app.py               # legacy Streamlit prototype
-├── requirements.txt      # Streamlit prototype dependencies
-├── render.yaml           # Render deployment config (backend, frontend, Postgres)
-└── README.md
-```
-
-## Getting Started
+## Getting started
 
 ### Prerequisites
-- Node.js 18+ and npm
-- Python 3.10+ and pip
-- A [Groq](https://console.groq.com) API key (used by the CrewAI agents)
-- Optionally, a [Tavily](https://tavily.com) API key for higher-quality search — the
-  app works without one, falling back to free DuckDuckGo/Wikipedia/Hacker News search
-- No database setup needed for local dev — unset `DATABASE_URL` falls back to a local
-  SQLite file automatically
 
-### Backend
+- Python 3.12 (3.10+ works)
+- Node.js 20 and npm
+- A [Groq](https://console.groq.com) API key
+- Optional: a [Tavily](https://tavily.com) API key for higher-quality search
+
+No database setup is needed locally. When `DATABASE_URL` is unset, the backend uses a
+local SQLite file.
+
+### 1. Backend
 
 ```bash
 cd backend
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # then fill in GROQ_API_KEY (and TAVILY_API_KEY if you have one)
+python -m spacy download en_core_web_sm
+cp .env.example .env          # set GROQ_API_KEY (and TAVILY_API_KEY if you have one)
 uvicorn main:app --reload --port 8000
 ```
 
-### Frontend
+The API is now at `http://localhost:8000`, with interactive docs at
+`http://localhost:8000/docs`.
+
+### 2. Frontend
 
 ```bash
 cd frontend
 npm install
-cp .env.example .env   # VITE_API_URL should point at the backend, e.g. http://127.0.0.1:8000
+cp .env.example .env          # VITE_API_URL=http://localhost:8000
 npm run dev
 ```
 
-The frontend will be available at `http://localhost:5173` and calls the backend at the
-URL set in `VITE_API_URL`.
+Open `http://localhost:5173`.
 
-### Running tests
+## Configuration
+
+Secrets are never committed. Set them in `backend/.env` locally and in the Render
+dashboard in production.
+
+| Variable | Service | Required | Purpose |
+|---|---|---|---|
+| `GROQ_API_KEY` | backend | Yes | Primary LLM provider |
+| `TAVILY_API_KEY` | backend | No | Primary search provider; free fallbacks are used when unset |
+| `GEMINI_API_KEY` | backend | No | Enables the Gemini fallback models |
+| `DATABASE_URL` | backend | Prod | PostgreSQL connection string; SQLite when unset |
+| `AUTH_SECRET_KEY` | backend | Prod | Signs session tokens |
+| `FRONTEND_ORIGIN` | backend | Prod | Allowed CORS origin |
+| `GOOGLE_OAUTH_CLIENT_ID` | backend | No | Verifies Google sign-in tokens |
+| `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL` | backend | No | Report email delivery |
+| `ADMIN_EMAILS` | backend | No | Comma-separated accounts with Platform Health access |
+| `LLM_MODEL`, `LLM_FALLBACK_MODELS` | backend | No | Override the model chain |
+| `*_RATE_LIMIT_PER_MINUTE` | backend | No | Per-IP limits for validate, chat, auth, PDF export and email |
+| `DB_POOL_SIZE`, `DB_POOL_MAX_OVERFLOW` | backend | No | Connection pool per instance (default 5/5) |
+| `VITE_API_URL` | frontend | Yes | Backend base URL |
+| `VITE_GOOGLE_CLIENT_ID` | frontend | No | Shows the Google sign-in button |
+
+## API
+
+The full contract, with field types and error shapes, is in
+[`docs/api-reference.md`](docs/api-reference.md) and
+[`docs/architecture.md`](docs/architecture.md#4-api-contract).
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/validate` | Run a full validation. Returns the report and a `sessionId`, or `202` with a `jobId` for long runs with email delivery |
+| `GET` | `/validate/status/{jobId}` | Poll a background validation job |
+| `POST` | `/chat` | Ask the advisor a follow-up question about a session |
+| `GET` | `/validate/{sessionId}/pdf` | Download the PDF dossier |
+| `POST` | `/export-pdf` | Render a PDF from a validation payload |
+| `GET` | `/reports/{sessionId}` | Fetch a saved report |
+| `POST` | `/reports/compare` | Compare several saved ideas side by side |
+| `POST` | `/reports/{sessionId}/email` | Email a report |
+| `POST` | `/auth/signup`, `/auth/login`, `/auth/google` | Authentication |
+| `GET` | `/auth/me`, `/me/history`, `/me/analytics` | Account, history and personal analytics |
+| `POST` | `/me/claim-session` | Attach a guest validation to the signed-in account |
+| `GET` | `/admin/platform-metrics` | Platform Health (admins only) |
+| `GET` | `/health`, `/metrics` | Liveness, database status and service metrics |
+
+**Example**
 
 ```bash
-cd backend
-python -m unittest discover -s tests
+curl -X POST http://localhost:8000/validate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "idea": "A subscription box for eco-friendly cleaning products",
+    "targetCustomer": "Environmentally conscious households",
+    "problem": "Plastic waste from cleaning product packaging"
+  }'
 ```
 
-The real-provider integration test (`tests/test_integration.py`) only runs if
-`GROQ_API_KEY` is set in the environment — it makes a real, billed API call, so it's
-skipped by default in environments without a key.
+The response contains `summary`, `results`, `confidence`, `marketOpportunity`,
+`competitors`, `whiteSpace`, `swot`, `mvp`, `gtm`, `experiments`, `actionPlan`, `verdict`,
+`errors` and `sessionId`. Errors use a single shape, `{ "error": "..." }`, with `400` for
+invalid input, `429` for rate limits and `502` when every search provider is unavailable.
 
-### Legacy Streamlit prototype
+## Testing and CI
 
 ```bash
-pip install -r requirements.txt
-streamlit run app.py
+# Backend: unit, contract, async and concurrency tests
+cd backend && python -m unittest discover -s tests
+
+# Frontend: component tests, lint and production build
+cd frontend && npm test && npm run lint && npm run build
 ```
 
-## Branching Strategy
-
-- **`staging`** — active development branch. All feature work and fixes land here first.
-- **`main`** — stable, reviewed branch. Only tested, working code is merged here from `staging`.
-
-Workflow: branch off `staging` for a feature/fix → open a PR into `staging` → once verified,
-`staging` is merged into `main` for a stable release.
+GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the backend
+suite, frontend lint and production build on every push and pull request to `staging` and
+`main`. The real-provider integration test only runs when `GROQ_API_KEY` is set, so CI
+never makes billed LLM calls.
 
 ## Deployment
 
-![Cloud & Software Deployment Architecture](docs/images/Cloud%20and%20Software%20Deployment%20Architecture%20Diagram.png)
+<img src="docs/images/Cloud%20and%20Software%20Deployment%20Architecture%20Diagram.png" alt="Deployment architecture" width="820" />
 
-Deployment is handled via Render, configured in [`render.yaml`](render.yaml) as a
-Blueprint with a managed database and two services:
+Affinity deploys to [Render](https://render.com) as a Blueprint defined in
+[`render.yaml`](render.yaml):
 
 | Resource | Type | Notes |
 |---|---|---|
-| `startup-validator-db` | Postgres (free plan) | Provisioned from `render.yaml`; its connection string is wired into the backend automatically via `fromDatabase` |
-| `startup-validator-backend` | Python web service (`backend/`) | Needs `GROQ_API_KEY` set manually in the Render dashboard (not in `render.yaml`, never committed). `TAVILY_API_KEY` is optional — falls back to free search if unset. `DATABASE_URL` is set automatically from the database resource above |
-| `startup-validator-frontend` | Static site (`frontend/`) | Built with `npm run build`; calls the backend via `VITE_API_URL` |
+| `startup-validator-backend` | Python web service | Built with the spaCy model; secrets set in the Render dashboard |
+| `startup-validator-frontend` | Static site | `npm run build`, pointed at the backend with `VITE_API_URL` |
+| `startup-validator-db` | Managed PostgreSQL | Wired to the backend automatically through `fromDatabase` |
 
-All three auto-deploy/provision on push to `staging` **only if the services were created
-as a Blueprint** pointing at this `render.yaml` — if they were set up manually instead,
-re-sync the Blueprint from the Render dashboard (or add the database and set
-`DATABASE_URL` by hand) after any change to `render.yaml`. After the first deploy,
-double-check the actual Render-assigned URLs match what's hardcoded in `render.yaml` for
-`FRONTEND_ORIGIN` and `VITE_API_URL` — if Render assigns different subdomains, update
-those env vars in the dashboard to match.
+Pushes to `staging` deploy automatically. After a deploy, `GET /health` should report
+`"database": "postgresql"`.
 
-The legacy Streamlit prototype (`app.py`) is no longer deployed by this config.
+> **Note:** Render's free PostgreSQL plan expires 30 days after creation. See
+> [DEPLOYMENT.md](DEPLOYMENT.md) for provisioning, Google sign-in setup and admin
+> configuration.
 
-### Scaling out
+**Scaling.** All state lives in Postgres, so backend instances can be added from Render's
+Scaling tab. The LLM quota is shared across instances, so more instances add concurrency,
+not throughput. Keep `instances × (DB_POOL_SIZE + DB_POOL_MAX_OVERFLOW)` below the
+database's connection limit.
 
-Before the database migration (see `backend/agent/db.py`), sessions/jobs/cache lived only
-in each backend instance's own memory, so running more than one instance meant a request
-could land on an instance that had never seen that session — scaling out would have
-silently broken chat/PDF export/status polling. That's no longer the blocker: with state
-shared in Postgres, adding more instances on Render's Scaling tab is safe from a
-correctness standpoint.
+## Repository layout
 
-What running multiple instances does *not* fix on its own: the Groq API quota
-(`backend/agent/llm.py`'s model-fallback chain) is shared account-wide, not per-instance —
-more backend instances means more concurrent requests hitting the same quota sooner, not
-more total LLM throughput. `DB_POOL_SIZE`/`DB_POOL_MAX_OVERFLOW` (env vars, default 5/5)
-control how many Postgres connections each instance opens; keep
-`instances × (pool_size + max_overflow)` comfortably under the database plan's max
-connection count.
+```
+.
+├── backend/
+│   ├── main.py                 # FastAPI app: routes, auth, rate limiting, request tracing
+│   ├── agent/
+│   │   ├── graph.py            # LangGraph validation pipeline
+│   │   ├── chat_graph.py       # Advisor chat graph
+│   │   ├── retrieval.py        # Multi-angle query expansion, dedup, filtering
+│   │   ├── tools.py            # Search providers and fallback chain
+│   │   ├── llm.py              # Model routing, fallback, telemetry
+│   │   ├── *_agent.py          # Market, competitor, SWOT, MVP, GTM, assumption, revenue agents
+│   │   ├── white_space.py      # Whitespace gap analysis (deterministic)
+│   │   ├── strategic_wedge.py  # Strategic wedge blueprints
+│   │   ├── *_score.py          # Opportunity and viability scoring
+│   │   ├── deterministic_fallback.py
+│   │   ├── db.py, session_store.py, job_store.py
+│   │   └── pdf_exporter.py, email_delivery.py
+│   └── tests/                  # Backend test suite
+├── frontend/
+│   └── src/
+│       ├── components/         # Report sections, dashboards, auth UI
+│       └── hooks/, mocks/
+├── docs/                       # Architecture, API, methodology and runbooks
+├── .github/workflows/ci.yml    # CI pipeline
+├── render.yaml                 # Render Blueprint
+├── DEPLOYMENT.md               # Deployment runbook
+└── app.py                      # Legacy Streamlit prototype (not deployed)
+```
 
 ## Documentation
 
-[`docs/`](docs/) has the full documentation suite — architecture, API reference,
-milestone plans, security/privacy notes, cost/accuracy metrics, and the diagrams used
-throughout this README (`docs/images/`), including several not shown above (problem
-statement, proposed solution, ER diagram, hallucination-prevention design, and future
-scope). Start at [`docs/README.md`](docs/README.md) for the index.
+The [`docs/`](docs/README.md) folder holds the full engineering documentation:
+
+- [System architecture](docs/architecture.md) and [topology and design](docs/04_AFFINITY_SYSTEM_TOPOLOGY_AND_DESIGN.md)
+- [Agentic AI and ML engine](docs/05_AFFINITY_AGENTIC_AI_AND_ML_ENGINE.md)
+- [REST API specification](docs/07_AFFINITY_REST_API_INTERFACE_SPECIFICATION.md)
+- [Confidence and evidence scoring methodology](docs/confidence-and-evidence-scoring-methodology.md)
+- [Opportunity score model](docs/15_AFFINITY_OPPORTUNITY_SCORE_MATHEMATICAL_MODEL.md)
+- [Five-pillar strategy layer and Google SSO](docs/23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOOGLE_SSO.md)
+- [Security, privacy and ethics](docs/security-privacy-ethics.md)
+- [Cost, accuracy and performance metrics](docs/api-cost-accuracy-performance-metrics.md)
+- [Operations runbook](docs/ops-runbook-troubleshooting.md)
+- [Known limitations and future work](docs/known-limitations-and-future-work.md)
 
 ## Contributing
 
-1. Create a branch off `staging`.
-2. Make your changes and test locally (see Getting Started above).
-3. Open a PR into `staging`.
-4. Once verified, changes are promoted to `main`.
+`staging` is the integration branch and `main` is the stable release branch.
+
+1. Branch off `staging`.
+2. Make your change with tests, and run the checks in [Testing and CI](#testing-and-ci).
+3. Open a pull request into `staging`.
+4. Verified changes are promoted from `staging` to `main`.
+
+---
+
+<div align="center">
+Built by <b>Team Nova</b>
+</div>

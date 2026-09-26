@@ -1,6 +1,6 @@
 # Security, Privacy, and AI Ethics Specification
 **Project:** Affinity — AI-Based Startup Idea Validator with Market Analysis Assistance  
-**Document Version:** 2.0 · September 2026  
+**Document Version:** 3.0 · updated 2026-09-26 against `staging`  
 **Status:** Verified & Operational  
 
 ---
@@ -10,8 +10,8 @@
 Affinity validates early-stage startup ideas using automated web retrieval and LLM reasoning. Founders submitting unreleased or proprietary business concepts require strict data privacy, minimal retention, and transparent AI reasoning.
 
 ### Core Architecture Commitments
-1. **Zero Persistent Storage:** Submitted ideas, problem statements, and generated reports are held strictly in volatile memory. No relational database, document store, or disk-backed tracking exists.
-2. **Ephemeral In-Memory Caching:** Results are cached in volatile memory for 30 minutes (`_CACHE_TTL_SECONDS = 1800`) to prevent duplicate API requests and expire automatically.
+1. **Bounded Retention (not zero storage):** Since Milestone 4, submitted ideas and generated reports are stored in a database (Postgres in production, SQLite locally) so they survive restarts and can be revisited. Every validation session auto-expires 7 days after its last update (200-row cap). *Earlier versions of this document said "zero persistent storage"; that stopped being true when `backend/agent/db.py` shipped.* See §2.3 for the full retention table.
+2. **Short-Lived Response Cache:** The `/validate` response cache is a database table with a 30-minute TTL (`_CACHE_TTL_SECONDS = 1800`), keyed by a SHA-256 hash of the normalized input.
 3. **No Third-Party Model Training:** API integrations with LLM providers (Groq) and search providers (Tavily) operate under commercial terms prohibiting the use of submitted prompt payloads for model retraining.
 4. **Deterministic Evidence Grounding:** Strategic insights are generated only from retrieved web evidence to prevent AI hallucinations.
 
@@ -24,7 +24,7 @@ Affinity validates early-stage startup ideas using automated web retrieval and L
 ```mermaid
 sequenceDiagram
     participant Founder as Founder (Browser)
-    participant API as FastAPI Backend (Volatile Memory)
+    participant API as FastAPI Backend
     participant Search as Tavily / DDG Search API
     participant LLM as Groq LLM API
 
@@ -36,12 +36,15 @@ sequenceDiagram
     LLM-->>API: Structured JSON summary
     Note over API: Executes local spaCy NER & Regex calculations (zero network calls)
     API-->>Founder: JSON Validation Response
-    Note over API: Cached response purged after 30 minutes
+    Note over API: Session stored (7-day TTL); cached response purged after 30 minutes
 ```
 
 ---
 
-### 2.2 In-Memory Cache Security Implementation
+### 2.2 Response Cache Implementation
+
+> This section originally described an in-memory dict. The cache now lives in the
+> `validation_cache` database table; the key derivation and TTL below are unchanged.
 
 The caching engine in [`backend/main.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/main.py) uses cryptographic SHA-256 hashing to generate cache keys from normalized input parameters:
 
@@ -62,7 +65,43 @@ def _cache_key(payload: ValidateRequest) -> str:
 ```
 
 - **Partial Failure Protection:** Responses containing errors (`errors.marketOpportunity != null`) are **never cached**, ensuring transient upstream disruptions do not persist.
-- **Client Session Isolation:** The React frontend uses `sessionStorage` (`affinity:lastValidation`) instead of `localStorage`. Analysis state is retained during active browser tab reloads and automatically destroyed when the tab is closed.
+- **Client Storage:** The in-progress result is kept in `sessionStorage`, so it survives a tab reload and is cleared when the tab closes. The auth token, device-local history and compare basket are kept in `localStorage`, which persists until sign-out or cleared site data. On sign-in, sign-out and account switch the app clears the stored validation state and the device-local history and compare lists, and it only writes to those device lists while signed out (a signed-in account's history lives server-side), so one person's ideas don't show up for the next person on a shared computer.
+
+### 2.3 Accounts, Access Control & Retention
+
+Full detail in [doc 19](19_AFFINITY_MILESTONE_3_POSTGRESQL_AUTH_AND_DATA_PERSISTENCE.md).
+
+- **Optional accounts.** Email + password (minimum 8 characters), bcrypt-hashed. Anonymous
+  validation still works. Login returns the same error for unknown email and wrong
+  password, so accounts can't be enumerated. Auth endpoints are rate-limited per IP.
+- **Sign in with Google (optional).** The browser hands the backend a Google ID token,
+  never an email. `agent/google_auth.py` verifies its signature and audience with the
+  `google-auth` library and rejects unverified emails; the account email and avatar come
+  only from the verified claims. Google's own error text is not echoed to the client.
+  Accounts are matched by email, so a Google sign-in reuses an existing password account
+  with the same address (Google's `email_verified` is the trust anchor).
+- **Tokens.** HS256 JWT signed with `AUTH_SECRET_KEY`, valid 30 days, stored in the
+  browser's `localStorage` (readable by scripts on the page, the usual trade-off against
+  an httpOnly cookie). No server-side revocation.
+- **Admin role.** A single `is_admin` flag, granted only via the `ADMIN_EMAILS`
+  environment variable or direct SQL, checked fresh on every request. It unlocks the
+  read-only Platform Health metrics and nothing else.
+- **Session links.** Report, chat, PDF and compare endpoints accept a session id without
+  an ownership check. The id is a random UUID and acts as a share link.
+- **Operational log.** The `events` table stores node timings, model names, cache
+  hits/misses, error types, idea **categories** and email outcomes. It never stores idea
+  text or email addresses.
+
+| Data | Where | Retention |
+|---|---|---|
+| Validation session (idea, results, chat) | `sessions` | 7 days after last update; 200 rows max |
+| Async job result | `jobs` | 2 hours; 200 rows max |
+| Response cache | `validation_cache` | 30 minutes |
+| Operational events | `events` | 90 days; 200,000 rows max |
+| Account (email, password hash or none, admin flag, auth provider, Google avatar URL) | `users` | Until deleted by an operator |
+
+> Render's free Postgres is deleted 30 days after creation, which removes all of the
+> above at once. See [Known Limitations](known-limitations-and-future-work.md).
 
 ---
 

@@ -1,0 +1,1 @@
+One JSON object only: {"strengths":[{"text":"...","sourceIds":["src-1"]}],"weaknesses":[{"text":"...","sourceIds":[]}],"opportunities":[{"text":"...","sourceIds":["src-2"]}],"threats":[{"text":"...","sourceIds":["src-3"]}],"risks":[{"risk":"...","severity":"low|medium|high|unknown","likelihood":"low|medium|high|unknown","mitigation":"...","sourceIds":["src-1"]}]}.

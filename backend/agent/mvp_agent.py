@@ -5,7 +5,9 @@ import logging
 from crewai import Agent, Crew, Process, Task
 
 from .deterministic_fallback import deterministic_mvp
-from .llm import get_llm, kickoff_with_fallback
+from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback
+from .verification import strip_unsupported, verify_claims
+from .prompts.loader import load_prompt
 from .structured_output import (
     compact_json,
     compact_sources,
@@ -17,145 +19,62 @@ from .structured_output import (
 logger = logging.getLogger(__name__)
 
 _LEVELS = {"low", "medium", "high", "unknown"}
-_MAX_FEATURES = 5
+_MAX_FEATURES = 4
+_MAX_EXTRA = 2
+
+
+def _valid_extra_list(value) -> bool:
+    """niceToHave/deferred items: {feature: str, rationale: str, sourceIds: [...]}"""
+    if not isinstance(value, list):
+        return False
+    return all(
+        isinstance(item, dict)
+        and isinstance(item.get("feature"), str)
+        and isinstance(item.get("rationale"), str)
+        and valid_source_ids(item.get("sourceIds", []))
+        for item in value
+    )
 
 
 def _valid_shape(value: dict) -> bool:
-    """
-    Validate the complete MVP response structure.
-
-    Expected structure:
-
-    {
-        "features": [
-            {
-                "feature": "...",
-                "rationale": "...",
-                "impact": "low|medium|high|unknown",
-                "effort": "low|medium|high|unknown",
-                "sourceIds": ["src-1"]
-            }
-        ]
-    }
-    """
-
     features = value.get("features")
-
     if not isinstance(features, list) or not features:
         return False
-
-    for item in features:
-        if not isinstance(item, dict):
+    if not all(
+        isinstance(item, dict)
+        and isinstance(item.get("feature"), str)
+        and isinstance(item.get("rationale"), str)
+        and item.get("impact") in _LEVELS
+        and item.get("effort") in _LEVELS
+        and valid_source_ids(item.get("sourceIds", []))
+        for item in features
+    ):
+        return False
+    # niceToHave and deferred are optional
+    for key in ("niceToHave", "deferred"):
+        extra = value.get(key)
+        if extra is not None and not _valid_extra_list(extra):
             return False
-
-        if not isinstance(item.get("feature"), str):
-            return False
-
-        if not item["feature"].strip():
-            return False
-
-        if not isinstance(item.get("rationale"), str):
-            return False
-
-        if not item["rationale"].strip():
-            return False
-
-        if item.get("impact") not in _LEVELS:
-            return False
-
-        if item.get("effort") not in _LEVELS:
-            return False
-
-        if not valid_source_ids(
-            item.get("sourceIds", [])
-        ):
-            return False
-
     return True
 
 
-def _build_crew(
-    idea: str,
-    problem: str,
-    context: str,
-    model: str,
-) -> Crew:
-    """
-    Build the CrewAI MVP recommendation crew.
-    """
-
+def _build_crew(idea: str, problem: str, context: str, model: str) -> Crew:
     analyst = Agent(
         role="MVP Feature Recommendation Analyst",
-
-        goal=(
-            "Prioritize the smallest feature set that tests "
-            "the startup's riskiest assumptions."
-        ),
-
-        backstory=(
-            "A product strategist who resists feature bloat "
-            "and ties every recommendation to validated "
-            "customer evidence."
-        ),
-
-        llm=get_llm(
-            max_tokens=450,
-            model=model,
-        ),
-
+        goal="Prioritize the smallest feature set that tests the startup's riskiest assumptions.",
+        backstory=load_prompt("mvp_system"),
+        # Bumped to 600 (was 450) to accommodate niceToHave[] and deferred[]
+        # arrays added to the MVP prompt. 450 was the confirmed safe floor for
+        # JSON completeness; 600 leaves headroom for the extra feature lists.
+        llm=get_llm(max_tokens=600, model=model),
         verbose=False,
     )
-
     task = Task(
-        description=(
-            f'Startup idea: "{idea}"\n'
-            f'Problem: {problem or "not specified"}\n'
-            f"SWOT and customer context: {context}\n\n"
-
-            "The context's \"sources\" array lists sourceId "
-            'values (e.g. "src-1"). '
-
-            "Recommend at most five ordered MVP features. "
-
-            "Keep every feature testable, narrow, and practical. "
-
-            "Rate impact and effort as one of: "
-            "low, medium, high, or unknown. "
-
-            "Every feature must contain a \"sourceIds\" array "
-            "citing the sourceId(s) of the source(s) that "
-            "support that feature. "
-
-            "Use an empty sourceIds array only when the feature "
-            "is not tied to a specific source. "
-
-            "Never invent a sourceId that is not present in "
-            "the context's sources list. "
-
-            "Do not invent customer traction, partnerships, "
-            "revenue, market validation, or other unsupported facts."
-        ),
-
-        expected_output=(
-            'One JSON object only: '
-            '{"features":['
-            '{"feature":"...",'
-            '"rationale":"...",'
-            '"impact":"low|medium|high|unknown",'
-            '"effort":"low|medium|high|unknown",'
-            '"sourceIds":["src-1"]}'
-            ']}'
-        ),
-
+        description=load_prompt("mvp_task", idea=idea, problem=problem or "not specified", context=context),
+        expected_output=load_prompt("mvp_output"),
         agent=analyst,
     )
-
-    return Crew(
-        agents=[analyst],
-        tasks=[task],
-        process=Process.sequential,
-        verbose=False,
-    )
+    return Crew(agents=[analyst], tasks=[task], process=Process.sequential, verbose=False)
 
 
 def analyze_mvp(
@@ -164,116 +83,55 @@ def analyze_mvp(
     swot: dict | None,
     market_opportunity: dict | None,
     results: list,
+    allow_local: bool = False,
 ) -> dict:
-    """
-    Analyze and prioritize MVP features.
-
-    Source IDs are collected from the validated pipeline
-    results and attached to evidence-grounded features.
-    """
-
-    # ---------------------------------------------------------
-    # Prepare validated source information
-    # ---------------------------------------------------------
-
     sources = compact_sources(results)
-
-    valid_ids = {
-        source["sourceId"]
-        for source in sources
-    }
-
-    # ---------------------------------------------------------
-    # Prepare compact context for the LLM
-    # ---------------------------------------------------------
-
+    valid_ids = {source["sourceId"] for source in sources}
     context = compact_json(
         {
             "swot": swot,
-
-            "segments": (
-                market_opportunity or {}
-            ).get(
-                "segments",
-                [],
-            )[:4],
-
+            "segments": (market_opportunity or {}).get("segments", [])[:4],
             "sources": sources,
         },
         max_chars=3500,
     )
-
     try:
-        # -----------------------------------------------------
-        # Run CrewAI analysis with model fallback
-        # -----------------------------------------------------
-
         output = kickoff_with_fallback(
-            lambda model: _build_crew(
-                idea,
-                problem,
-                context,
-                model,
-            )
+            lambda model: _build_crew(idea, problem, context, model),
+            allow_local=allow_local,
+            validate=lambda o: extract_json_object(o.raw, _valid_shape) is not None,
         )
-
-        # -----------------------------------------------------
-        # Extract and validate JSON
-        # -----------------------------------------------------
-
-        data = extract_json_object(
-            output.raw,
-            _valid_shape,
-        )
-
+        data = extract_json_object(output.raw, _valid_shape)
         if data is None:
-            logger.warning(
-                "MVP agent returned no valid JSON"
-            )
-
-            raise ValueError(
-                "MVP analysis did not return a valid result."
-            )
-
-        # -----------------------------------------------------
-        # Sanitize source IDs
-        # -----------------------------------------------------
-
+            logger.warning("MVP agent returned no valid JSON")
+            raise ValueError("MVP analysis did not return a valid result.")
         data["features"] = [
-            {
-                "feature": item["feature"].strip(),
-                "rationale": item["rationale"].strip(),
-                "impact": item["impact"],
-                "effort": item["effort"],
-                "sourceIds": sanitize_source_ids(
-                    item.get("sourceIds"),
-                    valid_ids,
-                ),
-            }
+            {**item, "sourceIds": sanitize_source_ids(item.get("sourceIds"), valid_ids)}
             for item in data["features"][:_MAX_FEATURES]
         ]
+        for key in ("niceToHave", "deferred"):
+            extra = data.get(key) or []
+            data[key] = [
+                {**item, "sourceIds": sanitize_source_ids(item.get("sourceIds"), valid_ids)}
+                for item in extra[:_MAX_EXTRA]
+            ]
+
+        # Grounding verification (see verification.py) - the rationale is
+        # the actual evidence-backed claim per feature; the feature name
+        # itself is just a label, nothing to fact-check.
+        snippets = {s["sourceId"]: s["snippet"] for s in sources}
+        flat = [{"text": item["rationale"], "sourceIds": item["sourceIds"]} for item in data["features"]]
+        supported = verify_claims(idea, flat, snippets, allow_local=allow_local)
+        verified = strip_unsupported(flat, supported)
+        for item, result in zip(data["features"], verified):
+            item["sourceIds"] = result["sourceIds"]
 
         return data
-
-    except Exception:
-        # -----------------------------------------------------
-        # Deterministic fallback
-        #
-        # IMPORTANT:
-        # results is passed so deterministic_mvp() can preserve
-        # source attribution just like deterministic_swot().
-        # -----------------------------------------------------
-
+    except Exception as exc:
+        if not allow_local:
+            raise NeedsDeepAnalysisError(str(exc)) from exc
         logger.warning(
-            "MVP: LLM analysis unavailable, "
-            "using deterministic evidence-based fallback",
+            "MVP: LLM analysis unavailable, using deterministic evidence-based fallback",
             exc_info=True,
         )
-
-        return deterministic_mvp(
-            idea,
-            problem,
-            swot,
-            market_opportunity,
-            results,
-        )
+        return deterministic_mvp(idea, problem, swot, market_opportunity)

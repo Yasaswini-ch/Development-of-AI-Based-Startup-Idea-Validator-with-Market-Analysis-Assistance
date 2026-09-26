@@ -5,7 +5,9 @@ import logging
 from crewai import Agent, Crew, Process, Task
 
 from .deterministic_fallback import deterministic_gtm
-from .llm import get_llm, kickoff_with_fallback
+from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback
+from .verification import strip_unsupported, verify_claims
+from .prompts.loader import load_prompt
 from .structured_output import (
     compact_json,
     compact_sources,
@@ -17,129 +19,61 @@ from .structured_output import (
 logger = logging.getLogger(__name__)
 
 _MAX_CHANNELS = 4
+_FIT_SCORES = {"high", "medium", "low"}
 
 
 def _valid_channel_list(value) -> bool:
-    """
-    Validate the recommended acquisition channels.
-
-    Each channel must have:
-        {
-            "text": str,
-            "sourceIds": [str]
-        }
-
-    sourceIds may be empty when the recommendation is not tied
-    to a specific source.
+    """Each channel is {"text": str, "sourceIds": [str]} with optional
+    "tactics": [str] and "fitScore": "high"|"medium"|"low".
     """
     if not isinstance(value, list):
         return False
-
     for item in value:
         if not isinstance(item, dict):
             return False
-
         if not isinstance(item.get("text"), str) or not item["text"].strip():
             return False
-
         if not valid_source_ids(item.get("sourceIds", [])):
             return False
-
+        tactics = item.get("tactics")
+        if tactics is not None and not (isinstance(tactics, list) and all(isinstance(t, str) for t in tactics)):
+            return False
+        fit = item.get("fitScore")
+        if fit is not None and fit not in _FIT_SCORES:
+            return False
     return True
 
 
 def _valid_shape(value: dict) -> bool:
-    """
-    Validate the complete GTM response structure.
-    """
     return (
         isinstance(value.get("positioning"), str)
-        and bool(value["positioning"].strip())
         and valid_source_ids(value.get("positioningSourceIds", []))
         and _valid_channel_list(value.get("channels"))
         and isinstance(value.get("earlyCustomerApproach"), str)
-        and bool(value["earlyCustomerApproach"].strip())
-        and valid_source_ids(
-            value.get("earlyCustomerApproachSourceIds", [])
-        )
+        and valid_source_ids(value.get("earlyCustomerApproachSourceIds", []))
     )
 
 
-def _build_crew(
-    idea: str,
-    target_customer: str,
-    context: str,
-    model: str,
-) -> Crew:
-    """
-    Build the CrewAI GTM analysis crew.
-    """
-
+def _build_crew(idea: str, target_customer: str, context: str, model: str) -> Crew:
     analyst = Agent(
         role="Go-to-Market Strategy Analyst",
-        goal=(
-            "Create a focused positioning and early acquisition plan "
-            "grounded in validated customer and competitor evidence."
-        ),
-        backstory=(
-            "An early-stage growth strategist who recommends a few "
-            "testable channels instead of generic marketing lists."
-        ),
-        llm=get_llm(
-            max_tokens=450,
-            model=model,
-        ),
+        goal="Create a focused positioning and early acquisition plan grounded in validated customer and competitor evidence.",
+        backstory=load_prompt("gtm_system"),
+        # Bumped to 600 (was 450) to accommodate per-channel tactics[] array
+        # added in the GTM prompt update. 450 is the confirmed safe floor for
+        # JSON completeness; 600 leaves headroom for 2-3 tactics per channel
+        # without risk of truncation.
+        llm=get_llm(max_tokens=600, model=model),
         verbose=False,
     )
-
     task = Task(
-        description=(
-            f'Startup idea: "{idea}"\n'
-            f'Target customer: {target_customer or "not specified"}\n'
-            f"Validated strategy context: {context}\n\n"
-
-            "The context's \"sources\" array lists sourceId values "
-            '(e.g. "src-1"). '
-
-            "Write one differentiated positioning statement, "
-            "up to four specific acquisition channels, and one "
-            "practical early-customer approach. "
-
-            "Do not invent traction or partnerships. "
-
-            "Give the positioning statement a "
-            '"positioningSourceIds" array, each channel a '
-            '"sourceIds" array, and the early-customer approach an '
-            '"earlyCustomerApproachSourceIds" array. '
-
-            "Each sourceIds array must contain only sourceId values "
-            "that actually exist in the context's sources list. "
-
-            "Use an empty array only when the recommendation is not "
-            "tied to a specific source. "
-            "Never invent a sourceId."
+        description=load_prompt(
+            "gtm_task", idea=idea, target_customer=target_customer or "not specified", context=context
         ),
-
-        expected_output=(
-            'One JSON object only: '
-            '{"positioning":"...",'
-            '"positioningSourceIds":["src-1"],'
-            '"channels":['
-            '{"text":"...","sourceIds":["src-2"]}'
-            '],'
-            '"earlyCustomerApproach":"...",'
-            '"earlyCustomerApproachSourceIds":[]}'
-        ),
-
+        expected_output=load_prompt("gtm_output"),
         agent=analyst,
     )
-
-    return Crew(
-        agents=[analyst],
-        tasks=[task],
-        process=Process.sequential,
-        verbose=False,
-    )
+    return Crew(agents=[analyst], tasks=[task], process=Process.sequential, verbose=False)
 
 
 def analyze_gtm(
@@ -149,29 +83,10 @@ def analyze_gtm(
     competitors: dict | None,
     swot: dict | None,
     results: list,
+    allow_local: bool = False,
 ) -> dict:
-    """
-    Analyze the startup's go-to-market strategy.
-
-    Source IDs are collected from the validated pipeline results
-    and attached to every evidence-grounded recommendation.
-    """
-
-    # ---------------------------------------------------------
-    # Prepare validated source information
-    # ---------------------------------------------------------
-
     sources = compact_sources(results)
-
-    valid_ids = {
-        source["sourceId"]
-        for source in sources
-    }
-
-    # ---------------------------------------------------------
-    # Prepare compact context for the LLM
-    # ---------------------------------------------------------
-
+    valid_ids = {source["sourceId"] for source in sources}
     context = compact_json(
         {
             "marketOpportunity": market_opportunity,
@@ -181,98 +96,50 @@ def analyze_gtm(
         },
         max_chars=4000,
     )
-
     try:
-        # -----------------------------------------------------
-        # Run CrewAI analysis with model fallback
-        # -----------------------------------------------------
-
         output = kickoff_with_fallback(
-            lambda model: _build_crew(
-                idea,
-                target_customer,
-                context,
-                model,
-            )
+            lambda model: _build_crew(idea, target_customer, context, model),
+            allow_local=allow_local,
+            validate=lambda o: extract_json_object(o.raw, _valid_shape) is not None,
         )
-
-        # -----------------------------------------------------
-        # Extract and validate JSON
-        # -----------------------------------------------------
-
-        data = extract_json_object(
-            output.raw,
-            _valid_shape,
-        )
-
+        data = extract_json_object(output.raw, _valid_shape)
         if data is None:
-            logger.warning(
-                "GTM agent returned no valid JSON"
-            )
-
-            raise ValueError(
-                "GTM analysis did not return a valid result."
-            )
-
-        # -----------------------------------------------------
-        # Sanitize positioning source IDs
-        # -----------------------------------------------------
-
-        data["positioningSourceIds"] = sanitize_source_ids(
-            data.get("positioningSourceIds"),
-            valid_ids,
+            logger.warning("GTM agent returned no valid JSON")
+            raise ValueError("GTM analysis did not return a valid result.")
+        data["positioningSourceIds"] = sanitize_source_ids(data.get("positioningSourceIds"), valid_ids)
+        data["earlyCustomerApproachSourceIds"] = sanitize_source_ids(
+            data.get("earlyCustomerApproachSourceIds"), valid_ids
         )
-
-        # -----------------------------------------------------
-        # Sanitize early customer approach source IDs
-        # -----------------------------------------------------
-
-        data["earlyCustomerApproachSourceIds"] = (
-            sanitize_source_ids(
-                data.get(
-                    "earlyCustomerApproachSourceIds"
-                ),
-                valid_ids,
-            )
-        )
-
-        # -----------------------------------------------------
-        # Sanitize channel source IDs
-        # -----------------------------------------------------
-
         data["channels"] = [
             {
                 "text": item["text"].strip(),
-                "sourceIds": sanitize_source_ids(
-                    item.get("sourceIds"),
-                    valid_ids,
-                ),
+                "tactics": [t.strip() for t in (item.get("tactics") or [])[:3] if isinstance(t, str) and t.strip()],
+                "fitScore": item.get("fitScore") if item.get("fitScore") in _FIT_SCORES else None,
+                "sourceIds": sanitize_source_ids(item.get("sourceIds"), valid_ids),
             }
             for item in data["channels"][:_MAX_CHANNELS]
         ]
 
+        # Grounding verification (see verification.py).
+        snippets = {s["sourceId"]: s["snippet"] for s in sources}
+        flat = (
+            [{"text": data["positioning"], "sourceIds": data["positioningSourceIds"]}]
+            + [{"text": data["earlyCustomerApproach"], "sourceIds": data["earlyCustomerApproachSourceIds"]}]
+            + data["channels"]
+        )
+        supported = verify_claims(idea, flat, snippets, allow_local=allow_local)
+        verified = strip_unsupported(flat, supported)
+        data["positioningSourceIds"] = verified[0]["sourceIds"]
+        data["earlyCustomerApproachSourceIds"] = verified[1]["sourceIds"]
+        for channel, result in zip(data["channels"], verified[2:]):
+            channel["sourceIds"] = result["sourceIds"]
+
         return data
-
-    except Exception:
-        # -----------------------------------------------------
-        # Deterministic fallback
-        #
-        # IMPORTANT:
-        # results is passed here so the fallback can preserve
-        # source attribution just like swot_agent.py.
-        # -----------------------------------------------------
-
+    except Exception as exc:
+        if not allow_local:
+            raise NeedsDeepAnalysisError(str(exc)) from exc
         logger.warning(
-            "GTM: LLM analysis unavailable, "
-            "using deterministic evidence-based fallback",
+            "GTM: LLM analysis unavailable, using deterministic evidence-based fallback",
             exc_info=True,
         )
-
-        return deterministic_gtm(
-            idea,
-            target_customer,
-            market_opportunity,
-            competitors,
-            swot,
-            results,
-        )
+        return deterministic_gtm(idea, target_customer, market_opportunity, competitors, swot)

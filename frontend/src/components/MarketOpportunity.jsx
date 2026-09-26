@@ -1,57 +1,59 @@
-import { IconTrendingUp, IconUsers, IconAlertTriangle } from './icons'
-import useCountUp from '../hooks/useCountUp'
+import { IconTrendingUp, IconAlertTriangle } from './icons'
 import DegradedBanner from './DegradedBanner'
 import Citation from './Citation'
+import ProvenanceBadge from './ProvenanceBadge'
+import MarketViabilityIndex from './MarketViabilityIndex'
+import { extractInlineCitations } from '../lib/sources'
 
-function SegmentCard({ segment, sourceMap }) {
-  const { segment: name, painPoints, motivations, buyingBehavior, sourceIds } = segment
+// Customer segments and Voice-of-the-Market quotes live in the Customers
+// tab (CustomerPersonas.jsx / VoiceOfMarketCard.jsx) - this tab is about
+// the market itself: size, trends, and the dynamics breakdown.
+
+// A TAM/SAM/SOM tier is either null (the sources don't support that
+// specific figure - see market_agent.py) or a {"text", "sourceIds"} claim,
+// same per-claim shape as trends/segments. Only rendered when at least one
+// tier is present, so an idea with no sourced market-sizing breakdown
+// doesn't show three empty slots.
+function MarketSizeTiers({ tam, sam, som, sourceMap }) {
+  const tiers = [
+    { label: 'TAM', hint: 'Total addressable market', data: tam },
+    { label: 'SAM', hint: 'Serviceable addressable market', data: sam },
+    { label: 'SOM', hint: 'Serviceable obtainable market', data: som },
+  ].filter((tier) => tier.data?.text)
+
+  if (tiers.length === 0) return null
+
   return (
-    <div className="rounded-xl border border-border bg-surface p-5">
-      <h4 className="text-sm font-semibold text-text">
-        {name}
-        {sourceMap && <Citation sourceIds={sourceIds} sourceMap={sourceMap} />}
-      </h4>
-      <dl className="mt-3 space-y-3">
-        <div>
-          <dt className="font-mono text-[10px] uppercase tracking-widest text-muted">Pain points</dt>
-          <dd className="mt-1 text-sm text-text leading-relaxed">{painPoints}</dd>
+    <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      {tiers.map((tier) => (
+        <div key={tier.label} className="rounded-xl border border-border-strong bg-surface p-4">
+          <p className="font-mono text-[10px] uppercase tracking-widest text-accent">{tier.label}</p>
+          <p className="mt-0.5 font-mono text-[10.5px] uppercase tracking-wide text-muted">{tier.hint}</p>
+          <p className="mt-2 text-sm leading-relaxed text-text">
+            {tier.data.text}
+            {sourceMap && <Citation sourceIds={tier.data.sourceIds} sourceMap={sourceMap} />}
+          </p>
         </div>
-        <div>
-          <dt className="font-mono text-[10px] uppercase tracking-widest text-muted">Motivations</dt>
-          <dd className="mt-1 text-sm text-text leading-relaxed">{motivations}</dd>
-        </div>
-        <div>
-          <dt className="font-mono text-[10px] uppercase tracking-widest text-muted">Buying behavior</dt>
-          <dd className="mt-1 text-sm text-text leading-relaxed">{buyingBehavior}</dd>
-        </div>
-      </dl>
+      ))}
     </div>
   )
 }
 
 function scoreTier(score) {
-  if (score >= 70) {
-    return { label: 'Strong opportunity', className: 'text-accent' }
-  }
-  if (score >= 40) {
-    return { label: 'Moderate opportunity', className: 'text-accent/80' }
-  }
-  return { label: 'Early signal', className: 'text-muted' }
+  if (score >= 70) return 'Strong opportunity'
+  if (score >= 40) return 'Moderate opportunity'
+  return 'Early signal'
 }
 
+// Deliberately small: the verdict card at the top of the report owns the
+// one headline score. This is a secondary, labelled metric.
 function OpportunityScore({ score }) {
-  const value = useCountUp(score, 800)
-  const tier = scoreTier(score)
   return (
-    <div className="flex items-baseline gap-3">
-      <p className="font-serif text-4xl text-accent">{value}</p>
-      <div>
-        <p className="font-mono text-[10px] uppercase tracking-widest text-muted">
-          Opportunity Score
-        </p>
-        <p className={`text-xs font-medium ${tier.className}`}>{tier.label}</p>
-      </div>
-    </div>
+    <p className="font-mono text-[11px] uppercase tracking-wide text-muted">
+      Opportunity score{' '}
+      <span className="text-sm font-semibold normal-case text-text">{score}/100</span>
+      <span className="ml-2 normal-case tracking-normal">{scoreTier(score)}</span>
+    </p>
   )
 }
 
@@ -79,17 +81,36 @@ export default function MarketOpportunity({ data, error, sourceMap }) {
     return <UnavailableCard error={error} />
   }
 
-  const { marketSize, trends = [], segments = [], opportunityScore = 0, degraded } = data
+  const {
+    marketSize,
+    trends = [],
+    segments = [],
+    opportunityScore = 0,
+    degraded,
+    tam,
+    sam,
+    som,
+    viabilityIndex,
+  } = data
   if (!marketSize && trends.length === 0 && segments.length === 0) {
     return <UnavailableCard error="No market data could be extracted from the available sources." />
   }
+  const inline = extractInlineCitations(marketSize)
+  const marketSizeIds = [...new Set([...(data.marketSizeSourceIds || []), ...inline.sourceIds])]
 
   return (
     <div>
       {degraded && <DegradedBanner />}
       {marketSize && (
         <div>
-          <p className="text-sm text-text leading-relaxed">{marketSize}</p>
+          <div className="flex items-start gap-2">
+            <p className="text-sm text-text leading-relaxed">
+              {inline.text}
+              {sourceMap && marketSizeIds.length > 0 && <Citation sourceIds={marketSizeIds} sourceMap={sourceMap} />}
+            </p>
+            <ProvenanceBadge sourceIds={[...marketSizeIds, ...(tam?.sourceIds || []), ...(sam?.sourceIds || []), ...(som?.sourceIds || [])]} />
+          </div>
+          <MarketSizeTiers tam={tam} sam={sam} som={som} sourceMap={sourceMap} />
           {/* A score of 0 means the underlying analysis produced no grounded
               data at all (see backend/agent/opportunity_score.py) - showing
               "0" here would read as a real negative signal, not "unavailable",
@@ -124,22 +145,7 @@ export default function MarketOpportunity({ data, error, sourceMap }) {
         </div>
       )}
 
-      {segments.length > 0 && (
-        <div className="mt-6">
-          <h3 className="mb-3 flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-widest text-muted">
-            <IconUsers className="h-3.5 w-3.5 text-accent" />
-            Customer Segments
-          </h3>
-          {/* Two columns now that this tab has the full page width to
-              itself - plenty of room per card, unlike the narrow dashboard
-              column this used to sit in. */}
-          <div className="grid gap-3 sm:grid-cols-2">
-            {segments.map((s, i) => (
-              <SegmentCard key={i} segment={s} sourceMap={sourceMap} />
-            ))}
-          </div>
-        </div>
-      )}
+      <MarketViabilityIndex data={viabilityIndex} sourceMap={sourceMap} />
     </div>
   )
 }

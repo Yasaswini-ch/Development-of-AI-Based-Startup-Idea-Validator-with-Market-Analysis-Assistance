@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { IconInfo } from './icons'
+import ProvenanceBadge from './ProvenanceBadge'
 
 function hostnameOf(url) {
   try {
@@ -15,8 +16,16 @@ function hostnameOf(url) {
 // resolve in sourceMap (e.g. a claim tied to more results than the
 // backend's compact_sources() limit) are silently skipped rather than
 // shown as broken.
+//
+// A claim whose sourceIds is an explicit empty array has no source at all,
+// so it gets the shared "Inferred" badge instead of silently showing
+// nothing - the same evidence scale ProvenanceBadge uses everywhere else.
+// Undefined sourceIds (older cached data) still render nothing.
 export default function Citation({ sourceIds, sourceMap }) {
   const [openIndex, setOpenIndex] = useState(null)
+  if (Array.isArray(sourceIds) && sourceIds.length === 0) {
+    return <ProvenanceBadge sourceIds={[]} className="ml-1.5" />
+  }
   const resolved = (sourceIds || [])
     .map((id) => ({ id, source: sourceMap.get(id) }))
     .filter((entry) => entry.source)
@@ -30,7 +39,7 @@ export default function Citation({ sourceIds, sourceMap }) {
           <button
             type="button"
             onClick={() => setOpenIndex(openIndex === index ? null : index)}
-            className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-accent/40 bg-accent/10 font-mono text-[9px] font-semibold text-accent hover:bg-accent/20"
+            className="inline-flex h-[18px] min-w-[18px] px-0.5 items-center justify-center rounded-full border border-accent/40 bg-accent/10 font-mono text-[10px] font-semibold text-accent hover:bg-accent/20"
             aria-label={`Show source for this claim`}
           >
             {index + 1}

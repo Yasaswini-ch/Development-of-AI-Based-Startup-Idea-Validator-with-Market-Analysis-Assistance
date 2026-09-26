@@ -1,7 +1,97 @@
 import { useEffect, useRef, useState } from 'react'
-import { IconAlertTriangle, IconLightbulb, IconMessageCircle, IconX } from './icons'
+import {
+  IconAlertTriangle,
+  IconCheckCircle,
+  IconGlobe,
+  IconLightbulb,
+  IconMessageCircle,
+  IconUsers,
+  IconX,
+} from './icons'
 
 const MAX_MESSAGES = 40
+const SUGGESTED_QUESTIONS = [
+  { text: 'What should I validate first?', Icon: IconLightbulb },
+  { text: "What's the biggest risk here?", Icon: IconAlertTriangle },
+  { text: 'What should the MVP include?', Icon: IconCheckCircle },
+  { text: 'How should I launch this?', Icon: IconGlobe },
+]
+// Shown under the advisor's latest reply so the conversation has an obvious
+// next step instead of a dead end - generic rather than reply-specific since
+// there's no backend support (yet) for suggesting follow-ups grounded in the
+// actual answer just given.
+const FOLLOWUP_QUESTIONS = [
+  'Can you say more about that?',
+  "What's the risk in that approach?",
+  'What would you do first?',
+  'Is there evidence for that?',
+]
+
+// The advisor is prompted to answer as a short lead line plus "- " bullet
+// points with **bold** on key terms (see chat_graph.py's _build_response_crew)
+// instead of one dense paragraph - this renders that lightweight structure
+// instead of dumping it as a single wall-of-text <p> with literal asterisks
+// and dashes showing.
+function renderInline(text, keyPrefix) {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+    part.startsWith('**') && part.endsWith('**') && part.length > 4 ? (
+      <strong key={`${keyPrefix}-${i}`} className="font-semibold text-inherit">
+        {part.slice(2, -2)}
+      </strong>
+    ) : (
+      <span key={`${keyPrefix}-${i}`}>{part}</span>
+    ),
+  )
+}
+
+function parseBlocks(text) {
+  const blocks = []
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    if (!line) continue
+    const bullet = line.match(/^[-•]\s+(.*)/)
+    if (bullet) {
+      const last = blocks[blocks.length - 1]
+      if (last?.type === 'list') last.items.push(bullet[1])
+      else blocks.push({ type: 'list', items: [bullet[1]] })
+    } else {
+      blocks.push({ type: 'p', text: line })
+    }
+  }
+  return blocks
+}
+
+function MessageContent({ text }) {
+  const blocks = parseBlocks(text)
+  return (
+    <div className="space-y-1.5">
+      {blocks.map((block, i) =>
+        block.type === 'list' ? (
+          <ul key={i} className="list-disc space-y-1 pl-4">
+            {block.items.map((item, j) => (
+              <li key={j}>{renderInline(item, `${i}-${j}`)}</li>
+            ))}
+          </ul>
+        ) : (
+          <p key={i}>{renderInline(block.text, `${i}`)}</p>
+        ),
+      )}
+    </div>
+  )
+}
+
+function Avatar({ role }) {
+  const Icon = role === 'user' ? IconUsers : IconLightbulb
+  return (
+    <span
+      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
+        role === 'user' ? 'bg-border text-muted' : 'bg-accent/10 text-accent'
+      }`}
+    >
+      <Icon className="h-3.5 w-3.5" />
+    </span>
+  )
+}
 
 export default function ChatAdvisor({ sessionId, apiUrl }) {
   const [isOpen, setIsOpen] = useState(false)
@@ -14,6 +104,7 @@ export default function ChatAdvisor({ sessionId, apiUrl }) {
   // a fully hidden panel would otherwise give up.
   const [unreadCount, setUnreadCount] = useState(0)
   const transcriptRef = useRef(null)
+  const inputRef = useRef(null)
   const submissionLock = useRef(false)
 
   useEffect(() => {
@@ -25,6 +116,11 @@ export default function ChatAdvisor({ sessionId, apiUrl }) {
   function openPanel() {
     setIsOpen(true)
     setUnreadCount(0)
+  }
+
+  function fillSuggestion(question) {
+    setInput(question)
+    inputRef.current?.focus()
   }
 
   async function handleSubmit(event) {
@@ -65,11 +161,12 @@ export default function ChatAdvisor({ sessionId, apiUrl }) {
   return (
     <div className="fixed bottom-5 right-5 z-50 flex flex-col items-end gap-3 sm:bottom-6 sm:right-6">
       {isOpen && (
-        <section className="flex w-[calc(100vw-2.5rem)] max-w-sm flex-col overflow-hidden rounded-2xl border border-border bg-panel shadow-xl">
+        <section className="flex w-[calc(100vw-2.5rem)] max-w-md flex-col overflow-hidden rounded-2xl border border-border bg-panel shadow-xl">
           <div className="flex items-center justify-between border-b border-border px-5 py-4">
             <h2 className="flex items-center gap-2 font-serif text-lg text-text">
               <IconLightbulb className="h-5 w-5 text-accent" />
               Validation advisor
+              <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-info" aria-hidden="true" />
             </h2>
             <button
               type="button"
@@ -83,35 +180,69 @@ export default function ChatAdvisor({ sessionId, apiUrl }) {
 
           <div
             ref={transcriptRef}
-            className="max-h-80 min-h-48 space-y-3 overflow-y-auto px-5 py-4"
+            className="max-h-96 min-h-48 space-y-3 overflow-y-auto bg-surface/40 px-5 py-4"
             aria-live="polite"
           >
             {messages.length === 0 && (
-              <p className="py-8 text-center text-sm text-muted">
-                Ask a follow-up about your market, risks, MVP, or launch strategy.
-              </p>
+              <div className="flex flex-col items-center py-6 text-center">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-accent/10 text-accent">
+                  <IconLightbulb className="h-4 w-4" />
+                </span>
+                <p className="mt-3 max-w-[220px] text-sm leading-relaxed text-muted">
+                  Ask a follow-up about your market, risks, MVP, or launch strategy.
+                </p>
+                <div className="mt-4 flex flex-wrap justify-center gap-1.5">
+                  {SUGGESTED_QUESTIONS.map(({ text, Icon }) => (
+                    <button
+                      key={text}
+                      type="button"
+                      onClick={() => fillSuggestion(text)}
+                      className="flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs text-text shadow-sm transition-colors hover:border-accent hover:text-accent"
+                    >
+                      <Icon className="h-3 w-3 text-accent" />
+                      {text}
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
             {messages.map((item, index) => (
               <div
                 key={index}
-                className={`flex ${item.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                className={`flex items-end gap-2 ${item.role === 'user' ? 'flex-row-reverse' : ''}`}
               >
-                <p
-                  className={`max-w-[85%] whitespace-pre-wrap rounded-xl px-4 py-2.5 text-sm leading-relaxed ${
+                <Avatar role={item.role} />
+                <div
+                  className={`max-w-[78%] rounded-xl px-4 py-2.5 text-sm leading-relaxed shadow-sm ${
                     item.role === 'user'
                       ? 'bg-accent text-white'
                       : 'border border-border bg-surface text-text'
                   }`}
                 >
-                  {item.text}
-                </p>
+                  <MessageContent text={item.text} />
+                </div>
               </div>
             ))}
             {isSubmitting && (
-              <div className="flex justify-start">
-                <p className="rounded-xl border border-border bg-surface px-4 py-2.5 font-mono text-xs uppercase tracking-wider text-muted cursor-blink">
+              <div className="flex items-end gap-2">
+                <Avatar role="advisor" />
+                <p className="rounded-xl border border-border bg-surface px-4 py-2.5 font-mono text-xs uppercase tracking-wider text-muted shadow-sm cursor-blink">
                   Advisor is thinking
                 </p>
+              </div>
+            )}
+            {!isSubmitting && messages.length > 0 && messages[messages.length - 1].role === 'advisor' && (
+              <div className="flex flex-wrap gap-1.5 pl-8">
+                {FOLLOWUP_QUESTIONS.map((question) => (
+                  <button
+                    key={question}
+                    type="button"
+                    onClick={() => fillSuggestion(question)}
+                    className="rounded-full border border-border bg-surface px-2.5 py-1 text-[11px] text-muted transition-colors hover:border-accent hover:text-accent"
+                  >
+                    {question}
+                  </button>
+                ))}
               </div>
             )}
             {error && (
@@ -126,6 +257,7 @@ export default function ChatAdvisor({ sessionId, apiUrl }) {
             <label htmlFor="advisor-message" className="sr-only">Message the validation advisor</label>
             <input
               id="advisor-message"
+              ref={inputRef}
               value={input}
               onChange={(event) => setInput(event.target.value)}
               maxLength={1200}

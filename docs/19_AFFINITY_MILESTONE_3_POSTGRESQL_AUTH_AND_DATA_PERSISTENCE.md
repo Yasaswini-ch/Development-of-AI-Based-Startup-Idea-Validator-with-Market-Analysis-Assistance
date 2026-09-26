@@ -1,50 +1,73 @@
-# 19. Milestone 4: PostgreSQL-Backed Persistence Layer
+# 19. Milestone 4: PostgreSQL Persistence, Accounts & Admin Access
 
-**Document Version:** 4.0 (corrected — see note below)
+**Document Version:** 5.1 (updated 2026-09-26 against `staging` after Sprint 4: Google sign-in)
 **Status:** Implemented & Verified
-**Target Audience:** Backend Engineers
+**Target Audience:** Backend Engineers, Operators, Examiners
 
 ---
 
-> **Correction from earlier drafts of this document:** a previous version of this file
-> described a JWT-authenticated, multi-user system with team workspaces and
-> role-based access control, and marked as it "Implemented & Verified." None of that
-> was ever true — there is no authentication, no user accounts, and no workspace
-> concept anywhere in this codebase, and there never has been. That content was
-> written without a matching implementation. This version replaces it with an honest
-> description of what was actually built: a plain, single-tenant persistence layer for
-> sessions, background jobs, and the response cache. It shipped as part of **Milestone
-> 4** (Track A/D's infrastructure work), not Milestone 3, hence the mismatch between
-> this file's name and its actual content.
+> **Revision history.** Version 3 of this file described a JWT-authenticated, multi-user
+> system with team workspaces before any of it existed. Version 4 corrected that by
+> stating there was no authentication at all, which was true when it was written.
+> Since then, user accounts, JWT auth and an admin role **have** been built, so version
+> 4 was itself out of date. This version (5) describes what the code does today.
+> There are still **no team workspaces and no role-based access control** beyond a
+> single `is_admin` flag. The file name still says "Milestone 3" for historical
+> reasons; the work shipped in Milestone 4 and its follow-ups (see
+> [doc 22](22_AFFINITY_MILESTONE_5_ANALYTICS_DASHBOARDS_AND_ACCESS_CONTROL.md)).
 
 ## 1. Executive Summary & Scope
 
 Before this layer existed, validation sessions, background jobs (the async/email
-path), and the `/validate` response cache all lived in process-local Python dicts
-(`threading.RLock` + a plain `dict`). That had two real problems: nothing survived a
-backend restart, and nothing was shared if more than one backend instance was ever
-run — a request could land on an instance that had never seen a given session, quietly
-breaking chat, PDF export, and job-status polling.
+path), and the `/validate` response cache all lived in process-local Python dicts.
+Nothing survived a backend restart, and nothing was shared between backend instances.
 
-`backend/agent/db.py` replaces all three in-memory stores with a shared database:
-**Postgres in production** (Render-provisioned, `DATABASE_URL` wired automatically via
-`render.yaml`), **SQLite locally and in tests** (`DATABASE_URL` unset → a local
-`affinity.db` file, so nothing here requires a live database just to run the test
-suite). There is no authentication layer, no per-user data model, and no migration
-tool (SQLAlchemy's `metadata.create_all()` creates the three tables directly — there's
-no schema history to manage yet).
+`backend/agent/db.py` replaces those in-memory stores with a shared database, and later
+work added user accounts and an operational event log on top of it:
+
+- **Postgres in production.** Render provisions it from `render.yaml` and wires
+  `DATABASE_URL` into the backend service.
+- **SQLite locally and in tests.** When `DATABASE_URL` is unset, the backend uses a
+  local `./affinity.db` file, so the test suite never needs a live database.
+- **Stateless JWT authentication** (`backend/agent/auth.py`) with email + password
+  accounts, plus optional **Sign in with Google** (`backend/agent/google_auth.py`).
+  Signing in is **optional**: anonymous users can still validate ideas.
+- **One admin flag** (`users.is_admin`) that gates the Platform Health dashboard.
+- **No migration tool.** `metadata.create_all()` creates missing tables, and a small
+  hand-written helper (`_migrate_missing_columns`) adds the few columns that were
+  introduced after tables already existed in production.
+
+> ⚠️ **Render free-tier caveat.** Render's free PostgreSQL databases **expire 30 days
+> after they are created** (Render gives a short grace period to upgrade before
+> deleting it). When that happens, every user account, saved validation and admin flag
+> goes with it. For a demo or defense, check the database's creation date in the Render
+> dashboard and upgrade or recreate it ahead of time. See
+> [DEPLOYMENT.md](../DEPLOYMENT.md#database-postgresql-on-render) and
+> [Known Limitations](known-limitations-and-future-work.md).
 
 ## 2. Database Schema
 
-Three tables, defined with SQLAlchemy Core (`backend/agent/db.py`):
+Five tables, defined with SQLAlchemy Core in `backend/agent/db.py`:
 
 ```mermaid
 erDiagram
+    USERS ||--o{ SESSIONS : "owns (optional)"
+    USERS {
+        string id PK
+        string email UK
+        string password_hash "nullable (Google-only accounts)"
+        float created_at
+        bool is_admin
+        string auth_provider "local | google"
+        string avatar_url "nullable"
+    }
     SESSIONS {
         string id PK
         json context
         json history
         json chat_request_times
+        json decisions
+        string user_id FK "nullable"
         float created_at
         float updated_at
     }
@@ -61,65 +84,168 @@ erDiagram
         json data
         float cached_at
     }
+    EVENTS {
+        int id PK
+        string type
+        string node
+        json detail
+        float created_at
+    }
 ```
 
-- **`sessions`** — one row per validation run. `context` holds the full pipeline
-  output (idea, results, marketOpportunity, competitors, swot, mvp, gtm, ...);
-  `history` holds the chat advisor's transcript for that session; `chat_request_times`
-  backs the per-session chat rate limit. Backs `agent/session_store.py`.
-- **`jobs`** — one row per async validation (the "email me when it's done" path when
-  a request runs past `VALIDATE_ASYNC_THRESHOLD_SECONDS`). Backs `agent/job_store.py`.
-- **`validation_cache`** — the `/validate` response cache, keyed by a SHA-256 hash of
-  the normalized idea/targetCustomer/problem, 30-minute TTL. Backs the cache functions
-  in `backend/main.py`.
+- **`users`**: one row per account. Email is unique and stored lowercased. Passwords
+  are bcrypt-hashed. `is_admin` defaults to false and cannot be set through any
+  public endpoint (see §4.3). `auth_provider` is `local` or `google`, `avatar_url` is set
+  only from a verified Google token, and `password_hash` is `NULL` for an account that
+  has only ever signed in with Google (§4.4).
+- **`sessions`**: one row per validation run. `context` holds the full pipeline output
+  (idea, results, marketOpportunity, competitors, swot, mvp, gtm, marketViability,
+  verdict, ...). `history` holds the chat advisor transcript. `decisions` holds the
+  advisor decision log (`agent/decision_history.py`). `user_id` is set only when the
+  `/validate` request carried a valid bearer token; anonymous runs leave it null.
+- **`jobs`**: one row per async validation (the "email me when it's done" path).
+- **`validation_cache`**: the `/validate` response cache, keyed by a SHA-256 hash of
+  the normalized idea/targetCustomer/problem, 30-minute TTL.
+- **`events`**: an append-only operational log (node latency, which LLM served each
+  call, cache hits/misses, node failures, idea categories, email outcomes). Only
+  `agent/events.py` reads or writes it. It backs `GET /admin/platform-metrics`.
 
-All three use SQLAlchemy's `JSON` column type, which stores real JSON on Postgres and
-a JSON-serialized string on SQLite transparently — the same Python dict/list values
-round-trip either way with no per-backend special-casing in the calling code.
+All JSON columns use SQLAlchemy's `JSON` type, which stores real JSON on Postgres and
+a serialized string on SQLite, so calling code never special-cases the backend.
 
 ## 3. Pruning / TTL
 
-No table grows unbounded. Each store enforces the same two limits SQL side that the
-original in-memory dicts enforced in Python:
+| Table | TTL | Row cap | Where |
+|---|---|---|---|
+| `sessions` | 7 days since last update | 200 rows (oldest dropped) | `session_store._prune` |
+| `jobs` | 2 hours | 200 rows | `job_store._prune` |
+| `validation_cache` | 30 minutes | none (expired row deleted on read) | `main.py` |
+| `events` | 90 days | 200,000 rows | `events._prune` |
+| `users` | never pruned | none | — |
 
-- **Sessions**: `_SESSION_TTL_SECONDS` (2 hours) + `_MAX_SESSIONS` (200) — the oldest
-  rows past either limit are deleted on the next read/write.
-- **Jobs**: same shape, `_JOB_TTL_SECONDS` / `_MAX_JOBS`.
-- **Cache**: `_CACHE_TTL_SECONDS` (30 minutes) — an expired row is deleted on the next
-  read of that specific key rather than swept proactively.
+> **Note for signed-in users:** the 7-day / 200-row limit applies to **every** session,
+> including ones owned by an account. An account itself is permanent, but its saved
+> validations (and therefore its Dashboard and History) are only as durable as this
+> TTL. This is a known limitation, not a bug; see
+> [Known Limitations](known-limitations-and-future-work.md).
 
-## 4. Connection Pooling (Scale-Out)
+## 4. Authentication & Access Control
 
-Pool size, max overflow, timeout, and recycle interval are configurable via
+### 4.1 Accounts and tokens
+
+`backend/agent/auth.py`:
+
+- `POST /auth/signup` and `POST /auth/login` return `{token, user: {id, email}}`.
+  Passwords must be at least 8 characters. Login uses one error message for "no such
+  account" and "wrong password" so emails can't be enumerated.
+- Tokens are HS256 JWTs signed with `AUTH_SECRET_KEY` and valid for **30 days**. Render
+  generates this secret automatically (`generateValue: true` in `render.yaml`). Locally
+  it falls back to a fixed dev-only key.
+- Tokens are stateless, so there is no server-side "log out everywhere" or revocation
+  list. Signing out only clears the token from the browser.
+- All three auth endpoints (`/auth/signup`, `/auth/login`, `/auth/google`) share one
+  per-IP rate limit (`AUTH_RATE_LIMIT_PER_MINUTE`, default 8).
+
+### 4.2 Which endpoints use auth
+
+| Dependency | Behaviour | Used by |
+|---|---|---|
+| `optional_user` | No header → anonymous. Invalid/expired header → 401. | `POST /validate` (tags the session with `user_id`, and uses the account email for report delivery if none was typed) |
+| `require_user` | 401 without a valid token | `GET /auth/me`, `GET /me/history`, `GET /me/analytics` |
+| `require_admin` | 401 without a token, 403 for a non-admin | `GET /admin/platform-metrics` |
+
+Endpoints that take a `sessionId` (`/chat`, `GET /reports/{id}`, `POST /reports/compare`,
+PDF export, report email) do **not** check ownership. A session id is a random UUID
+and acts as a capability link, so anyone who has the link can open that report. This
+is deliberate: the emailed "view this report again" link has to work without signing
+in.
+
+### 4.3 Becoming an admin
+
+There is no self-service way to become an admin. An operator promotes an account in
+one of two ways:
+
+1. **`ADMIN_EMAILS` env var** (comma-separated, case-insensitive). This is the normal
+   route on Render, where there is no shell or SQL console on the free tier.
+   - On every engine creation (process start), `db._bootstrap_admin_emails` flags every
+     existing account whose email is listed.
+   - On every admin check, `auth.is_admin` also looks the account up fresh and promotes
+     it if its email is listed. This self-healing step exists because, on a host whose
+     database is reset by a deploy, the startup bootstrap can run before the matching
+     account has been recreated.
+2. **Direct SQL**: `UPDATE users SET is_admin = true WHERE email = '...'`.
+
+`is_admin` is never stored in the JWT. It is read from the database on each check, so
+revoking admin takes effect immediately. The frontend calls `GET /auth/me` right after
+sign-in so the **Platform health** menu item appears without a page reload.
+
+### 4.4 Sign in with Google
+
+`POST /auth/google {"idToken"}` verifies a Google ID token (signature and audience
+against `GOOGLE_OAUTH_CLIENT_ID`, verified email required) and returns the same
+`{token, user}` shape, with `user` also carrying `authProvider` and `avatarUrl`.
+
+- Accounts are matched **by email**. A new email creates a passwordless account. An
+  existing email/password account with the same email is reused and marked
+  `auth_provider = "google"`; its password keeps working.
+- A Google-only account can't use the password form (no hash to check, so it gets
+  "Incorrect email or password.") and can't sign up to add one ("already exists").
+- Unset `GOOGLE_OAUTH_CLIENT_ID` → the endpoint returns 401 "not configured"; unset
+  `VITE_GOOGLE_CLIENT_ID` → the frontend button doesn't render.
+- Migration: `_migrate_missing_columns` adds `auth_provider` and `avatar_url` on startup.
+  On Postgres it also drops `NOT NULL` from `password_hash`; an existing SQLite file
+  cannot be altered that way and must be recreated before a Google-only sign-in works.
+
+Full flow and configuration:
+[doc 23 §8](23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOOGLE_SSO.md#8-platform-layer-google-sign-in).
+
+## 5. Persistence Safety Checks
+
+- `GET /health` returns `"database": "postgresql"` or `"sqlite"` (never the URL). On a
+  deployed instance, `"sqlite"` means `DATABASE_URL` is missing and data will be lost
+  on the next redeploy.
+- On Render (`RENDER=true`), falling back to SQLite logs a warning.
+- `REQUIRE_PERSISTENT_DB=1` turns that fallback into a startup failure, which is safer
+  than silently wiping accounts.
+- Render's `postgres://` URLs are rewritten to `postgresql+psycopg://` automatically.
+
+## 6. Connection Pooling (Scale-Out)
+
+Pool size, max overflow, timeout and recycle interval are configurable via
 `DB_POOL_SIZE` / `DB_POOL_MAX_OVERFLOW` / `DB_POOL_TIMEOUT_SECONDS` /
-`DB_POOL_RECYCLE_SECONDS` env vars (ignored for the SQLite fallback, which uses
-SQLAlchemy's own pooling for a single file). If running more than one backend
-instance, keep `instances × (pool_size + max_overflow)` comfortably under the
-database plan's max connection count — see the README's Scaling Out section.
+`DB_POOL_RECYCLE_SECONDS` (ignored for SQLite). If running more than one backend
+instance, keep `instances × (pool_size + max_overflow)` under the database plan's
+connection limit.
 
-## 5. What This Does *Not* Include
+## 7. What This Still Does *Not* Include
 
-To be explicit about the gap the earlier, incorrect version of this document
-papered over:
+- **No team workspaces or RBAC.** One account = one person's own board. The only role
+  is the single `is_admin` flag.
+- **No password reset and no email verification** for email/password accounts. Both
+  are listed as future work. (Google accounts are verified by Google.)
+- **No account linking beyond "same email".** Google and password sign-in for one email
+  share one row; there is no way to unlink, or to add a password to a Google-only account.
+- **Google is the only external identity provider.** GitHub SSO from the original
+  roadmap (doc 17) was not built.
+- **No token revocation.** A stolen token is valid until it expires (30 days) or
+  `AUTH_SECRET_KEY` is rotated (which signs everyone out).
+- **No migration tooling.** Schema changes are handled by `create_all()` plus the
+  minimal `_migrate_missing_columns` helper. Alembic would be the right next step if
+  the schema keeps growing.
 
-- **No authentication.** Every session is reachable by anyone who has (or guesses) its
-  UUID — there is no login, no token, no per-user ownership check anywhere in the API.
-  A session id is not treated as a secret today; if that matters for a future
-  deployment, it needs a real auth layer added on top of this, not assumed to already
-  exist.
-- **No user accounts or workspaces.** There is exactly one tenant: whoever is running
-  the app. Nothing here models "a user" or "a team."
-- **No migration tooling.** Schema changes today mean editing `db.py`'s table
-  definitions directly; there's no Alembic (or similar) migration history, since the
-  schema has been simple enough that `create_all()` has been sufficient so far. A real
-  migration tool would be the right next step before this schema grows more complex.
+## 8. Testing
 
-## 6. Testing
+SQLite backs the test suite, so these tests exercise the layer directly:
 
-Backed by SQLite locally, so `backend/tests/` (`test_report_assembler.py`,
-`test_integration.py`'s `ConcurrencyTests`, and others) exercise this layer directly —
-including genuine concurrent-access tests (a `ThreadPoolExecutor` hammering
-`/validate`, `job_store.create_job`/`complete_job`, and `session_store.append_turn`
-across threads) proving the database-backed stores don't lose or corrupt data under
-real concurrent load, which the in-memory version they replaced was never tested
-against at all.
+- `test_auth.py`: signup/login/me/history, and `is_admin` self-promotion via `ADMIN_EMAILS`.
+- `test_sprint4_google_auth.py`: Google sign-in with the verifier mocked (new account,
+  reuse of an existing local account, password login still working after that, a
+  Google-only account refused by the password form, safe 401 messages, and 422 for a
+  missing `idToken`).
+- `test_admin_bootstrap.py`: startup promotion, case/whitespace handling, no-op cases.
+- `test_db_persistence.py`: URL handling, `REQUIRE_PERSISTENT_DB`, the Render warning,
+  and the `/health` database field.
+- `test_events.py`, `test_platform_metrics.py`, `test_user_analytics.py`: the event log
+  and both dashboards' aggregations.
+- `test_integration.py` `ConcurrencyTests`: concurrent `/validate`, job and session
+  writes across threads with no lost or corrupted rows.

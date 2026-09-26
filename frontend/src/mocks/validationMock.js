@@ -46,6 +46,9 @@ export const mockResults = [
 export const mockMarketOpportunity = {
   marketSize: 'The creator monetization tooling market is estimated at $2.4B and growing quickly as more part-time creators look for income.',
   opportunityScore: 62,
+  tam: { text: 'USD 2.4B - the full creator monetization tooling market.', sourceIds: ['src-1'] },
+  sam: { text: 'USD 600M - part-time creators reachable through direct-to-creator channels.', sourceIds: ['src-2'] },
+  som: null,
   trends: [
     { text: 'The creator tooling market is growing at roughly 24% CAGR.', sourceIds: ['src-1'] },
     { text: 'Onboarding friction is the leading cause of early churn across creator SaaS tools.', sourceIds: ['src-2'] },
@@ -59,6 +62,61 @@ export const mockMarketOpportunity = {
       sourceIds: ['src-3'],
     },
   ],
+  voiceOfMarket: [
+    {
+      quote: 'I keep juggling three free tools just to collect a few tips from my audience.',
+      speakerOrSource: 'Reddit thread',
+      sourceId: 'src-3',
+      url: 'https://reddit.com/r/creators/comments/example',
+      sentiment: 'negative_towards_incumbent',
+      taggedDimension: 'Observed Friction',
+    },
+  ],
+  viabilityIndex: {
+    compositeScore: 68,
+    dimensions: [
+      {
+        name: 'Demand Urgency',
+        score: 4,
+        rating: 'High',
+        rationale: 'Pain points about payment collection recur across sources.',
+        sourceIds: ['src-3'],
+        provenance: { status: 'grounded', sourceCount: 1 },
+      },
+      {
+        name: 'Expansion Velocity',
+        score: 4,
+        rating: 'High',
+        rationale: 'Trend signals describe a market growing at roughly 24% CAGR.',
+        sourceIds: ['src-1'],
+        provenance: { status: 'grounded', sourceCount: 1 },
+      },
+      {
+        name: 'Target Accessibility',
+        score: 3,
+        rating: 'Medium',
+        rationale: 'One of one segment(s) have a known buying behavior.',
+        sourceIds: ['src-3'],
+        provenance: { status: 'grounded', sourceCount: 1 },
+      },
+      {
+        name: 'Barrier to Entry / Moat',
+        score: 3,
+        rating: 'Medium',
+        rationale: 'No direct competitors were found; that may be a real gap or thin search coverage.',
+        sourceIds: [],
+        provenance: { status: 'inferred', sourceCount: 0 },
+      },
+      {
+        name: 'Capital Efficiency',
+        score: 4,
+        rating: 'High',
+        rationale: 'Software-only delivery keeps initial infrastructure cost low.',
+        sourceIds: [],
+        provenance: { status: 'inferred', sourceCount: 0 },
+      },
+    ],
+  },
 }
 
 export const mockConfidence = {

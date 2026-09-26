@@ -7,11 +7,12 @@ job-polling endpoint aren't reachable by calling the graph/agent functions
 directly, unlike test_milestone2.py/test_milestone3.py.
 """
 
+import json
 import sys
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
@@ -102,6 +103,45 @@ class AsyncValidationTests(unittest.TestCase):
         self.assertEqual(status["status"], "complete")
         self.assertEqual(status["summary"], "A promising idea.")
         send_email.assert_called_once()
+        # The "view this report again" link (see email_delivery.py) must
+        # point back at this specific session, not a bare/generic URL.
+        call_args = send_email.call_args.args
+        self.assertIn(status["sessionId"], call_args[3])
+
+    @patch("main.send_report_email", return_value=True)
+    @patch("main.pipeline.invoke", return_value=_fake_state(marketOpportunity={"marketSize": "text", "degraded": True}))
+    def test_fast_but_degraded_response_still_emails_when_requested(self, _invoke, send_email):
+        response = self.client.post(
+            "/validate",
+            json={"idea": "Idea", "email": "founder@example.com"},
+        )
+        self.assertEqual(response.status_code, 200)
+        send_email.assert_called_once()
+        call_args = send_email.call_args.args
+        self.assertIn(response.json()["sessionId"], call_args[3])
+
+    @patch("main.send_report_email", return_value=True)
+    @patch("main.pipeline.invoke", return_value=_fake_state())
+    def test_fast_and_clean_response_does_not_email(self, _invoke, send_email):
+        response = self.client.post(
+            "/validate",
+            json={"idea": "Idea", "email": "founder@example.com"},
+        )
+        self.assertEqual(response.status_code, 200)
+        send_email.assert_not_called()
+
+    @patch("main.send_report_email", return_value=True)
+    @patch(
+        "main.pipeline.invoke",
+        return_value=_fake_state(errors={"swot": "This analysis hit a temporary usage limit. Please try again in a moment."}),
+    )
+    def test_fast_response_with_section_error_still_emails(self, _invoke, send_email):
+        response = self.client.post(
+            "/validate",
+            json={"idea": "Idea", "email": "founder@example.com"},
+        )
+        self.assertEqual(response.status_code, 200)
+        send_email.assert_called_once()
 
     def test_slow_pipeline_without_email_stays_synchronous(self):
         def slow_invoke(_state):
@@ -175,26 +215,92 @@ class JobStoreTests(unittest.TestCase):
         self.assertIsNone(job_store.get_job("missing"))
 
 
+class ResponseIsPartialTests(unittest.TestCase):
+    def test_clean_response_is_not_partial(self):
+        self.assertFalse(main._response_is_partial(_fake_state()))
+
+    def test_degraded_section_is_partial(self):
+        response = _fake_state(marketOpportunity={"marketSize": "text", "degraded": True})
+        self.assertTrue(main._response_is_partial(response))
+
+    def test_section_error_is_partial(self):
+        response = _fake_state(errors={"gtm": "This analysis couldn't be completed for this request."})
+        self.assertTrue(main._response_is_partial(response))
+
+    def test_null_section_is_not_partial_on_its_own(self):
+        # A section can be None for reasons _response_is_partial doesn't
+        # need to guess at (e.g. web search itself failed, which is a
+        # top-level "error" state main.py handles separately) - only an
+        # explicit errors.<section> message or degraded:true counts here.
+        response = _fake_state(swot=None)
+        self.assertFalse(main._response_is_partial(response))
+
+
 class EmailDeliveryTests(unittest.TestCase):
     def test_valid_email_addresses(self):
         self.assertTrue(email_delivery.is_valid_email("founder@example.com"))
         self.assertFalse(email_delivery.is_valid_email("not-an-email"))
         self.assertFalse(email_delivery.is_valid_email(""))
 
-    def test_send_without_api_key_returns_false(self):
+    def test_send_without_credentials_returns_false(self):
         with patch.dict("os.environ", {}, clear=False):
             import os
 
-            os.environ.pop("RESEND_API_KEY", None)
+            os.environ.pop("SENDGRID_API_KEY", None)
+            os.environ.pop("SENDGRID_FROM_EMAIL", None)
             sent = email_delivery.send_report_email(
                 "founder@example.com", "Idea", {"summary": "Test"}
             )
         self.assertFalse(sent)
 
-    def test_send_rejects_invalid_recipient_even_with_key(self):
-        with patch.dict("os.environ", {"RESEND_API_KEY": "test-key"}):
+    def test_send_rejects_invalid_recipient_even_with_credentials(self):
+        with patch.dict(
+            "os.environ", {"SENDGRID_API_KEY": "test-key", "SENDGRID_FROM_EMAIL": "sender@example.com"}
+        ):
             sent = email_delivery.send_report_email("not-an-email", "Idea", {"summary": "Test"})
         self.assertFalse(sent)
+
+    @patch("agent.email_delivery.urllib.request.urlopen")
+    def test_send_succeeds_with_credentials_and_valid_recipient(self, mock_urlopen):
+        mock_resp = MagicMock()
+        mock_resp.status = 202
+        mock_urlopen.return_value.__enter__.return_value = mock_resp
+        with patch.dict(
+            "os.environ", {"SENDGRID_API_KEY": "test-key", "SENDGRID_FROM_EMAIL": "sender@example.com"}
+        ):
+            sent = email_delivery.send_report_email("founder@example.com", "Idea", {"summary": "Test"})
+        self.assertTrue(sent)
+        mock_urlopen.assert_called_once()
+        request = mock_urlopen.call_args.args[0]
+        self.assertEqual(request.get_header("Authorization"), "Bearer test-key")
+        body = json.loads(request.data)
+        self.assertEqual(body["personalizations"][0]["to"][0]["email"], "founder@example.com")
+        self.assertEqual(body["from"]["email"], "sender@example.com")
+
+    @patch("agent.email_delivery.urllib.request.urlopen", side_effect=OSError("network unreachable"))
+    def test_send_failure_returns_false_not_raises(self, _mock_urlopen):
+        with patch.dict(
+            "os.environ", {"SENDGRID_API_KEY": "test-key", "SENDGRID_FROM_EMAIL": "sender@example.com"}
+        ):
+            sent = email_delivery.send_report_email("founder@example.com", "Idea", {"summary": "Test"})
+        self.assertFalse(sent)
+
+    def test_report_html_includes_view_again_link_when_given(self):
+        html = email_delivery._build_report_html(
+            "Idea", {"summary": "Test"}, "https://app.example.com/?session=abc-123"
+        )
+        self.assertIn("https://app.example.com/?session=abc-123", html)
+        self.assertIn("View this report again", html)
+
+    def test_report_html_omits_link_section_without_one(self):
+        html = email_delivery._build_report_html("Idea", {"summary": "Test"})
+        self.assertNotIn("View this report again", html)
+
+    def test_report_text_includes_view_again_link_when_given(self):
+        text = email_delivery._build_report_text(
+            "Idea", {"ideaSummary": {"summary": "Test"}}, "https://app.example.com/?session=abc-123"
+        )
+        self.assertIn("https://app.example.com/?session=abc-123", text)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,1 @@
+A monetization strategist who matches revenue models to the specific market dynamics and customer behavior already evidenced — never recommends a model without explaining why it fits this idea's segment and competitive context.

@@ -1,6 +1,6 @@
 # 12. System Architecture & Diagrams Gallery
 **Project:** Affinity — AI-Based Startup Idea Validator with Market Analysis Assistance  
-**Document Version:** 2.0 · September 2026  
+**Document Version:** 3.0 · updated 2026-09-26 against `staging`  
 **Status:** Verified & Operational  
 
 ---
@@ -14,6 +14,9 @@
 6. [Diagram 6: User Journey & Interactive State Flow](#diagram-6-user-journey--interactive-state-flow)
 7. [Diagram 7: Local spaCy NER Competitor Pipeline](#diagram-7-local-spacy-ner-competitor-pipeline)
 8. [Diagram 8: Multi-Stage LLM Output Repair Guard](#diagram-8-multi-stage-llm-output-repair-guard)
+9. [Diagram 9: Accounts, Dashboards & Admin Access](#diagram-9-accounts-dashboards--admin-access)
+10. [Diagram 10: Confidence Headline Recompute](#diagram-10-confidence-headline-recompute)
+11. [Diagram 11: LLM Fallback Chain with Shape Validation](#diagram-11-llm-fallback-chain-with-shape-validation)
 
 ---
 
@@ -46,6 +49,9 @@ flowchart TD
         MvpModule["agent/mvp_agent.py"]
         GtmModule["agent/gtm_agent.py"]
         ReportModule["agent/report_assembler.py"]
+        AuthModule["agent/auth.py\n(JWT, require_admin)"]
+        AnalyticsModule["user_analytics.py +\nplatform_metrics.py"]
+        EventsModule["agent/events.py\n(durable event log)"]
 
         Graph --> SearchModule
         Graph --> ConfidenceModule
@@ -63,23 +69,31 @@ flowchart TD
 
     subgraph ExternalLayer["5. Cloud API Tier"]
         Groq["Groq Cloud LLM API (qwen3.8-27b + fallbacks)"]
+        Gemini["Gemini API (final fallback tiers)"]
         Tavily["Tavily Search API"]
         DDG["DuckDuckGo Search (Fallback)"]
-        Resend["Resend Email API"]
+        SendGrid["SendGrid Email API"]
 
+        Groq -.fallback.-> Gemini
         MarketModule --> Groq
         SwotModule --> Groq
         MvpModule --> Groq
         GtmModule --> Groq
         SearchModule --> Tavily
         SearchModule -.Fallback.-> DDG
-        ReportModule -.email.-> Resend
+        ReportModule -.email.-> SendGrid
     end
 
     UI -->|POST /validate| Main
     Main --> Graph
     Main --> ChatGraph
     Main <--> DB
+    Main --> AuthModule
+    Main --> AnalyticsModule
+    Graph --> EventsModule
+    AuthModule <--> DB
+    AnalyticsModule <--> DB
+    EventsModule --> DB
 ```
 
 ---
@@ -95,11 +109,22 @@ flowchart TD
     Competitors --> Score["5. opportunity_score_node\n(0-100 Score Formulation)"]
     Score --> WhiteSpace["6. white_space_node\n(Gap Synthesis)"]
     WhiteSpace --> Swot["7. swot_node\n(Groq LLM, sourceIds per claim)"]
-    Swot --> Mvp["8. mvp_node\n(Groq LLM Feature Prioritization)"]
-    Mvp --> Gtm["9. gtm_node\n(Groq LLM Positioning/Channels)"]
-    Gtm --> ConfDash["10. confidence_dashboard_node\n(Source Coverage, Recency, Agreement)"]
-    ConfDash --> END(["Return JSON Payload + sessionId"])
+    Swot --> Viability["8. viability_score_node\n(demand, risk, velocity +\ncompetitionClarity, timing)"]
+    Viability --> Mvp["9a. mvp_node\n(LLM Feature Prioritization)"]
+    Viability --> Gtm["9b. gtm_node\n(LLM Positioning/Channels)"]
+    Mvp --> Contra["10. contradiction_detector"]
+    Gtm --> Contra
+    Contra --> Exp["11. experiment_generator"]
+    Exp --> Plan["12. action_plan"]
+    Plan --> Assume["13. assumption_tracker (LLM)"]
+    Assume --> Revenue["14. revenue_models (LLM)"]
+    Revenue --> ConfDash["15. confidence_dashboard_node\n(recomputes headline over cited sources)"]
+    ConfDash --> Verdict["16. compute_verdict\n(Pursue / Validate first / Rethink)"]
+    Verdict --> END(["Return JSON Payload + sessionId"])
 ```
+
+MVP and GTM run in parallel. Quick mode stops after market, competitor and white-space
+analysis.
 
 ---
 
@@ -137,11 +162,14 @@ sequenceDiagram
 
 ## Diagram 4: Data Privacy & Ephemeral Caching Lifecycle
 
+> The cache moved from an in-memory dict to the `validation_cache` database table in
+> Milestone 4. Same 30-minute TTL and same rule: partial results are never cached.
+
 ```mermaid
 sequenceDiagram
     participant Client as React Client
-    participant Server as FastAPI Server Memory
-    participant Cache as Volatile Cache Dict
+    participant Server as FastAPI Server
+    participant Cache as validation_cache table (Postgres/SQLite)
 
     Client->>Server: POST /validate
     Server->>Server: Normalize fields & compute SHA-256 hash
@@ -235,4 +263,66 @@ flowchart LR
     Find --> Repair["3. _repair_invalid_escapes()<br/>(Fix illegal backslashes)"]
     Repair --> Shape["4. _is_valid_shape()<br/>(Schema validation)"]
     Shape --> Output["Validated Structured JSON"]
+```
+
+---
+
+## Diagram 9: Accounts, Dashboards & Admin Access
+
+```mermaid
+flowchart TD
+    Visitor["Visitor"] -->|optional| SignIn["POST /auth/signup or /auth/login\n(bcrypt + 30-day JWT)"]
+    Visitor -->|optional| Google["POST /auth/google\n(Google ID token, verified server-side)"]
+    Google --> Me
+    Visitor -->|anonymous| Validate["POST /validate"]
+    SignIn --> Me["GET /auth/me\n{ id, email, isAdmin }"]
+    Me --> Menu["AccountMenu dropdown"]
+    Menu --> History["History\nGET /me/history"]
+    Menu --> Compare["Compare ideas\nPOST /reports/compare"]
+    Menu --> Dash["Dashboard\nGET /me/analytics"]
+    Menu -->|isAdmin only| Health["Platform health\nGET /admin/platform-metrics"]
+    Dash --> Tabs["Overview · Comparison matrix ·\nValidation history · Score trends"]
+    Env["ADMIN_EMAILS env var"] -->|startup bootstrap +\nself-heal on each check| AdminFlag[("users.is_admin")]
+    AdminFlag --> Health
+    Events[("events table\n90-day TTL")] --> Health
+```
+
+---
+
+## Diagram 10: Confidence Headline Recompute
+
+```mermaid
+flowchart LR
+    Raw["Raw search pool\n(all angles, 30-50+ results)"] --> CI["confidence_indicator\n(early)"]
+    CI -->|perAngle kept| Final["confidence object"]
+    CI -.headline overwritten.-> Final
+    Claims["Cited claims\n(SWOT, MVP, GTM, market\ntrends/segments/TAM-SAM-SOM)"] --> CD["confidence_dashboard\n(last)"]
+    Raw -->|relevance lookup| CD
+    CD -->|headline: cited sources with relevance >= 0.5| Final
+    CD -->|coverage, agreement, direct evidence,\navg relevance, recency| Final
+```
+
+See [confidence-and-evidence-scoring-methodology.md](confidence-and-evidence-scoring-methodology.md).
+
+---
+
+## Diagram 11: LLM Fallback Chain with Shape Validation
+
+```mermaid
+flowchart TD
+    Call["Agent calls kickoff_with_fallback(build_crew, validate)"] --> M1["groq/qwen/qwen3.8-27b"]
+    M1 -->|rate limit / provider error /\nfails validate| M2["groq/openai/gpt-oss-20b"]
+    M2 -->|same| M3["groq/openai/gpt-oss-120b"]
+    M3 -->|same| M4["gemini/gemini-3.6-flash"]
+    M4 -->|same| M5["gemini/gemini-3.8-flash"]
+    M1 & M2 & M3 & M4 & M5 -->|passes validate| OK(["Use response"])
+    M5 -->|all failed| Q{"allow_local and\nOllama reachable?"}
+    Q -->|yes| Local["Local Ollama model"]
+    Q -->|no| Retry["Cooldown, then one more\npass over M1..M5"]
+    Local -->|fails| Retry
+    Local -->|passes| OK
+    Retry -->|passes| OK
+    Retry -->|fails| End{"allow_local?"}
+    End -->|no| Ask["NeedsDeepAnalysisError\n(/validate asks for email;\nonly possible where Ollama exists)"]
+    End -->|yes| Degraded["Deterministic fallback\n(degraded: true)"]
 ```

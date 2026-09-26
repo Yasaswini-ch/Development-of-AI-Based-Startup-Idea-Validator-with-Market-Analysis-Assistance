@@ -85,8 +85,17 @@ unaffected. Verified across 7 ideas: eliminated every single-word false
 positive seen without losing any previously-confirmed real competitor.
 """
 
+import json
 import logging
+import os
 import re
+import urllib.request
+
+from .structured_output import extract_json_object
+
+# crewai/llm are imported lazily inside _profile_with_llm: every other
+# path in this module is deliberately dependency-light (spaCy only), and
+# tests that exercise NER alone shouldn't have to import the LLM stack.
 
 logger = logging.getLogger(__name__)
 
@@ -356,6 +365,7 @@ def _extract_entities(results: list) -> dict[str, dict]:
                     "has_context": False,
                     "price": None,
                     "breadth": None,
+                    "local_text": "",
                 },
             )
             entry["count"] += 1
@@ -363,6 +373,11 @@ def _extract_entities(results: list) -> dict[str, dict]:
                 entry["has_context"] = True
 
             local_text = _local_context(doc, ent)
+            # Kept even once price/breadth are both already found - the
+            # Gemini refinement pass (_refine_with_gemini) needs the same
+            # grounding text the regex heuristics used, not just their
+            # derived low/mid/high buckets.
+            entry["local_text"] = f"{entry['local_text']} {local_text}".strip()
             if entry["price"] is None:
                 entry["price"] = _estimate_price(local_text)
             if entry["breadth"] is None:
@@ -403,34 +418,334 @@ def _dedupe_near_matches(mentions: dict[str, dict]) -> list[str]:
     return kept
 
 
-def analyze_competitors(idea: str, target_customer: str, problem: str, results: list) -> dict:
+_GEMINI_ENDPOINT_TEMPLATE = (
+    "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+)
+_GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
+_LEVELS = {"low", "mid", "high", "unknown"}
+_BREADTHS = {"narrow", "moderate", "broad", "unknown"}
+
+
+def _valid_gemini_pricing_shape(data: dict) -> bool:
+    """Every key in the response must be one of the competitor names we
+    actually asked about, and every value must be exactly {"price",
+    "featureBreadth"} using only the same enum values estimatedPrice/
+    featureBreadth already accept elsewhere - anything else (an unlisted
+    name, an invented price bucket) is a shape violation, not just an
+    unwanted answer, so extract_json_object rejects it outright rather
+    than passing it through.
+    """
+    if not isinstance(data, dict):
+        return False
+    for value in data.values():
+        if not isinstance(value, dict):
+            return False
+        if value.get("price") not in _LEVELS or value.get("featureBreadth") not in _BREADTHS:
+            return False
+    return True
+
+
+def _refine_with_gemini(idea: str, entries: list[dict]) -> dict[str, dict]:
+    """Ask Gemini to classify price/feature-breadth for competitors the
+    regex heuristics (_estimate_price/_estimate_breadth) came up
+    "unknown" on, using the exact same local grounding text those
+    heuristics used - never the raw idea alone, never the model's own
+    general knowledge of the company. A separate API key/quota from the
+    Groq key the other four agents share (see llm.py), by design: this
+    call never competes with Market/SWOT/MVP/GTM for the shared Groq
+    rate limit.
+
+    Returns {} on any failure (no key configured, network error, bad
+    shape) - callers must treat this as "no refinement available", not
+    raise, so a Gemini outage never breaks competitor discovery, which
+    is otherwise a zero-external-dependency step.
+    """
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key or not entries:
+        return {}
+
+    listing = "\n".join(f'- "{e["name"]}": {e["text"][:400]}' for e in entries)
+    prompt = (
+        f'Startup idea being validated: "{idea}"\n\n'
+        "For each competitor below, classify its pricing and feature breadth "
+        "using ONLY the text given for that competitor - never your own general "
+        "knowledge of the company, never a guess. If the given text doesn't "
+        'state or clearly imply a price/breadth, answer "unknown" for that '
+        "field rather than inferring one.\n\n"
+        f"Competitors:\n{listing}\n\n"
+        'Price buckets: "low" (< $10/mo equivalent), "mid" ($10-25/mo), '
+        '"high" (> $25/mo), "unknown".\n'
+        'Feature breadth: "narrow", "moderate", "broad", "unknown".\n\n'
+        "Respond with one JSON object only, keyed by the exact competitor names "
+        'given above: {"CompetitorName": {"price": "low|mid|high|unknown", '
+        '"featureBreadth": "narrow|moderate|broad|unknown"}}.'
+    )
+
+    request = urllib.request.Request(
+        _GEMINI_ENDPOINT_TEMPLATE.format(model=_GEMINI_MODEL, key=api_key),
+        data=json.dumps(
+            {
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "temperature": 0,
+                    "maxOutputTokens": 500,
+                    # gemini-3.6-flash "thinks" by default, burning most/all of
+                    # maxOutputTokens on internal reasoning before writing any
+                    # answer text - confirmed live: with this unset, the JSON
+                    # answer was truncated mid-string every time, well within
+                    # the same 500-token budget. This is a small, mechanical
+                    # classification task with no need for extended reasoning.
+                    "thinkingConfig": {"thinkingBudget": 0},
+                },
+            }
+        ).encode(),
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as resp:
+            body = json.loads(resp.read())
+        text = body["candidates"][0]["content"]["parts"][0]["text"]
+    except Exception:
+        logger.warning("Gemini pricing refinement unavailable, keeping regex-only estimates", exc_info=True)
+        return {}
+
+    valid_names = {e["name"] for e in entries}
+    data = extract_json_object(
+        text, lambda d: _valid_gemini_pricing_shape(d) and set(d.keys()) <= valid_names
+    )
+    return data or {}
+
+
+_CLASSIFICATIONS = {"direct", "indirect", "unknown"}
+_MAX_LIST_ITEMS = 3
+_MAX_MATRIX_ROWS = 5
+
+
+def _short_text(value, limit: int = 160) -> str | None:
+    if not isinstance(value, str):
+        return None
+    cleaned = " ".join(value.split())
+    return cleaned[:limit] if cleaned else None
+
+
+def _short_list(value) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    items = [_short_text(v, 120) for v in value]
+    return [v for v in items if v][:_MAX_LIST_ITEMS]
+
+
+def _valid_profile_shape(data: dict, names: set[str]) -> bool:
+    """Only the top-level shape is strict (a "profiles" object keyed by
+    names we actually asked about); individual fields are sanitized by
+    _clean_profile instead, so one malformed field drops that field rather
+    than the whole profiling pass."""
+    profiles = data.get("profiles")
+    if not isinstance(profiles, dict) or not profiles:
+        return False
+    if not set(profiles.keys()) <= names:
+        return False
+    return all(isinstance(v, dict) for v in profiles.values())
+
+
+def _clean_profile(raw: dict) -> dict:
+    classification = raw.get("classification")
+    return {
+        "classification": classification if classification in _CLASSIFICATIONS else "unknown",
+        "pricing": _short_text(raw.get("pricing"), 80) or "unknown",
+        "businessModel": _short_text(raw.get("businessModel"), 80) or "unknown",
+        "strengths": _short_list(raw.get("strengths")),
+        "weaknesses": _short_list(raw.get("weaknesses")),
+        "gap": _short_text(raw.get("gap"), 240),
+    }
+
+
+def _clean_matrix(raw, names: set[str]) -> list[dict]:
+    """Keep only rows with a dimension and an idea cell, and only cells
+    for competitors we actually profiled - a model-invented competitor
+    name in the matrix is dropped, same rule as sanitize_source_ids."""
+    if not isinstance(raw, list):
+        return []
+    rows = []
+    for row in raw[:_MAX_MATRIX_ROWS]:
+        if not isinstance(row, dict):
+            continue
+        dimension = _short_text(row.get("dimension"), 60)
+        idea_cell = _short_text(row.get("idea"), 140)
+        cells = row.get("competitors")
+        if not dimension or not idea_cell or not isinstance(cells, dict):
+            continue
+        rows.append(
+            {
+                "dimension": dimension,
+                "idea": idea_cell,
+                "competitors": {
+                    name: _short_text(cells.get(name), 140) or "unknown" for name in names if name in cells
+                },
+            }
+        )
+    return rows
+
+
+def _profile_with_llm(
+    idea: str,
+    target_customer: str,
+    problem: str,
+    entries: list[dict],
+    allow_local: bool = False,
+) -> dict | None:
+    """One bounded LLM call that turns NER's bare names into competitor
+    profiles (direct/indirect, pricing, business model, strengths,
+    weaknesses, an idea-specific gap) plus an idea-vs-competitor comparison
+    matrix - grounded in the same per-competitor local text the regex
+    heuristics read, never the model's general knowledge.
+
+    Strictly additive: returns None on any failure (quota exhausted, bad
+    JSON, missing dependency) and the caller keeps the NER-only result, so
+    this can never turn a working competitor section into a failed one or
+    trigger the deep-analysis short-circuit other strategy agents use.
+    """
+    if not entries:
+        return None
+    try:
+        from crewai import Agent, Crew, Process, Task
+
+        from .llm import get_llm, kickoff_with_fallback
+        from .prompts.loader import load_prompt
+    except Exception:
+        logger.warning("Competitor profiling unavailable (LLM stack not importable)", exc_info=True)
+        return None
+
+    names = {e["name"] for e in entries}
+    listing = "\n".join(f'- "{e["name"]}": {e["text"][:500]}' for e in entries)
+
+    def build_crew(model: str):
+        analyst = Agent(
+            role="Competitive Intelligence Analyst",
+            goal="Profile each competitor strictly from its own source text and compare it with the startup idea.",
+            backstory=load_prompt("competitor_profile_system"),
+            llm=get_llm(max_tokens=900, model=model),
+            verbose=False,
+        )
+        task = Task(
+            description=load_prompt(
+                "competitor_profile_task",
+                idea=idea,
+                target_customer=target_customer or "not specified",
+                problem=problem or "not specified",
+                listing=listing,
+            ),
+            expected_output=load_prompt("competitor_profile_output"),
+            agent=analyst,
+        )
+        return Crew(agents=[analyst], tasks=[task], process=Process.sequential, verbose=False)
+
+    def validator(data: dict) -> bool:
+        return _valid_profile_shape(data, names)
+
+    try:
+        output = kickoff_with_fallback(
+            build_crew,
+            allow_local=allow_local,
+            validate=lambda o: extract_json_object(o.raw, validator) is not None,
+        )
+        data = extract_json_object(output.raw, validator)
+    except Exception:
+        logger.warning("Competitor profiling failed, keeping NER-only competitors", exc_info=True)
+        return None
+    if data is None:
+        return None
+
+    return {
+        "profiles": {name: _clean_profile(raw) for name, raw in data["profiles"].items()},
+        "comparisonMatrix": _clean_matrix(data.get("comparisonMatrix"), names),
+    }
+
+
+def analyze_competitors(
+    idea: str,
+    target_customer: str,
+    problem: str,
+    results: list,
+    profile: bool = False,
+    allow_local: bool = False,
+) -> dict:
     """Identify competitors from `results` via local NER - no LLM call, no
     API dependency, so this never fails due to rate limits or provider
     outages. An empty `competitors: []` is a genuine, valid outcome (the
     sources didn't name any identifiable company), not a failure - matches
     the existing contract exactly, so the frontend's null-vs-empty
     distinction still works unchanged.
+
+    A Gemini refinement pass (_refine_with_gemini) fills in the
+    estimatedPrice/featureBreadth cells the regex heuristics left
+    "unknown" - separate API key/quota from Groq, optional (skipped
+    entirely without GEMINI_API_KEY), and never overrides a value the
+    regex heuristics already found, only fills genuine gaps.
+
+    With profile=True (the full "deep" pipeline), _profile_with_llm adds
+    richer per-competitor fields (classification, pricing, businessModel,
+    strengths, weaknesses, a real idea-specific gap) and a top-level
+    comparisonMatrix. Any profiling failure leaves the NER-only result
+    exactly as before, with "profiled": False.
     """
     if _nlp is None:
         return {"competitors": []}
 
     mentions = _extract_entities(results)
     kept_names = _dedupe_near_matches(mentions)
+    names_for_this_run = kept_names[:_MAX_COMPETITORS]
+
+    refinable = [
+        {"name": name, "text": mentions[name]["local_text"]}
+        for name in names_for_this_run
+        if mentions[name]["price"] is None or mentions[name]["breadth"] is None
+    ]
+    refinements = _refine_with_gemini(idea, refinable) if refinable else {}
 
     competitors = []
-    for name in kept_names[:_MAX_COMPETITORS]:
+    for name in names_for_this_run:
         info = mentions[name]
         source = info["source"]
         offering = _clean_offering((source.get("snippet") or "").strip())
+        refined = refinements.get(name, {})
+        price = info["price"] or refined.get("price") or "unknown"
+        breadth = info["breadth"] or refined.get("featureBreadth") or "unknown"
         competitors.append(
             {
                 "name": name,
                 "offering": offering[:200] if offering else "See source for details.",
                 "url": source.get("url", ""),
                 "gap": _GAP_DISCLOSURE,
-                "estimatedPrice": info["price"] or "unknown",
-                "featureBreadth": info["breadth"] or "unknown",
+                "estimatedPrice": price,
+                "featureBreadth": breadth,
             }
         )
 
-    return {"competitors": competitors}
+    result = {"competitors": competitors}
+    if not profile or not competitors:
+        return result
+
+    profiled = _profile_with_llm(
+        idea,
+        target_customer,
+        problem,
+        [{"name": c["name"], "text": mentions[c["name"]]["local_text"] or c["offering"]} for c in competitors],
+        allow_local=allow_local,
+    )
+    if profiled is None:
+        result["profiled"] = False
+        return result
+
+    for competitor in competitors:
+        extra = profiled["profiles"].get(competitor["name"])
+        if not extra:
+            continue
+        gap = extra.pop("gap")
+        competitor.update(extra)
+        if gap:
+            competitor["gap"] = gap
+    result["comparisonMatrix"] = profiled["comparisonMatrix"]
+    result["profiled"] = True
+    return result
