@@ -153,6 +153,11 @@ class InvalidInputTests(unittest.TestCase):
         resp = self.client.post("/validate", json={"idea": "x" * 2500})
         self.assertNotEqual(resp.status_code, 422)
 
+    def test_excessively_long_target_customer_is_rejected(self):
+        resp = self.client.post("/validate", json={"idea": "Valid idea", "targetCustomer": "x" * 601})
+        self.assertEqual(resp.status_code, 422)
+
+
 
 class MidPipelineFailureIntegrationTests(unittest.TestCase):
     """Runs the REAL compiled pipeline (agent.graph.pipeline), not an
