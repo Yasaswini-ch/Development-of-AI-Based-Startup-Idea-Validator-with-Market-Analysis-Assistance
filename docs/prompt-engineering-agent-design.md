@@ -201,14 +201,31 @@ Where:
 
 ## 6. Resilience & Fallback Execution Chain
 
-When an LLM endpoint fails (due to rate limits or model deprecation), `kickoff_with_fallback()` in [`agent/llm.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/llm.py) executes a model sequence:
+When an LLM attempt fails, `kickoff_with_fallback()` in [`agent/llm.py`](../backend/agent/llm.py) moves to the next model in the sequence:
 
 ```python
-FALLBACK_MODELS = [
-    "groq/qwen/qwen3.8-27b",
+DEFAULT_MODEL = "groq/qwen/qwen3.8-27b"
+FALLBACK_MODELS = (
     "groq/openai/gpt-oss-20b",
     "groq/openai/gpt-oss-120b",
-]
+    "gemini/gemini-3.6-flash",
+    "gemini/gemini-3.8-flash",
+)
 ```
 
-If every LLM fallback fails, the node raises an exception caught by [`agent/graph.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/graph.py), populating `errors.marketOpportunity` while allowing competitor discovery, confidence metrics, and white-space analysis to return partial data cleanly.
+"Fails" covers rate limits, `model_not_found`, provider/network errors, **and output
+that doesn't pass the agent's own shape check.** Every agent hands in a `validate`
+callback built from the same parser it uses on the final result (for example
+`lambda output: extract_json_object(output.raw, _is_valid_shape) is not None` in
+`market_agent.py`), and it runs per attempt, inside the chain. This matters for prompt
+design: a prompt that sometimes produces rambling or malformed JSON now costs a
+fallback hop rather than failing the section, but it still burns quota on the next
+model, so the output-format prompt files (`prompts/*_output.md`) remain the first line
+of defence.
+
+If every model fails, the call raises `NeedsDeepAnalysisError`. With no email on file,
+`/validate` asks for one; with an email, the retry may use the local Ollama model. If
+the local tier also fails, the agent falls back to its deterministic, `degraded: true`
+result, and [`agent/graph.py`](../backend/agent/graph.py) records per-section errors so
+competitor discovery, confidence metrics and white-space analysis still return partial
+data cleanly.

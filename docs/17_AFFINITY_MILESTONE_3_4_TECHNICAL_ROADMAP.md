@@ -1,9 +1,24 @@
 # 17. Future Technical Roadmap & Milestones 3 & 4 Specifications
 **Project:** Affinity — AI-Based Startup Idea Validator with Market Analysis Assistance  
 **Document Version:** 2.0 · September 2026  
-**Status:** Feature Specification  
+**Status:** Feature Specification (original plan) — delivery status added 2026-09-26  
 
 ---
+
+> **Delivery status (2026-09-26).** This file is the original forward-looking plan. The
+> table below records what actually shipped, so it isn't read as a list of things that
+> don't exist yet. Where the shipped design differs from the plan, the shipped design
+> wins; see the linked docs.
+>
+> | Planned item | Status | Where it actually lives |
+> |---|---|---|
+> | 2.1 PDF dossier export | ✅ Built (ReportLab, `GET /validate/{id}/pdf`, `POST /export-pdf`); no grid graphic or citation index | [doc 20](20_AFFINITY_MILESTONE_3_PDF_DOSSIER_EXPORTER_AND_REPORTS.md) |
+> | 2.2 Idea comparison matrix | ✅ Built, differently: compares 2–5 **already-validated** sessions (`POST /reports/compare`), no parallel re-runs; plus a Dashboard comparison tab | [doc 21](21_AFFINITY_MILESTONE_3_DEAL_SCREENING_AND_COMPARISON_MATRIX.md) |
+> | 2.3 Pitch deck outline generator | ⏳ Not built | — |
+> | 3.1 Accounts & saved history | ✅ Built: email + password JWT accounts on Postgres/SQLAlchemy. No OAuth/SSO, no team workspaces | [doc 19](19_AFFINITY_MILESTONE_3_POSTGRESQL_AUTH_AND_DATA_PERSISTENCE.md) |
+> | 3.2 Competitor tracking webhooks | ⏳ Not built | — |
+> | 3.3 Incubator API portal | ⏳ Not built; the **admin analytics dashboard** part shipped as Platform Health | [doc 22](22_AFFINITY_MILESTONE_5_ANALYTICS_DASHBOARDS_AND_ACCESS_CONTROL.md) |
+> | 4 Prisma schema preview | Superseded by the SQLAlchemy tables in `backend/agent/db.py` | [doc 19 §2](19_AFFINITY_MILESTONE_3_POSTGRESQL_AUTH_AND_DATA_PERSISTENCE.md#2-database-schema) |
 
 ## 📑 Document Table of Contents
 - [1. Executive Summary & Strategic Architecture](#1-executive-summary--strategic-architecture)

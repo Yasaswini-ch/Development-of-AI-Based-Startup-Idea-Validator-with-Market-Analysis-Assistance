@@ -1,52 +1,84 @@
 # 21. Multi-Idea Comparison Matrix
 
-**Document Version:** 2.0 (corrected — see note below)
-**Status:** Not implemented — proposed future feature
-**Target Audience:** Product, Backend Engineers
+**Document Version:** 3.0 (updated 2026-09-26 against the `staging` branch)
+**Status:** Implemented (backend endpoint + two UIs)
+**Target Audience:** Product, Backend Engineers, Frontend Engineers, Examiners
 
 ---
 
-> **Correction from earlier drafts of this document:** a previous version of this file
-> described a `POST /api/v1/validations/compare` endpoint and a full side-by-side
-> multi-idea comparison matrix, labeled *"Status: Implemented & Operational."* That
-> was never true. No such endpoint, no such UI, and no such comparison logic exists
-> anywhere in this codebase — not partially, not under a different name. There is
-> nothing in `backend/main.py`'s route list, nowhere in `frontend/src/`, that does
-> this. This version is honest about that: the content below is a **design proposal**
-> for a feature that has not been built, not a record of one that has.
+> **Revision history.** Version 1 of this file described a `POST
+> /api/v1/validations/compare` endpoint marked "Implemented & Operational" before
+> anything existed. Version 2 corrected that to "not implemented", which was accurate
+> on the day it was written. The feature has **since been built**, so version 2 is now
+> wrong. This version describes the shipped feature. Note that the real endpoint is
+> `POST /reports/compare`, not the `/api/v1/...` path from version 1.
 
-## 1. Current Reality
+## 1. What Exists Today
 
-Affinity validates **one idea per request**. `POST /validate` takes a single
-`{idea, targetCustomer, problem}` and returns one full analysis, tied to one
-`sessionId`. There is no concept of "select N previous validations and compare them" —
-sessions aren't even listable today (no `GET /sessions` or equivalent), so a caller
-would first need a way to enumerate their own past validations before comparing any of
-them, which also doesn't exist.
+A founder can compare between 2 and 5 of their past validations side by side. There
+are two entry points, backed by two different data paths:
 
-Nothing about this is a partial implementation waiting to be finished — it's a
-genuinely unbuilt idea, first written up (as a real proposal, without the false
-status claim) in `docs/17_AFFINITY_MILESTONE_3_4_TECHNICAL_ROADMAP.md` and `docs/
-unique-features-plan.md`'s differentiator list, neither of which includes it either —
-so this is, at most, a future idea beyond the currently planned Milestone 4 scope.
+| Entry point | Who can use it | Data source | Component |
+|---|---|---|---|
+| **Account menu → Compare ideas** | Signed-in users | `POST /reports/compare` with session ids | `frontend/src/components/CompareIdeas.jsx` |
+| **Account menu → Dashboard → "Comparison matrix" tab** | Signed-in users | `GET /me/analytics` (every idea on the account) | `ComparisonMatrixTab` in `frontend/src/components/AnalyticsDashboard.jsx` |
 
-## 2. If This Were Built
+Neither path re-runs retrieval or any agent. Both read out what each session's pipeline
+run already produced, following the project's "assemble, don't re-derive" rule for
+report-shaped features.
 
-Kept here as a design sketch, clearly marked as such, since the shape is still a
-reasonable one:
+## 2. Backend: `POST /reports/compare`
 
-- Would need session **listing** first (e.g. by a founder-supplied identifier, since
-  there's no user-account system to scope "my sessions" to — see doc 19's corrected
-  version on the current lack of authentication).
-- A comparison would read from the same canonical report object
-  (`agent/report_assembler.py`, Milestone 4) for each selected session — reusing
-  `opportunityScore`, `confidence`, and `swot.risks` rather than inventing a separate
-  "risk rating" or "source consensus ratio" metric, since those already exist on each
-  individual report.
-- Output would be a side-by-side table of existing fields, not a new scoring model —
-  consistent with this project's "don't re-derive, assemble what already exists"
-  principle for report-shaped features.
+```
+POST /reports/compare
+Body: { "sessionIds": ["<uuid>", "<uuid>", ...] }   // 2 to 5 ids, deduplicated
+-> 200 { "reports": [<canonical report>, ...], "missing": ["<expired id>", ...] }
+-> 404 { "error": "Fewer than 2 of the given sessions were found or unexpired.", "missing": [...] }
+-> 422 on fewer than 2 distinct ids or more than 5
+```
 
-This is deliberately a short section — there's no implementation to document, and
-padding a proposal out to look like a spec risks the same problem this correction is
-fixing.
+- Each entry in `reports` is the same canonical report object `GET /reports/{id}`
+  returns (`agent/report_assembler.py`).
+- An expired or unknown id goes into `missing` instead of failing the whole request.
+  A partial comparison is still returned as long as at least two sessions are valid.
+- Rate-limited per IP with the same limit as report/PDF endpoints.
+- No auth header is required. Session ids act as capability links (see doc 19 §4.2).
+
+## 3. Frontend: Compare Ideas view (`CompareIdeas.jsx`)
+
+- Ideas are added from **History** with an "Add to compare" button. The selection is a
+  small basket in `localStorage` (`frontend/src/lib/compareList.js`, max 5), so it
+  survives page changes.
+- A user can also paste a session id or a full emailed report link; the `?session=`
+  parameter is extracted automatically.
+- Rows shown for each idea: Opportunity score, Market viability, Confidence, Market
+  size, Competitors, Top strength, Top risk, Top MVP feature, GTM positioning.
+
+## 4. Frontend: Dashboard "Comparison matrix" tab
+
+Part of the founder Dashboard (see
+[doc 22](22_AFFINITY_MILESTONE_5_ANALYTICS_DASHBOARDS_AND_ACCESS_CONTROL.md)). It
+compares **every** idea on the signed-in account at once, with no manual selection:
+
+- Columns: Idea, Score, Market size, Competition, Top risk, Revenue model, Source
+  agreement, Recommendation.
+- Rows are sorted by Opportunity Score and the best idea is highlighted with a 🏆.
+- "Competition" is a label derived by `agent/user_analytics.py`; zero named
+  competitors reads as "Unclear" rather than "Low", because an empty search result is
+  not evidence of an empty market.
+- "Recommendation" is a short deterministic phrase from the score and top risk, not an
+  extra LLM call.
+
+## 5. Limits
+
+- Only sessions still inside the 7-day / 200-row session TTL can be compared (see doc
+  19 §3). Older ideas drop out of both views.
+- The comparison is a side-by-side table of existing fields. There is no separate
+  "comparison score" or ranking model beyond sorting by Opportunity Score.
+
+## 6. Tests
+
+- Backend: `/reports/compare` cases in `test_report_assembler.py` and
+  `test_end_to_end_pipeline.py`, plus `test_user_analytics.py` for the matrix rows.
+- Frontend: `AnalyticsDashboard.test.jsx` covers the Dashboard tabs, including the
+  comparison matrix.

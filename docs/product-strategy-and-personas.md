@@ -191,17 +191,25 @@ flowchart LR
 - Market Opportunity LLM Agent (`market_agent.py`) with 4 customer segment tiers.
 - Non-LLM Competitor Discovery (`competitor_agent.py`) using local spaCy NER.
 - 3x3 Competitor Positioning Grid (Price vs. Feature Breadth).
-- Cross-Source Confidence Indicator (`confidence.py`).
+- Cross-Source Confidence Indicator (`confidence_node` in `graph.py`; an early standalone `confidence.py` was never wired in and has been removed).
 - Algorithmic White-Space Analysis (`white_space.py`).
 - Consolidated 0–100 Opportunity Score (`opportunity_score.py`).
 - Ephemeral 30-minute in-memory response cache and submit cooldown.
 
-### Milestone 3: Report Export & Idea Comparison (Planned)
-- One-click PDF / Pitch Deck Outline export (downloadable report summary).
-- Side-by-side comparison mode for evaluating two competing startup ideas.
-- Custom search angle toggle for niche domains (e.g. Biotech vs Web3).
+### Milestone 3: Report Export & Idea Comparison (Built)
+- ✅ One-click PDF dossier export (`GET /validate/{sessionId}/pdf`, ReportLab) and emailed reports.
+- ✅ Side-by-side comparison of 2–5 ideas (`POST /reports/compare`, Compare ideas view) plus a Comparison matrix tab on the founder Dashboard.
+- ⏳ Pitch-deck outline export: not built.
+- ⏳ Custom search angle toggle for niche domains (e.g. Biotech vs Web3): not built.
 
-### Milestone 4: Workspace Collaboration & Monitoring (Planned)
-- Optional authenticated user workspaces.
-- Automated monthly competitor movement alerts.
-- API webhooks for incubator and pitch competition integration.
+### Milestone 4 and follow-ups: Accounts, Dashboards & Monitoring (Mostly built)
+- ✅ Optional user accounts (email + password, JWT) with saved validation history. One
+  account = one founder's board; team workspaces are **not** built.
+- ✅ Founder Dashboard (Overview, Comparison matrix, Validation history, Score trends).
+- ✅ Admin Platform Health dashboard (`ADMIN_EMAILS`-granted) over a durable event log.
+- ✅ Market Viability Score with `competitionClarity` and `timing` axes; go/no-go verdict.
+- ⏳ Automated monthly competitor movement alerts: not built.
+- ⏳ API webhooks for incubator and pitch competition integration: not built.
+
+See [doc 22](22_AFFINITY_MILESTONE_5_ANALYTICS_DASHBOARDS_AND_ACCESS_CONTROL.md) and
+[Known Limitations & Future Work](known-limitations-and-future-work.md).

@@ -117,10 +117,13 @@ validation on every LLM-backed agent.
 - **CrewAI role**: "Market Opportunity & Customer Segmentation Analyst" — no tools,
   reasons only over the search results given to it
 - **LangGraph node**: `market_opportunity` — runs after `confidence_indicator`
-- **Output**: `{ marketSize, trends[], segments[], opportunityScore }` where each
-  `segments[]` entry is `{ segment, painPoints, motivations, buyingBehavior }` — all
-  four fields required per segment (not just a segment label). `opportunityScore` is
-  filled in by the `opportunity_score` node below.
+- **Output**: `{ marketSize, tam, sam, som, trends[], segments[], opportunityScore }`.
+  `marketSize` is a narrative sentence. `tam`/`sam`/`som` are each a cited
+  `{ text, sourceIds[] }` claim, or `null` when the sources don't support that figure
+  (the UI only shows the tiers that are present). Each `trends[]` entry is
+  `{ text, sourceIds[] }` and each `segments[]` entry is
+  `{ segment, painPoints, motivations, buyingBehavior, sourceIds[] }`.
+  `opportunityScore` is filled in by the `opportunity_score` node below.
 
 ### Competitor Discovery (Milestone 2) — local NER, not an LLM agent
 
@@ -178,9 +181,37 @@ Two related but distinct nodes, both local and deterministic (no LLM call):
   independent sources), `directEvidenceRatio` (direct vs. inferred claim counts), and
   `sourceRecency` (`sourcesWithKnownDate`/`totalSources`/`medianAgeDays`, computed from
   each result's `publishedAt` where a provider exposes one). It reads `sourceIds` off
-  whatever sections already have them (currently SWOT; automatically extends to
-  MVP/GTM/Market the moment those agents add the same field, no code change needed
-  here when that lands).
+  every section that has them: SWOT items and risks, MVP features, GTM channels, and
+  market trends, segments and TAM/SAM/SOM tiers.
+- **The headline percentage is overwritten.** `confidence_dashboard` also recomputes
+  `agreeingSources`/`totalSources`/`percentage`/`label` over the sources the claims
+  actually **cite**, replacing `confidence_indicator`'s raw-search-pool numbers. Only
+  `perAngle` keeps the raw-pool view. The full explanation is in
+  [confidence-and-evidence-scoring-methodology.md](confidence-and-evidence-scoring-methodology.md).
+
+### Market Viability Score + Verdict
+
+`agent/viability_score.py` (node `viability_score`, runs after SWOT) returns
+`marketViability = { score, label, marketDemand, executionRisk, growthVelocity,
+competitionClarity, timing }`, all 0–100 and deterministic. The headline `score` is
+`0.4·marketDemand + 0.3·(100 − executionRisk) + 0.3·growthVelocity`.
+`competitionClarity` (share of named competitors whose price and breadth both resolved)
+and `timing` (growth-trend strength blended with median source age) are reported
+alongside but deliberately **excluded** from the headline: they measure how much is
+known, not whether the news is good. `agent/verdict.py` (node `compute_verdict`, last)
+turns these signals into a deterministic *Pursue / Validate first / Rethink* verdict.
+
+### Accounts, Dashboards & Admin (Milestone 4 follow-ups)
+
+Optional email + password accounts (`agent/auth.py`, 30-day HS256 JWT) tag each
+validation with a `user_id`. Signed-in users reach History, Compare ideas and the
+Dashboard from a single account menu (`AccountMenu.jsx`); the Dashboard
+(`AnalyticsDashboard.jsx`, backed by `GET /me/analytics` / `agent/user_analytics.py`)
+has Overview, Comparison matrix, Validation history and Score trends tabs. Accounts
+flagged `is_admin` (via `ADMIN_EMAILS`) also see Platform Health (`PlatformHealth.jsx`,
+backed by `GET /admin/platform-metrics` / `agent/platform_metrics.py`), which reads the
+durable `events` table written by `agent/events.py`. Details:
+[doc 22](22_AFFINITY_MILESTONE_5_ANALYTICS_DASHBOARDS_AND_ACCESS_CONTROL.md).
 
 ### White-Space Analysis
 
@@ -339,11 +370,19 @@ Response 200:
   },
   "marketOpportunity": {
     "marketSize": string,
-    "trends": [string],
+    "tam": { "text": string, "sourceIds": [string] } | null,
+    "sam": { "text": string, "sourceIds": [string] } | null,
+    "som": { "text": string, "sourceIds": [string] } | null,
+    "trends": [{ "text": string, "sourceIds": [string] }],
     "segments": [
-      { "segment": string, "painPoints": string, "motivations": string, "buyingBehavior": string }
+      { "segment": string, "painPoints": string, "motivations": string, "buyingBehavior": string, "sourceIds": [string] }
     ],
     "opportunityScore": number   // 0-100, computed by agent/opportunity_score.py
+  } | null,
+  "marketViability": {
+    "score": number, "label": string,
+    "marketDemand": number, "executionRisk": number, "growthVelocity": number,
+    "competitionClarity": number, "timing": number   // reported, not in the headline score
   } | null,
   "competitors": {
     "competitors": [
@@ -382,7 +421,17 @@ GET  /validate/{sessionId}/pdf    -> application/pdf
 POST /export-pdf                  -> validated response-shaped body in, application/pdf out
 GET  /reports/{sessionId}         -> canonical report object (see §2, Report Assembler)
 POST /reports/{sessionId}/email   -> { recipient } in, { status: "queued", deliveryId } out
+POST /reports/compare             -> { sessionIds: [2..5] } in, { reports, missing } out
+GET  /health                      -> { status, service, database: "postgresql" | "sqlite" }
+POST /auth/signup | /auth/login   -> { email, password } in, { token, user } out
+GET  /auth/me                     -> { id, email, isAdmin }            (bearer token required)
+GET  /me/history                  -> { entries }                       (bearer token required)
+GET  /me/analytics                -> founder Dashboard aggregates      (bearer token required)
+GET  /admin/platform-metrics?days=7|30|90 -> Platform Health aggregates (admin only)
 ```
+
+`/validate` also accepts an optional `mode` (`"quick"` or `"deep"`, default deep) and an
+optional bearer token; when present, the session is saved to that account.
 
 Every response carries an `X-Request-ID` header (§7). An LLM-backed section is `null`
 only if its deterministic fallback path was itself bypassed (rare in practice — a real
@@ -401,7 +450,7 @@ company in the sources" outcome, not a failure.
 | Agents | CrewAI | Role/goal-based agent definitions for Market Opportunity, SWOT/Risk, MVP, GTM, and the advisor. Web Search summaries, Competitor Discovery, White-space, and both confidence nodes are local/deterministic instead — see §2. |
 | Search | Tavily API (primary), DuckDuckGo + Wikipedia + Hacker News (fallback chain) | Tavily gives a real, trained relevance score and reliable results. If it's missing or fails, the app falls back to the zero-cost chain (own computed relevance score) instead of erroring out. Academic/research-paper domains are filtered out — literature review material, not market/competitor signal. |
 | Competitor identification | Local NER (spaCy `en_core_web_sm`), not an LLM call | Reads competitor names directly off already-fetched search results — zero API cost, zero rate limit, frees the shared Groq quota. |
-| Reasoning LLM | Groq (via CrewAI/LiteLLM), primary + a 3-tier fallback chain | Primary `groq/qwen/qwen3.8-27b`, fallbacks `groq/openai/gpt-oss-20b`, `groq/openai/gpt-oss-120b`, then `gemini/gemini-3.6-flash` - a genuinely separate provider/quota pool, not just another Groq model, since heavy testing has exhausted both Groq fallback tiers' buckets in the same session. On a rate limit or `model_not_found`, `agent/llm.py`'s `kickoff_with_fallback()` switches models immediately instead of retrying the exhausted one. Every call's latency and token usage is logged. |
+| Reasoning LLM | Groq + Gemini (via CrewAI/LiteLLM), primary + a 4-model fallback chain | Primary `groq/qwen/qwen3.8-27b`, fallbacks `groq/openai/gpt-oss-20b`, `groq/openai/gpt-oss-120b`, then `gemini/gemini-3.6-flash` - a genuinely separate provider/quota pool, not just another Groq model, since heavy testing has exhausted both Groq fallback tiers' buckets in the same session. A final `gemini/gemini-3.8-flash` tier follows. On a rate limit, `model_not_found`, a provider error, **or a response that fails the agent's per-attempt shape validation**, `agent/llm.py`'s `kickoff_with_fallback()` switches models immediately instead of retrying the exhausted one. Every call's latency and token usage is logged. |
 | Database | Postgres in production, SQLite locally/in tests (SQLAlchemy, `agent/db.py`) | Sessions, background jobs, and the response cache used to be process-local dicts — didn't survive a restart, didn't work across more than one backend instance. Connection pool size/timeout/recycle are configurable via `DB_POOL_*` env vars for running multiple instances. |
 | API hardening | Per-IP sliding-window rate limiting + request-id tracing (`backend/main.py`) | `/validate`, `/chat`, PDF export, and report endpoints are all rate-limited; every request gets a short id logged with method/path/status/duration and echoed back as `X-Request-ID`. |
 | Report export | ReportLab PDF direct download (`agent/pdf_exporter.py`, `GET /validate/{sessionId}/pdf`) + SendGrid HTML/text email (`agent/email_delivery.py`) | No PDF attachment on the email - the HTML/text bodies already carry the full report, and the PDF download is a separate, direct path. Email delivery only ever reads an already-assembled report, never reruns retrieval or any agent. |
@@ -416,9 +465,11 @@ A Render Blueprint with three resources (`render.yaml`):
 - **`startup-validator-backend`** — runs the FastAPI service; holds `GROQ_API_KEY`
   (required) and `TAVILY_API_KEY` (optional) as manually-set Render environment
   variables (never committed), plus `DATABASE_URL` wired automatically from the
-  database resource below
+  database resource below, a generated `AUTH_SECRET_KEY`, and an optional
+  hand-set `ADMIN_EMAILS`
 - **`startup-validator-db`** — a managed Postgres instance, provisioned from
-  `render.yaml`'s `databases:` block
+  `render.yaml`'s `databases:` block **only when the Blueprint is synced**. On the free
+  plan it expires 30 days after creation (see DEPLOYMENT.md)
 
 Frontend reads the backend's URL via `VITE_API_URL` (env var, set per environment —
 local vs. deployed). See the README's Deployment/Scaling-out sections for the

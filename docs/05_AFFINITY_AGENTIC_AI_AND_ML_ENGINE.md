@@ -131,10 +131,29 @@ _REASONING_EFFORT = {
 Disabling reasoning on `qwen3.8-27b` decreased latency by 60% and prevented rate limit crashes.
 
 ### 4.2 Model Fallback Sequence
-If an LLM endpoint returns `RateLimitError` or 404 (`model_not_found`), `kickoff_with_fallback()` automatically switches models:
+`kickoff_with_fallback()` (`backend/agent/llm.py`) switches to the next model immediately when an attempt:
+
+- raises a rate-limit error (`RateLimitError`, 429),
+- returns 404 `model_not_found`,
+- hits a provider or network error (timeouts, 5xx, auth errors), or
+- **responds successfully but fails shape validation.** Each agent passes a `validate`
+  callback (for example "contains a parseable JSON object in the market-analysis
+  shape"), and it runs on every attempt inside the chain. Before this was added
+  (September 2026), a malformed reply from an early fallback model ended the whole
+  chain and skipped the healthier models behind it.
+
+Chain order:
 1. `groq/qwen/qwen3.8-27b` (Primary)
 2. `groq/openai/gpt-oss-20b` (Fallback 1)
 3. `groq/openai/gpt-oss-120b` (Fallback 2)
+4. `gemini/gemini-3.6-flash` (Fallback 3, separate quota pool)
+5. `gemini/gemini-3.8-flash` (Fallback 4)
+
+If every model fails, the call raises `NeedsDeepAnalysisError` (no email on file yet, so
+`/validate` asks for one) or, once an email is on file, tries the local Ollama model
+(`LOCAL_LLM_MODEL`, default `ollama/qwen2.5:7b`). A bug inside a `validate` callback
+itself is not treated as switch-worthy and fails loudly. Regression tests:
+`backend/tests/test_llm_fallback_validation.py`, `backend/tests/test_llm_fallback_chain.py`.
 
 ---
 
