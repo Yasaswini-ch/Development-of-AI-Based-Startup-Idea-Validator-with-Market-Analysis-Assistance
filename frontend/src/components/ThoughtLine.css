@@ -1,0 +1,209 @@
+/* ThoughtLine (adapted from React Bits) - theme tokens from index.css. */
+.thought-line {
+  --tl-breath: 1.6s;
+  --tl-settle: 350ms;
+  --tl-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --tl-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  color: var(--color-text);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.thought-line__head {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.thought-line__head {
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+button.thought-line__head:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+
+.thought-line__glyph {
+  display: inline-flex;
+  width: 1.15em;
+  height: 1.15em;
+  color: var(--color-accent);
+  opacity: 0.55;
+  transition: opacity var(--tl-settle) var(--tl-ease-out);
+}
+
+.thought-line__glyph svg {
+  width: 100%;
+  height: 100%;
+}
+
+.thought-line[data-working] .thought-line__glyph {
+  animation: thought-line-breath var(--tl-breath) var(--tl-ease-in-out) infinite;
+}
+
+@keyframes thought-line-breath {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+.thought-line__label {
+  animation: thought-line-swap var(--tl-settle) var(--tl-ease-out);
+}
+
+.thought-line:not([data-working]) .thought-line__label {
+  opacity: 0.75;
+}
+
+@keyframes thought-line-swap {
+  from { opacity: 0; filter: blur(2px); }
+}
+
+.thought-line__label[data-shimmer] {
+  background: linear-gradient(
+    100deg,
+    color-mix(in srgb, var(--color-text) 45%, transparent) 30%,
+    var(--color-text) 50%,
+    color-mix(in srgb, var(--color-text) 45%, transparent) 70%
+  );
+  background-size: 250% 100%;
+  background-position: 125% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation:
+    thought-line-swap var(--tl-settle) var(--tl-ease-out),
+    thought-line-shimmer 1.8s linear infinite;
+}
+
+@keyframes thought-line-shimmer {
+  to { background-position: -125% 0; }
+}
+
+.thought-line__timer {
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-muted);
+}
+
+.thought-line__chevron {
+  display: inline-flex;
+  width: 0.9em;
+  height: 0.9em;
+  color: var(--color-muted);
+  transition: transform 200ms var(--tl-ease-out);
+}
+
+.thought-line__chevron svg {
+  width: 100%;
+  height: 100%;
+}
+
+.thought-line[data-open] .thought-line__chevron {
+  transform: rotate(180deg);
+}
+
+.thought-line__trace {
+  display: grid;
+  grid-template-rows: 0fr;
+  width: 100%;
+  transition: grid-template-rows var(--tl-settle) var(--tl-ease-out);
+}
+
+.thought-line__trace[data-open] {
+  grid-template-rows: 1fr;
+}
+
+.thought-line__fold {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.thought-line__steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.75rem 0 0.1rem 1.55em;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-info);
+}
+
+.thought-line__step {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  transition: color var(--tl-settle) ease;
+  animation: thought-line-step-in 200ms var(--tl-ease-out);
+}
+
+@keyframes thought-line-step-in {
+  from { opacity: 0; transform: translateY(-4px); }
+}
+
+.thought-line__step[data-done] {
+  color: var(--color-muted);
+}
+
+.thought-line__mark {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 1.1em;
+  height: 1.1em;
+}
+
+.thought-line__step[data-done] .thought-line__mark {
+  color: var(--color-success);
+}
+
+.thought-line__mark svg {
+  width: 100%;
+  height: 100%;
+}
+
+.thought-line__pulse {
+  width: 0.45em;
+  height: 0.45em;
+  border-radius: 50%;
+  background: currentColor;
+  animation: thought-line-breath var(--tl-breath) var(--tl-ease-in-out) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thought-line[data-working] .thought-line__glyph,
+  .thought-line__pulse {
+    animation-duration: 2.4s;
+  }
+
+  .thought-line__label[data-shimmer] {
+    animation: none;
+    background: none;
+    color: inherit;
+    -webkit-text-fill-color: currentColor;
+  }
+
+  .thought-line__label,
+  .thought-line__step {
+    animation: none;
+  }
+}

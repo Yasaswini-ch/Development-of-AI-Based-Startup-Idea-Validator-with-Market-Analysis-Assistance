@@ -212,3 +212,20 @@ export function IconFlag(props) {
     </svg>
   )
 }
+
+export function IconSparkles(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M12 3.5 13.6 8.4 18.5 10 13.6 11.6 12 16.5 10.4 11.6 5.5 10 10.4 8.4Z" />
+      <path d="M18.5 15.5 19.2 17.3 21 18 19.2 18.7 18.5 20.5 17.8 18.7 16 18 17.8 17.3Z" />
+    </svg>
+  )
+}
+
+export function IconCheck(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="m5 12.5 4.5 4.5L19 7.5" />
+    </svg>
+  )
+}
