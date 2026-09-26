@@ -5,6 +5,26 @@
 > theme (near-black background, uppercase mono labels, pill buttons, live status
 > readouts) — see the actual component code in `frontend/src/` for the current design.
 
+> **Update 2026-09-26: views beyond the submission form.** This spec only covered the
+> Milestone 1 submission page. The app now also has:
+> - **AccountMenu** (`components/AccountMenu.jsx`): one account button in the header
+>   (showing the signed-in email) that opens a dropdown with History, Compare ideas,
+>   Dashboard, Platform health (admins only) and Sign out. It replaced a row of four
+>   separate pill buttons. Closes on outside click and Escape.
+> - **Dashboard** (`components/AnalyticsDashboard.jsx`): signed-in founder analytics with
+>   four sub-tabs: Overview (KPI cards, score bars, a five-axis viability radar including
+>   `competitionClarity` and `timing`, assumption-risk and revenue-model charts, SWOT
+>   theme cloud), Comparison matrix, Validation history, Score trends.
+> - **Platform health** (`components/PlatformHealth.jsx`): admin-only operational view
+>   with a 7d/30d/90d filter, KPI cards and charts from `GET /admin/platform-metrics`.
+> - **Compare ideas** (`components/CompareIdeas.jsx`) and **History**
+>   (`components/HistoryPanel.jsx`).
+> - Charts are hand-rolled SVG in `components/charts.jsx` (no chart library), using the
+>   palette tokens in `src/index.css`.
+>
+> See [doc 22](22_AFFINITY_MILESTONE_5_ANALYTICS_DASHBOARDS_AND_ACCESS_CONTROL.md) for
+> details.
+
 **Stack**: React (Vite) + Tailwind CSS. No component library — build custom for a
 distinct, non-templated feel.
 
@@ -59,3 +79,6 @@ POST /validate
 Request:  { idea, targetCustomer, problem }
 Response: { summary, results: [{ title, snippet, url, query, angle, score }] }
 ```
+
+That was the Milestone 1 contract. The current, much larger response shape is in
+[`architecture.md` §4](architecture.md#4-api-contract) and [`api-reference.md`](api-reference.md).

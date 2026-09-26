@@ -71,7 +71,7 @@ This document specifies the formal Functional and Non-Functional Software Requir
 
 ### 4.3 Availability & Reliability (NFR-07 to NFR-08)
 - **NFR-07 (Search Resilience):** Pipeline execution shall succeed even if the primary search API key is missing, utilizing the zero-cost fallback chain.
-- **NFR-08 (Model Failover):** If the primary LLM model rate-limits or returns 404 (`model_not_found`), the system shall fail over to backup models (`gpt-oss-20b` $\to$ `gpt-oss-120b`).
+- **NFR-08 (Model Failover):** If an LLM model rate-limits, returns 404 (`model_not_found`), hits a provider/network error, **or returns output that fails the calling agent's shape validation** (checked on every attempt), the system shall immediately fail over to the next model in the chain (`qwen3.8-27b` $\to$ `gpt-oss-20b` $\to$ `gpt-oss-120b` $\to$ `gemini-3.6-flash` $\to$ `gemini-3.8-flash`). When every model has failed, it shall try the local model tier if one is reachable and permitted, then retry the whole cloud chain once after a short cooldown, before returning the deterministic, clearly-labelled degraded result. It shall ask the user for an email only when a local tier actually exists (see `backend/agent/llm.py`, `local_llm_available()`).
 
 ---
 
