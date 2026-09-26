@@ -278,13 +278,58 @@ def _kickoff_with_metrics(model: str, build_crew):
     return output
 
 
+# Brief pause before kickoff_with_fallback's second pass over the cloud
+# chain - long enough for a per-minute token bucket to refill a little, short
+# enough not to noticeably slow a request that was going to succeed anyway.
+_CLOUD_RETRY_COOLDOWN_SECONDS = float(os.environ.get("LLM_CLOUD_RETRY_COOLDOWN_SECONDS", "3"))
+
+# How long local_llm_available() trusts its last probe - so a burst of
+# requests during a quota squeeze doesn't each pay for its own probe.
+_LOCAL_PROBE_TTL_SECONDS = 60
+_local_probe_cache: dict = {"checkedAt": 0.0, "available": False}
+
+
+def local_llm_available() -> bool:
+    """True when the LOCAL_MODEL tier can actually be reached - i.e. an
+    Ollama server answers at OLLAMA_BASE_URL. Hosted deployments (Render)
+    don't run Ollama, so without this check the "enter your email for a
+    deeper local analysis" prompt was offered even though no local tier
+    existed: the email only bought a second pass over the same cloud chain.
+    Cached for _LOCAL_PROBE_TTL_SECONDS.
+    """
+    if not LOCAL_MODEL.startswith("ollama/"):
+        return bool(LOCAL_MODEL)
+    now = time.time()
+    if now - _local_probe_cache["checkedAt"] < _LOCAL_PROBE_TTL_SECONDS:
+        return _local_probe_cache["available"]
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(f"{_OLLAMA_BASE_URL.rstrip('/')}/api/tags", timeout=1) as res:
+            available = 200 <= res.status < 300
+    except Exception:
+        available = False
+    _local_probe_cache.update(checkedAt=now, available=available)
+    return available
+
+
 def kickoff_with_fallback(build_crew, primary: str | None = None, allow_local: bool = False, validate=None):
-    """Run a CrewAI crew against the cloud fallback chain; when every cloud
-    model is exhausted, either raise NeedsDeepAnalysisError (allow_local
-    False - the default, used on a request's first attempt before an email
-    address is known) or try LOCAL_MODEL as one final attempt (allow_local
-    True - only once an email is on file, since this can take minutes).
-    See NeedsDeepAnalysisError's docstring for the full flow.
+    """Run a CrewAI crew against the cloud fallback chain. When every cloud
+    model is exhausted by a transient, switch-worthy failure (rate limit,
+    provider outage, bad shape), try LOCAL_MODEL if the caller opted in
+    (allow_local, only once an email is on file since local inference can
+    take minutes) and the local tier is actually reachable, then make one
+    more pass over the cloud chain after a short cooldown. Only if that
+    second pass also fails does this raise NeedsDeepAnalysisError
+    (allow_local False) or the last error (allow_local True).
+
+    The second cloud pass used to happen only on the allow_local path, so
+    an anonymous founder whose first attempt hit a momentary quota squeeze
+    was told the request "needs deeper analysis" and asked for an email -
+    and entering one mostly just triggered this same cloud retry, which
+    then succeeded and showed results in the browser. Retrying for everyone
+    removes that detour. A non-switch-worthy error (a real bug, e.g. inside
+    a caller's own `validate`) is never retried.
 
     `validate`, if given, is called with the raw CrewOutput and should
     return True for a usable response. A cloud model that responds but
@@ -295,26 +340,33 @@ def kickoff_with_fallback(build_crew, primary: str | None = None, allow_local: b
     limit (passed through to it directly, not checked after the fact -
     checking only the chain's final return meant a shape-invalid response
     from an early fallback model short-circuited the whole chain instead of
-    trying the remaining ones). Only once every model in the chain -
-    shape-invalid or rate-limited - is exhausted does this raise
-    NeedsDeepAnalysisError (allow_local False) or fall through to
-    LOCAL_MODEL / retry (allow_local True).
+    trying the remaining ones).
     """
+    try:
+        return _kickoff_cloud_chain(build_crew, primary, validate=validate)
+    except Exception as exc:
+        first_exc = exc
+
+    if not _is_switch_worthy_error(first_exc):
+        if not allow_local:
+            raise NeedsDeepAnalysisError(str(first_exc)) from first_exc
+        raise first_exc
+
+    if allow_local and local_llm_available():
+        try:
+            logger.warning("Cloud path exhausted or invalid, trying local model %s", LOCAL_MODEL)
+            return _kickoff_with_metrics(LOCAL_MODEL, build_crew)
+        except Exception as local_exc:
+            logger.warning("Local model %s failed (%s)", LOCAL_MODEL, local_exc)
+
+    logger.warning("Cloud path exhausted, retrying cloud models after %.1fs cooldown", _CLOUD_RETRY_COOLDOWN_SECONDS)
+    time.sleep(_CLOUD_RETRY_COOLDOWN_SECONDS)
     try:
         return _kickoff_cloud_chain(build_crew, primary, validate=validate)
     except Exception as exc:
         if not allow_local:
             raise NeedsDeepAnalysisError(str(exc)) from exc
-        try:
-            logger.warning("Cloud path exhausted or invalid, trying local model %s", LOCAL_MODEL)
-            return _kickoff_with_metrics(LOCAL_MODEL, build_crew)
-        except Exception as local_exc:
-            logger.warning(
-                "Local model %s unavailable (%s), retrying cloud models after brief cooldown...",
-                LOCAL_MODEL, local_exc,
-            )
-            time.sleep(3)
-            return _kickoff_cloud_chain(build_crew, primary, validate=validate)
+        raise
 
 
 class _ShapeValidationError(Exception):

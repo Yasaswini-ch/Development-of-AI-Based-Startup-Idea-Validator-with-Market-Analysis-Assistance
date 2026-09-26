@@ -74,11 +74,14 @@ class KickoffFallbackShapeValidationTests(unittest.TestCase):
         def validate(output):
             return output.raw.startswith("{")
 
-        with patch("agent.llm.FALLBACK_MODELS", ("fallback-model",)):
+        with patch("agent.llm.FALLBACK_MODELS", ("fallback-model",)), patch(
+            "agent.llm._CLOUD_RETRY_COOLDOWN_SECONDS", 0
+        ):
             with self.assertRaises(NeedsDeepAnalysisError):
                 kickoff_with_fallback(build_crew, primary="primary-model", validate=validate)
 
-        self.assertEqual(calls, ["primary-model", "fallback-model"])
+        # One full pass, then one retry pass after the cooldown.
+        self.assertEqual(calls, ["primary-model", "fallback-model", "primary-model", "fallback-model"])
 
     def test_a_valid_first_response_never_tries_the_fallback_model_at_all(self):
         sequence = {
