@@ -40,7 +40,13 @@ from .deterministic_fallback import deterministic_market_opportunity
 from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback
 from .verification import strip_unsupported, verify_claims
 from .prompts.loader import load_prompt
-from .structured_output import compact_sources, extract_json_object, sanitize_source_ids, valid_source_ids
+from .structured_output import (
+    compact_sources,
+    extract_inline_citations,
+    extract_json_object,
+    sanitize_source_ids,
+    valid_source_ids,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -209,6 +215,16 @@ def analyze_market_opportunity(
         # that was shown but isn't actually in this run's evidence) reach
         # the API response - same sanitize-after-parse step swot_agent.py
         # already does.
+        # marketSize is free prose, so the model sometimes writes citations
+        # into it as "[src-1]" / "【src-1】" instead of listing them. Pull
+        # those out into marketSizeSourceIds so they render as real
+        # citation markers, not raw text.
+        size_text, inline_ids = extract_inline_citations(data["marketSize"])
+        data["marketSize"] = size_text
+        data["marketSizeSourceIds"] = sanitize_source_ids(
+            [*(data.get("marketSizeSourceIds") if valid_source_ids(data.get("marketSizeSourceIds")) else []), *inline_ids],
+            valid_ids,
+        )
         for tier in ("tam", "sam", "som"):
             value = data.get(tier)
             if isinstance(value, dict):
@@ -233,7 +249,8 @@ def analyze_market_opportunity(
         # claim) when it doesn't.
         snippets = {s["sourceId"]: s["snippet"] for s in sources}
         flat = (
-            ([{"text": data["tam"]["text"], "sourceIds": data["tam"]["sourceIds"]}] if data.get("tam") else [])
+            [{"text": data["marketSize"], "sourceIds": data["marketSizeSourceIds"]}]
+            + ([{"text": data["tam"]["text"], "sourceIds": data["tam"]["sourceIds"]}] if data.get("tam") else [])
             + ([{"text": data["sam"]["text"], "sourceIds": data["sam"]["sourceIds"]}] if data.get("sam") else [])
             + ([{"text": data["som"]["text"], "sourceIds": data["som"]["sourceIds"]}] if data.get("som") else [])
             + data["trends"]
@@ -241,7 +258,8 @@ def analyze_market_opportunity(
         )
         supported = verify_claims(idea, flat, snippets, allow_local=allow_local)
         verified = strip_unsupported(flat, supported)
-        cursor = 0
+        data["marketSizeSourceIds"] = verified[0]["sourceIds"]
+        cursor = 1
         for tier in ("tam", "sam", "som"):
             if data.get(tier):
                 data[tier]["sourceIds"] = verified[cursor]["sourceIds"]

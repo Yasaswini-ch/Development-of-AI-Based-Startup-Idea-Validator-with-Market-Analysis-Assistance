@@ -29,6 +29,7 @@ import re
 import urllib.request
 
 from . import events
+from .structured_output import extract_inline_citations
 
 logger = logging.getLogger(__name__)
 
@@ -198,7 +199,7 @@ def _build_report_html(idea: str, response: dict, report_url: str | None = None)
     # --- Market opportunity: size + TAM/SAM/SOM + trends ---
     market_body = ""
     if market.get("marketSize"):
-        market_body += _p(market["marketSize"])
+        market_body += _p(extract_inline_citations(market["marketSize"])[0])
     tiers = [t for t in (_tier_html(market.get("tam"), "TAM"), _tier_html(market.get("sam"), "SAM"), _tier_html(market.get("som"), "SOM")) if t]
     if tiers:
         market_body += f'<div style="margin-top:10px;">{"".join(tiers)}</div>'
@@ -338,7 +339,7 @@ def _build_report_text(idea: str, report: dict, report_url: str | None = None) -
 
     market = report.get("marketOpportunity") or {}
     if market.get("marketSize"):
-        lines += ["MARKET OPPORTUNITY", market["marketSize"]]
+        lines += ["MARKET OPPORTUNITY", extract_inline_citations(market["marketSize"])[0]]
     for label, key in (("TAM", "tam"), ("SAM", "sam"), ("SOM", "som")):
         tier = market.get(key)
         if isinstance(tier, dict) and tier.get("text"):

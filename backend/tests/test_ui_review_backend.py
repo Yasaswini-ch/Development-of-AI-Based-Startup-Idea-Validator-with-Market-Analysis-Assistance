@@ -110,3 +110,14 @@ class PdfFivePillarSectionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_extract_inline_citations_strips_markers_and_keeps_ids():
+    from agent.structured_output import extract_inline_citations
+
+    text, ids = extract_inline_citations(
+        "The market was $5.9 billion in 2024 【src-1】【src-3】; it will reach $24.96 billion by 2029 [src-4, src-1]."
+    )
+    assert text == "The market was $5.9 billion in 2024; it will reach $24.96 billion by 2029."
+    assert ids == ["src-1", "src-3", "src-4"]
+    assert extract_inline_citations("Growing fast (2024).") == ("Growing fast (2024).", [])

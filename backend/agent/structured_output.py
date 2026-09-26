@@ -1,6 +1,7 @@
 """Small shared helpers for bounded prompts and strict JSON agent output."""
 
 import json
+import re
 from collections.abc import Callable
 
 from .output_guard import strip_reasoning
@@ -143,3 +144,28 @@ def extract_json_object(text: str, validator: Callable[[dict], bool]) -> dict | 
             if isinstance(value, dict) and validator(value):
                 return value
     return None
+
+
+# A citation the model wrote inline in free prose instead of in a sourceIds
+# field: "[src-1]", "【src-1】", "(src-1, src-3)" and similar. The prompt
+# shows sources as "[src-N]", so models sometimes echo that tag into a
+# narrative sentence like marketSize; left alone it renders as raw text.
+_INLINE_CITATION = re.compile(r"\s*[\[【(（]\s*(src-\d+(?:\s*[,;、]\s*src-\d+)*)\s*[\]】)）]")
+
+
+def extract_inline_citations(text: str) -> tuple[str, list[str]]:
+    """Strip inline "[src-N]"-style markers from `text` and return the
+    cleaned text plus the ids in the order they appeared (de-duplicated,
+    not yet checked against a run's valid ids - pass them through
+    sanitize_source_ids for that)."""
+    if not isinstance(text, str):
+        return text, []
+    ids: list[str] = []
+    for match in _INLINE_CITATION.finditer(text):
+        for sid in re.split(r"[\s,;、]+", match.group(1)):
+            if sid and sid not in ids:
+                ids.append(sid)
+    cleaned = _INLINE_CITATION.sub("", text)
+    cleaned = re.sub(r"\s+([.,;:!?])", r"\1", cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+    return cleaned, ids

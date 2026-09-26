@@ -3,6 +3,7 @@ import DegradedBanner from './DegradedBanner'
 import Citation from './Citation'
 import ProvenanceBadge from './ProvenanceBadge'
 import MarketViabilityIndex from './MarketViabilityIndex'
+import { extractInlineCitations } from '../lib/sources'
 
 // Customer segments and Voice-of-the-Market quotes live in the Customers
 // tab (CustomerPersonas.jsx / VoiceOfMarketCard.jsx) - this tab is about
@@ -94,6 +95,8 @@ export default function MarketOpportunity({ data, error, sourceMap }) {
   if (!marketSize && trends.length === 0 && segments.length === 0) {
     return <UnavailableCard error="No market data could be extracted from the available sources." />
   }
+  const inline = extractInlineCitations(marketSize)
+  const marketSizeIds = [...new Set([...(data.marketSizeSourceIds || []), ...inline.sourceIds])]
 
   return (
     <div>
@@ -101,8 +104,11 @@ export default function MarketOpportunity({ data, error, sourceMap }) {
       {marketSize && (
         <div>
           <div className="flex items-start gap-2">
-            <p className="text-sm text-text leading-relaxed">{marketSize}</p>
-            <ProvenanceBadge sourceIds={[...(tam?.sourceIds || []), ...(sam?.sourceIds || []), ...(som?.sourceIds || [])]} />
+            <p className="text-sm text-text leading-relaxed">
+              {inline.text}
+              {sourceMap && marketSizeIds.length > 0 && <Citation sourceIds={marketSizeIds} sourceMap={sourceMap} />}
+            </p>
+            <ProvenanceBadge sourceIds={[...marketSizeIds, ...(tam?.sourceIds || []), ...(sam?.sourceIds || []), ...(som?.sourceIds || [])]} />
           </div>
           <MarketSizeTiers tam={tam} sam={sam} som={som} sourceMap={sourceMap} />
           {/* A score of 0 means the underlying analysis produced no grounded

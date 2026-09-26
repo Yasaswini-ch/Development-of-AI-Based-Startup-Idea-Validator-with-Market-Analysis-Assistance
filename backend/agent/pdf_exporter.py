@@ -15,6 +15,8 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from .structured_output import extract_inline_citations
+
 logger = logging.getLogger(__name__)
 
 
@@ -106,7 +108,8 @@ def generate_dossier_pdf(dossier_data: Dict[str, Any]) -> bytes:
     # 3. Market Opportunity Details
     if market_opp:
         story.append(Paragraph("2. Market Size & Growth Dynamics", section_heading))
-        m_size = market_opp.get("marketSize", "Emerging Sector")
+        # Older reports can still carry raw "[src-N]" markers in marketSize.
+        m_size = escape(extract_inline_citations(market_opp.get("marketSize") or "Emerging Sector")[0])
         cagr = market_opp.get("cagr", "N/A")
         story.append(Paragraph(f"<b>Estimated TAM/SAM Market Size:</b> {m_size}", body_style))
         story.append(Paragraph(f"<b>Compound Annual Growth Rate (CAGR):</b> {cagr}", body_style))
