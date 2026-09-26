@@ -1,6 +1,6 @@
 # System Architecture — Milestones 1–4
 
-Owner: Yasaswini · Status: Milestones 1–3 complete, Milestone 4 in progress (updated Sep 19, 2026)
+Owner: Yasaswini · Status: Milestones 1–4 complete, five-pillar upgrade (Sprints 1–4) merged to `staging` (updated Sep 26, 2026)
 
 ## 1. System Overview
 
@@ -150,6 +150,12 @@ validation on every LLM-backed agent.
   > itself is still 100% local NER — this only affects the two grid fields.
   An empty `competitors: []` is a genuine "the sources didn't name an identifiable
   company" outcome, not a failure — see §4.
+- **Deep-mode profiling (Pillar 3):** when `mode` is not `"quick"`, one bounded LLM call
+  (`_profile_with_llm`) adds `classification`, `pricing`, `businessModel`, `strengths`,
+  `weaknesses` and an idea-specific `gap` per competitor, plus a top-level
+  `comparisonMatrix` (≤5 rows, idea vs. each competitor) and `profiled: true`. Any
+  failure keeps the NER-only result with `profiled: false`. See
+  [doc 23 §5](23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOOGLE_SSO.md#5-pillar-3-competitor-profiles-and-parity-grid).
 
 ### Opportunity Score (Milestone 2 stretch)
 
@@ -203,7 +209,8 @@ turns these signals into a deterministic *Pursue / Validate first / Rethink* ver
 
 ### Accounts, Dashboards & Admin (Milestone 4 follow-ups)
 
-Optional email + password accounts (`agent/auth.py`, 30-day HS256 JWT) tag each
+Optional email + password or Google accounts (`agent/auth.py`, `agent/google_auth.py`,
+30-day HS256 JWT) tag each
 validation with a `user_id`. Signed-in users reach History, Compare ideas and the
 Dashboard from a single account menu (`AccountMenu.jsx`); the Dashboard
 (`AnalyticsDashboard.jsx`, backed by `GET /me/analytics` / `agent/user_analytics.py`)
@@ -212,6 +219,23 @@ flagged `is_admin` (via `ADMIN_EMAILS`) also see Platform Health (`PlatformHealt
 backed by `GET /admin/platform-metrics` / `agent/platform_metrics.py`), which reads the
 durable `events` table written by `agent/events.py`. Details:
 [doc 22](22_AFFINITY_MILESTONE_5_ANALYTICS_DASHBOARDS_AND_ACCESS_CONTROL.md).
+
+### Five-Pillar Post-Processors (Sprints 1–4)
+
+Five deterministic helpers, each wired into an existing node inside its own
+`try/except` so a failure leaves the parent section intact. None calls an LLM.
+
+| Helper | Node | Adds |
+|---|---|---|
+| `voice_of_market.extract_voice_of_market` | `market_opportunity` | `marketOpportunity.voiceOfMarket` (≤4 verbatim quotes) |
+| `viability_score.calculate_viability_index` | `viability_score` | `marketOpportunity.viabilityIndex` (5 axes, 1–5, plus composite) |
+| `strategic_wedge.build_strategic_wedges` | `white_space` | `whiteSpace.blueprints` (≤3 five-vector wedges) |
+| `delivery_roadmap.build_delivery_roadmap` | `mvp` | `mvp.deliveryRoadmap` (Alpha/Beta/GA) |
+| `commercial_model.build_commercial_model` | `gtm` | `gtm.commercialModel` (unit economics + 3 pricing tiers) |
+
+`output_guard.provenance(sourceIds)` gives any claim a `grounded`/`inferred` status; the
+Viability Index uses it per axis. Formulas and schemas:
+[doc 23](23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOOGLE_SSO.md).
 
 ### White-Space Analysis
 
@@ -377,7 +401,12 @@ Response 200:
     "segments": [
       { "segment": string, "painPoints": string, "motivations": string, "buyingBehavior": string, "sourceIds": [string] }
     ],
-    "opportunityScore": number   // 0-100, computed by agent/opportunity_score.py
+    "opportunityScore": number,  // 0-100, computed by agent/opportunity_score.py
+    "voiceOfMarket": [{ "quote": string, "speakerOrSource": string, "sourceId": string, "url": string,
+                        "sentiment": string, "taggedDimension": string }],
+    "viabilityIndex": { "compositeScore": number,
+                        "dimensions": [{ "name": string, "score": number, "rating": string, "rationale": string,
+                                         "sourceIds": [string], "provenance": { "status": "grounded" | "inferred", "sourceCount": number } }] }
   } | null,
   "marketViability": {
     "score": number, "label": string,
@@ -388,12 +417,21 @@ Response 200:
     "competitors": [
       { "name": string, "offering": string, "url": string, "gap": string,
         "estimatedPrice": "low" | "mid" | "high" | "unknown",
-        "featureBreadth": "narrow" | "moderate" | "broad" | "unknown" }
-    ]
+        "featureBreadth": "narrow" | "moderate" | "broad" | "unknown",
+        // deep mode only, when profiling succeeded:
+        "classification": "direct" | "indirect" | "unknown", "pricing": string, "businessModel": string,
+        "strengths": [string], "weaknesses": [string] }
+    ],
+    "comparisonMatrix": [{ "dimension": string, "idea": string, "competitors": { "<name>": string } }],  // deep mode
+    "profiled": boolean                                                                                   // deep mode
   },
   "whiteSpace": {
     "summary": string, "competitionNote": string,
-    "opportunities": [{ "title": string, "why": string, "fit": string, "evidence": string }]
+    "opportunities": [{ "title": string, "why": string, "fit": string, "evidence": string }],
+    "blueprints": [{ "opportunityTitle": string, "convictionPercent": number,
+                     "vectors": { "observedFriction": string, "incumbentBlindspot": string, "structuralTailwind": string,
+                                  "asymmetricWedge": string, "defensibilityMoat": string },
+                     "keyRisk": string, "supportingSourceIds": [string] }]
   } | null,
   "swot": {
     "strengths": [{ "text": string, "sourceIds": [string] }],
@@ -402,8 +440,16 @@ Response 200:
     "threats": [{ "text": string, "sourceIds": [string] }],
     "risks": [{ "risk": string, "severity": string, "likelihood": string, "sourceIds": [string] }]
   } | null,
-  "mvp": { "features": [{ "feature": string, "rationale": string, "impact": string, "effort": string }] } | null,
-  "gtm": { "positioning": string, "channels": [string], "earlyCustomerApproach": string } | null,
+  "mvp": { "features": [{ "feature": string, "rationale": string, "impact": string, "effort": string }],
+           "deliveryRoadmap": { "totalTimelineWeeks": number,
+                                "teamComposition": [{ "role": string, "allocation": string, "primaryFocus": string }],
+                                "phases": [{ "phaseName": string, "durationWeeks": number,
+                                             "coreDeliverables": [string], "exitGateMilestones": [string] }] } } | null,
+  "gtm": { "positioning": string, "channels": [string], "earlyCustomerApproach": string,
+           "commercialModel": { "unitEconomics": { "estimatedCac": string, "targetArpu": string, "paybackHorizonMonths": string,
+                                                   "ltvToCacRatio": string, "economicRationale": string },
+                                "pricingTiers": [{ "tierName": string, "price": string, "billingCycle": string,
+                                                   "targetSegment": string, "includedFeatures": [string] }] } } | null,
   "errors": { "<sectionName>": string | null }
 }
 
@@ -424,6 +470,7 @@ POST /reports/{sessionId}/email   -> { recipient } in, { status: "queued", deliv
 POST /reports/compare             -> { sessionIds: [2..5] } in, { reports, missing } out
 GET  /health                      -> { status, service, database: "postgresql" | "sqlite" }
 POST /auth/signup | /auth/login   -> { email, password } in, { token, user } out
+POST /auth/google                 -> { idToken } in, { token, user: { id, email, authProvider, avatarUrl } } out (401 if unverifiable/unconfigured)
 GET  /auth/me                     -> { id, email, isAdmin }            (bearer token required)
 GET  /me/history                  -> { entries }                       (bearer token required)
 GET  /me/analytics                -> founder Dashboard aggregates      (bearer token required)

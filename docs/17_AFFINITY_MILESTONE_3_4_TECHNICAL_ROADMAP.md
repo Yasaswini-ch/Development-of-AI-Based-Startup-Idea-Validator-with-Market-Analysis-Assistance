@@ -77,6 +77,8 @@ flowchart LR
 - **Objective:** Provide persistent user accounts for incubators, VC firms, and serial entrepreneurs.
 - **Database Layer:** PostgreSQL database with Supabase / FastAPI SQLAlchemy ORM integration.
 - **Authentication:** JWT (JSON Web Tokens) with OAuth2 Google/GitHub SSO.
+  *Status 2026-09-26: JWT accounts and **Google** sign-in are built (docs 19 and 23);
+  GitHub SSO is not.*
 
 ### 3.2 Automated Monthly Competitor Tracking Webhooks
 - **Objective:** Continuously monitor competitors discovered in validated startup dossiers.

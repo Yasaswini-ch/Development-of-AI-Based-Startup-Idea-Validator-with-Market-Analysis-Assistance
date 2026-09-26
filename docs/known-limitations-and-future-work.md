@@ -1,6 +1,6 @@
 # Known Limitations & Future Work
 
-**Version:** 1.0 · 2026-09-26 (written against the `staging` branch)  
+**Version:** 1.1 · 2026-09-26 (written against the `staging` branch; §7 added after the five-pillar Sprints 1–4)  
 **Audience:** Examiners, future maintainers, the team  
 
 This is an honest list of what Affinity does not do yet, or does with a known
@@ -140,4 +140,52 @@ reports show only a narrative market size.
 
 From the original roadmap ([doc 17](17_AFFINITY_MILESTONE_3_4_TECHNICAL_ROADMAP.md)):
 pitch-deck outline export, custom search-angle toggles, monthly competitor-movement
-alerts and webhooks, an incubator API portal with API keys, OAuth/SSO sign-in.
+alerts and webhooks, an incubator API portal with API keys, GitHub SSO. (Google sign-in
+was built in Sprint 4; see §7.4.)
+
+## 7. Five-pillar features
+
+Details and formulas: [doc 23](23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOOGLE_SSO.md).
+
+### 7.1 Exports and comparisons don't include the new sections
+- **What:** the PDF dossier (`pdf_exporter.py`) and the report email
+  (`email_delivery.py`) render only the pre-sprint sections. Voice-of-Market quotes, the
+  Viability Index, wedge blueprints, pricing/unit economics and the delivery roadmap
+  appear on screen and in the JSON (`/validate`, `GET /reports/{id}`) only. Compare
+  Ideas and the Dashboard also ignore them.
+- **Impact:** medium. A founder who shares the PDF loses the most decision-ready parts.
+- **Fix:** add sections to the PDF/email builders; add `viabilityIndex.compositeScore`
+  to the compare view.
+
+### 7.2 Economics and roadmap are templates, not forecasts
+- **What:** ARPU is one of three values ($19/$45/$99), CAC is a multiple of ARPU scaled
+  by GTM channel fit, pricing-tier features and the three-person team are fixed, and the
+  exit-gate targets are the same for every idea.
+- **Why:** deliberate. These are computed from signals the pipeline already has instead
+  of asking a model to invent numbers.
+- **Impact:** medium. Two different ideas in the same price band get near-identical
+  pricing tables. The UI does not currently label these blocks as estimates.
+
+### 7.3 Provenance badges cover only some claims
+- **What:** the Grounded/Inferred badge is shown on the market-size sentence and the
+  five Viability Index axes. Trends, segments, SWOT, MVP and GTM claims still use the
+  citation popover only, and the wedge conviction % uses its own colour scale.
+- **Fix:** render `ProvenanceBadge` wherever a claim has `sourceIds`.
+
+### 7.4 Google sign-in edge cases
+- **Account matching is by email.** A Google sign-in takes over a local account with the
+  same email (marks it `google`; the password still works). No unlinking.
+- **A Google-only account can't add a password** (sign-up says the email already exists,
+  and the password form fails closed).
+- **Old SQLite files** keep `password_hash NOT NULL`, so a first Google sign-in into one
+  fails until the file is recreated. Postgres is migrated automatically.
+- **`avatarUrl` is stored but not shown** anywhere in the UI yet.
+
+### 7.5 Heuristic text extraction
+- Voice-of-Market quotes are tagged by keyword. A sentence containing "manual" or
+  "problem" can be tagged *Observed Friction* without being a customer complaint.
+- The wedge's "Incumbent Blindspot" always uses the **first** listed competitor, which
+  is the first one NER found, not necessarily the closest one. In quick mode (no
+  profiling) there are no weaknesses, so that vector is always inferred and conviction
+  tops out at 75%.
+

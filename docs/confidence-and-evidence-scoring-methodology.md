@@ -146,3 +146,14 @@ field from each saved run.
 
 `frontend/src/components/__tests__/ConfidenceDashboard.test.jsx` covers the gauge and
 tiles, including recency having its own tile.
+
+---
+
+## Addendum (five-pillar Sprint 1): per-claim provenance badges
+
+`output_guard.provenance(sourceIds)` labels a single claim **grounded** (≥1 cited source
+after verification) or **inferred** (none). `ProvenanceBadge.jsx` shows it next to the
+market-size sentence and each Market Viability & Dynamics axis. It is the per-claim view
+of the same split the `directEvidenceRatio` tile counts across all claims, and it doesn't
+change any number in this document. See
+[doc 23 §3](23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOOGLE_SSO.md#3-pillar-1-provenance-badges-and-voice-of-market-quotes).
