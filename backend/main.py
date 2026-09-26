@@ -56,7 +56,7 @@ from agent.llm import local_llm_available
 from agent.pdf_exporter import generate_dossier_pdf
 from agent.platform_metrics import get_platform_metrics
 from agent.report_assembler import assemble_report, report_to_pdf_input
-from agent.session_store import create_session, get_session, list_sessions_for_user
+from agent.session_store import claim_session, create_session, get_session, list_sessions_for_user
 from agent.structured_output import compact_sources
 from agent.user_analytics import get_user_analytics
 from sqlalchemy import delete, select
@@ -326,6 +326,10 @@ class GoogleAuthRequest(BaseModel):
     idToken: str
 
 
+class ClaimSessionRequest(BaseModel):
+    sessionId: str = Field(min_length=1, max_length=64)
+
+
 class ValidateRequest(BaseModel):
     idea: str = Field(max_length=2500)
     targetCustomer: str = Field(default="", max_length=600)
@@ -559,6 +563,21 @@ def auth_me(current_user: dict = Depends(require_user)):
 @app.get("/me/history")
 def my_history(current_user: dict = Depends(require_user)):
     return {"entries": list_sessions_for_user(current_user["id"])}
+
+
+@app.post("/me/claim-session")
+def claim_session_route(payload: ClaimSessionRequest, current_user: dict = Depends(require_user)):
+    """Lets a validation run anonymously, then signed into right after,
+    show up in this account's GET /me/history instead of staying stuck in
+    the device-local list (lib/history.js) that only this browser can see.
+    """
+    claimed = claim_session(payload.sessionId.strip(), current_user["id"])
+    if not claimed:
+        return JSONResponse(
+            status_code=404,
+            content={"error": "That session could not be found or already belongs to another account."},
+        )
+    return {"claimed": True}
 
 
 @app.get("/me/analytics")
