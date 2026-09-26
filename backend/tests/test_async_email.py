@@ -54,6 +54,15 @@ class AsyncValidationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
 
     @patch("main.pipeline.invoke", return_value=_fake_state())
+    def test_excessively_long_idea_is_rejected_before_pipeline_runs(self, invoke):
+        response = self.client.post(
+            "/validate",
+            json={"idea": "x" * 301},
+        )
+        self.assertEqual(response.status_code, 422)
+        invoke.assert_not_called()
+
+    @patch("main.pipeline.invoke", return_value=_fake_state())
     def test_fast_completion_returns_full_response_even_with_email(self, _invoke):
         response = self.client.post(
             "/validate",

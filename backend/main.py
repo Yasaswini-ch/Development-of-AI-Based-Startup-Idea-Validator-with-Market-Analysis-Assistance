@@ -374,7 +374,9 @@ _ASYNC_EMAIL_THRESHOLD_SECONDS = float(
 
 class ValidateRequest(BaseModel):
 
-    idea: str
+    idea: str = Field(
+        max_length=300,
+    )
 
     targetCustomer: str = ""
 
