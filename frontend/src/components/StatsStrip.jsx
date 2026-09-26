@@ -73,7 +73,9 @@ function CircleStat({ value, label, sub, color = 'var(--color-accent)' }) {
 export default function StatsStrip({ results, competitors, whiteSpace, marketOpportunity }) {
   const sourceCount     = results?.length ?? 0
   const competitorCount = competitors?.competitors?.length ?? 0
-  const gapCount        = whiteSpace?.gaps?.length ?? 0
+  // white_space.py returns the gaps under "opportunities" (same field
+  // WhiteSpaceAnalysis renders); there is no "gaps" key.
+  const gapCount        = whiteSpace?.opportunities?.length ?? 0
   const segmentCount    = marketOpportunity?.segments?.length ?? 0
   const oppScore        = marketOpportunity?.opportunityScore ?? null
 
