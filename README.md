@@ -32,6 +32,17 @@ follow-up questions — plus a downloadable PDF dossier and optional email deliv
    strategy, a confidence dashboard, and (optionally) a downloadable PDF or emailed
    report.
 
+7. **Founders keep a board of their ideas** — signing in is optional, but a signed-in
+   founder gets an account menu (History, Compare ideas, Dashboard) and a four-tab
+   Dashboard: Overview, Comparison matrix, Validation history and Score trends. The
+   Overview includes a radar of the five Market Viability axes (market demand,
+   execution risk, growth velocity, **competition clarity** and **timing**).
+8. **Admins watch platform health** — accounts listed in `ADMIN_EMAILS` also see
+   **Platform health**: validation volume, cache hit rate, LLM success rate and model
+   usage, per-node latency, idea categories, recent errors and email delivery, built
+   from a durable `events` log (`backend/agent/events.py`). See
+   [doc 22](docs/22_AFFINITY_MILESTONE_5_ANALYTICS_DASHBOARDS_AND_ACCESS_CONTROL.md).
+
 A failure at any LLM-backed step doesn't crash the request or leave that section blank:
 every agent that calls an LLM has a deterministic, evidence-based fallback (see
 `backend/agent/deterministic_fallback.py`) that's honestly labeled `"degraded": true`
@@ -351,7 +362,7 @@ Blueprint with a managed database and two services:
 | Resource | Type | Notes |
 |---|---|---|
 | `startup-validator-db` | Postgres (free plan) | Provisioned from `render.yaml`; its connection string is wired into the backend automatically via `fromDatabase` |
-| `startup-validator-backend` | Python web service (`backend/`) | Needs `GROQ_API_KEY` set manually in the Render dashboard (not in `render.yaml`, never committed). `TAVILY_API_KEY` is optional — falls back to free search if unset. `DATABASE_URL` is set automatically from the database resource above |
+| `startup-validator-backend` | Python web service (`backend/`) | Needs `GROQ_API_KEY` set manually in the Render dashboard (not in `render.yaml`, never committed). `TAVILY_API_KEY` is optional — falls back to free search if unset. `DATABASE_URL` is set automatically from the database resource above, and `AUTH_SECRET_KEY` is generated. Add `ADMIN_EMAILS` by hand to grant Platform Health access |
 | `startup-validator-frontend` | Static site (`frontend/`) | Built with `npm run build`; calls the backend via `VITE_API_URL` |
 
 All three auto-deploy/provision on push to `staging` **only if the services were created
@@ -361,6 +372,11 @@ re-sync the Blueprint from the Render dashboard (or add the database and set
 double-check the actual Render-assigned URLs match what's hardcoded in `render.yaml` for
 `FRONTEND_ORIGIN` and `VITE_API_URL` — if Render assigns different subdomains, update
 those env vars in the dashboard to match.
+
+> ⚠️ Render's free Postgres **expires 30 days after creation**, deleting every account and
+> saved validation. Check `GET /health` → `"database": "postgresql"` after deploys, and
+> see [DEPLOYMENT.md](DEPLOYMENT.md#database-postgresql-on-render) for the provisioning
+> steps, the expiry, and `ADMIN_EMAILS` setup.
 
 The legacy Streamlit prototype (`app.py`) is no longer deployed by this config.
 
