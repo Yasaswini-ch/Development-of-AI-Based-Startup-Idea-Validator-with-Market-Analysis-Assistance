@@ -50,6 +50,7 @@ from agent.email_delivery import is_valid_email, send_canonical_report_email, se
 from agent.graph import NEEDS_DEEP_ANALYSIS, pipeline
 from agent.idea_category import categorize_idea
 from agent.job_store import complete_job, create_job, fail_job, get_job
+from agent.llm import local_llm_available
 from agent.pdf_exporter import generate_dossier_pdf
 from agent.platform_metrics import get_platform_metrics
 from agent.report_assembler import assemble_report, report_to_pdf_input
@@ -745,7 +746,14 @@ async def validate_idea(payload: ValidateRequest, request: Request, current_user
     # An email on file lets a strategy node fall through to the (much
     # slower) local Ollama model instead of raising NeedsDeepAnalysisRequired
     # the moment cloud models are exhausted - see _run_pipeline_and_build_response.
-    allow_local = bool(effective_email)
+    #
+    # Where no local tier exists at all (hosted deployments don't run
+    # Ollama), asking for an email is a dead end: the email never unlocked a
+    # deeper model, only a second cloud pass plus the deterministic,
+    # "degraded"-flagged fallback - so anonymous founders saw a confusing
+    # "enter your email" detour and then got those same results anyway. In
+    # that case every request takes the allow_local path directly.
+    allow_local = bool(effective_email) or not local_llm_available()
     task = asyncio.create_task(
         asyncio.to_thread(_run_pipeline_and_build_response, payload, cache_key, allow_local)
     )
