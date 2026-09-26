@@ -21,6 +21,7 @@ from .structured_output import compact_sources
 from .swot_agent import analyze_swot
 from .commercial_model import build_commercial_model
 from .delivery_roadmap import build_delivery_roadmap
+from .strategic_wedge import build_strategic_wedges
 from .verdict import build_verdict
 from .viability_score import calculate_market_viability, calculate_viability_index
 from .voice_of_market import extract_voice_of_market
@@ -565,6 +566,19 @@ def white_space_node(state: PipelineState) -> PipelineState:
             "whiteSpace": None,
             "errors": errors,
         }
+
+    # Pillar 4: 5-vector strategic wedge blueprints, deterministic (see
+    # strategic_wedge.py) - own try/except so a bug here can't take down
+    # the opportunity-gap result already computed above.
+    try:
+        white_space["blueprints"] = build_strategic_wedges(
+            state.get("marketOpportunity"),
+            state.get("competitors"),
+            state.get("results", []),
+        )["blueprints"]
+    except Exception as exc:
+        logger.exception("[white_space] strategic wedge FAILED")
+        _record_node_failure("strategic_wedge", exc)
 
     logger.info("[white_space] COMPLETE")
     metrics.increment("node.white_space.success")
