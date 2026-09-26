@@ -491,7 +491,8 @@ Blueprint-sync caveat and multi-instance guidance.
   `errors.<section>` rather than trusting malformed output.
 - LLM rate-limit fallback: every LLM-backed agent goes through `agent/llm.py`'s
   `kickoff_with_fallback()`, which builds and runs the crew against the primary Groq
-  model and, on a rate limit or a `model_not_found` response, immediately rebuilds it
+  model and, on a rate limit, a `model_not_found` response, a provider error or a response
+  that fails the agent's shape validation, immediately rebuilds it
   against the next model in the fallback chain instead of waiting. Only once every
   model in the chain has failed does it wait out the last rate limit's suggested
   cooldown (capped at 30s) for one final try. Every call's latency and token usage

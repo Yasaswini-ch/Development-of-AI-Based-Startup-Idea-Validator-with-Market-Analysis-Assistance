@@ -65,7 +65,7 @@ def _cache_key(payload: ValidateRequest) -> str:
 ```
 
 - **Partial Failure Protection:** Responses containing errors (`errors.marketOpportunity != null`) are **never cached**, ensuring transient upstream disruptions do not persist.
-- **Client Storage:** The in-progress result is kept in `sessionStorage`, so it survives a tab reload and is cleared when the tab closes. The auth token, device-local history and compare basket are kept in `localStorage`, which persists until sign-out or cleared site data. On sign-out or account switch the app clears the stored validation state.
+- **Client Storage:** The in-progress result is kept in `sessionStorage`, so it survives a tab reload and is cleared when the tab closes. The auth token, device-local history and compare basket are kept in `localStorage`, which persists until sign-out or cleared site data. On sign-in, sign-out and account switch the app clears the stored validation state and the device-local history and compare lists, and it only writes to those device lists while signed out (a signed-in account's history lives server-side), so one person's ideas don't show up for the next person on a shared computer.
 
 ### 2.3 Accounts, Access Control & Retention
 

@@ -110,7 +110,7 @@
 ## Slide 11: Reliability — LLM Fallback Chain
 - **Chain:** `groq/qwen/qwen3.8-27b` → `groq/openai/gpt-oss-20b` → `groq/openai/gpt-oss-120b` → `gemini/gemini-3.6-flash` → `gemini/gemini-3.8-flash`.
 - **Switch triggers:** rate limits, missing models, provider/network errors, **and responses that fail per-attempt shape validation** (e.g. unparseable JSON).
-- **Last resort:** if every cloud model fails and no email is on file, the user is asked for one. The retry is then allowed to use a local Ollama model; if it runs past the async threshold it finishes in the background and the report is emailed.
+- **Last resort:** if every cloud model fails, a local Ollama model is tried (only where one is actually running), then the whole cloud chain is retried once after a short cooldown. If that fails too, the section shows a clearly labelled deterministic fallback. The "enter your email for deeper analysis" prompt only appears where a local model exists.
 
 ---
 

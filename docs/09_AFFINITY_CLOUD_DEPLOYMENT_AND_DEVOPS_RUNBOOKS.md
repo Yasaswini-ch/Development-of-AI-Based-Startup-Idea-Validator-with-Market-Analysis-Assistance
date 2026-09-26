@@ -116,9 +116,12 @@ services:
   5xx, auth errors), **or a response that fails the calling agent's shape validation**
   (for example unparseable JSON). Shape validation runs on every attempt, so one
   malformed reply no longer ends the whole chain.
-- **When every model fails:** with no email on file, `/validate` returns
-  `needsEmailForDeepAnalysis` and asks the user for an email; the retry may then use the
-  local Ollama model (`LOCAL_LLM_MODEL`) and finish in the background.
+- **When every model fails:** the local Ollama model is tried if one is reachable and
+  permitted, then the whole cloud chain is retried once after
+  `LLM_CLOUD_RETRY_COOLDOWN_SECONDS` (default 3 s); if that fails too, the section is
+  served from the deterministic `degraded: true` fallback. `/validate` only asks the
+  user for an email (`needsEmailForDeepAnalysis`) when a local tier actually exists, so
+  on Render, which runs no Ollama, users never see that prompt.
 - **Operator action:** check Platform Health → model usage and recent errors. Override the
   chain with `LLM_MODEL` / `LLM_FALLBACK_MODELS` if a provider is down for a long time.
 

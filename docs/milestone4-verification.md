@@ -2,6 +2,11 @@
 
 **Logged:** 2026-09-26 · **Branch:** `staging` at `4c39380` · **Covers:** fixes committed 2026-09-24 to 2026-09-26
 
+> Out of scope for this log: `ba04577` (merged later the same day), which removed the
+> "enter your email" prompt on hosts with no local model and stopped device-local
+> history leaking between accounts. It has its own tests in
+> `test_deep_analysis_email_gate.py` and `App.historyPrivacy.test.jsx`.
+
 Point-in-time record, in the same spirit as [`milestone2-verification.md`](milestone2-verification.md)
 and [doc 08](08_AFFINITY_LIVE_VERIFICATION_AND_TEST_PROTOCOL.md): what broke during live
 testing of the deployed app, why, what changed, and which regression test now guards

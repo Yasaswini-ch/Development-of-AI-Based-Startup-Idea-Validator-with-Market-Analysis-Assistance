@@ -149,7 +149,7 @@ missing right after being made an admin, sign out and back in.
 
 ### Issue 1: "Analysis wasn't available for this section"
 - **Cause:** Every model in the LLM fallback chain failed for that section (rate limits, provider errors or unusable output).
-- **Solution:** Wait 60 seconds and click **Validate Idea** again. Competitor and Evidence tabs remain valid. If the app asks for your email, the idea needs the slower deep-analysis path; enter it and the full report is emailed when ready.
+- **Solution:** Wait 60 seconds and click **Validate Idea** again. Competitor and Evidence tabs remain valid. On a local setup running Ollama, the app may ask for your email so a slower local model can finish the analysis and email it to you; the hosted app doesn't ask.
 
 ### Issue 2: Submit Button Is Disabled
 - **Cause:** A 5-second cooldown protects the Groq free-tier quota after each submission.

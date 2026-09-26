@@ -223,9 +223,16 @@ fallback hop rather than failing the section, but it still burns quota on the ne
 model, so the output-format prompt files (`prompts/*_output.md`) remain the first line
 of defence.
 
-If every model fails, the call raises `NeedsDeepAnalysisError`. With no email on file,
-`/validate` asks for one; with an email, the retry may use the local Ollama model. If
-the local tier also fails, the agent falls back to its deterministic, `degraded: true`
-result, and [`agent/graph.py`](../backend/agent/graph.py) records per-section errors so
+If every model fails with a switch-worthy error, the call (1) tries the local Ollama
+model (`LOCAL_LLM_MODEL`, default `ollama/qwen2.5:7b`) if the caller allows it
+(`allow_local`) **and** an Ollama server actually answers at `OLLAMA_BASE_URL`, then
+(2) makes one more pass over the whole cloud chain after a short cooldown
+(`LLM_CLOUD_RETRY_COOLDOWN_SECONDS`, default 3 s). Only if that also fails does it raise
+`NeedsDeepAnalysisError` (when `allow_local` is false) or the last error, after which the
+agent returns its deterministic `degraded: true` result. `/validate` sets `allow_local`
+when an email is on file **or** when no local tier is reachable, so the "enter your
+email for a deeper analysis" prompt only appears on deployments that actually run
+Ollama. Hosted Render deployments never show it. In every case,
+[`agent/graph.py`](../backend/agent/graph.py) records per-section errors so
 competitor discovery, confidence metrics and white-space analysis still return partial
 data cleanly.

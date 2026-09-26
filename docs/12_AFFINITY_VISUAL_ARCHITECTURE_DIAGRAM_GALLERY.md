@@ -314,8 +314,13 @@ flowchart TD
     M3 -->|same| M4["gemini/gemini-3.6-flash"]
     M4 -->|same| M5["gemini/gemini-3.8-flash"]
     M1 & M2 & M3 & M4 & M5 -->|passes validate| OK(["Use response"])
-    M5 -->|all failed| Q{"Email on file?"}
-    Q -->|no| Ask["NeedsDeepAnalysisError\n/validate asks for email"]
+    M5 -->|all failed| Q{"allow_local and\nOllama reachable?"}
     Q -->|yes| Local["Local Ollama model"]
-    Local -->|fails, then one more cloud pass fails| Degraded["Deterministic fallback\n(degraded: true)"]
+    Q -->|no| Retry["Cooldown, then one more\npass over M1..M5"]
+    Local -->|fails| Retry
+    Local -->|passes| OK
+    Retry -->|passes| OK
+    Retry -->|fails| End{"allow_local?"}
+    End -->|no| Ask["NeedsDeepAnalysisError\n(/validate asks for email;\nonly possible where Ollama exists)"]
+    End -->|yes| Degraded["Deterministic fallback\n(degraded: true)"]
 ```

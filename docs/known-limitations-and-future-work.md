@@ -81,8 +81,9 @@ is not supported.
 ### 3.1 The local-model fallback needs real hardware
 - **What:** the last-resort tier runs `ollama/qwen2.5:7b` through Ollama at
   `OLLAMA_BASE_URL` (default `localhost:11434`). Render's free tier has no GPU and no
-  Ollama server, so on the deployed app this tier normally fails and the request drops
-  to the deterministic, `degraded: true` result.
+  Ollama server, so on the deployed app this tier is skipped (`local_llm_available()`
+  returns false): after a second cloud pass the request drops to the deterministic,
+  `degraded: true` result.
 - **Impact:** when every cloud model is exhausted, deployed users get the weaker
   fallback rather than a slow but full AI result. On a laptop with Ollama and a capable
   GPU the tier works, but can take minutes per call (240 s timeout).

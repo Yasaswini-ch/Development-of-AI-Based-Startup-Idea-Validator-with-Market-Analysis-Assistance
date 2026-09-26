@@ -108,6 +108,14 @@ data-quality measure into a directional score would mix two different questions.
 Where they appear: the Dashboard radar averages all five axes across the founder's
 ideas. The Compare Ideas view shows the headline viability score per idea.
 
+> **Not to be confused with the Market Viability & Dynamics Index.** Sprint 1 (merged
+> into `staging` on 2026-09-26, after this doc's features) added a separate
+> `marketOpportunity.viabilityIndex`: five different axes (Demand Urgency, Expansion
+> Velocity, Target Accessibility, Barrier to Entry / Moat, Capital Efficiency) scored
+> 1–5 with rationales and citations, shown in the Market tab by
+> `MarketViabilityIndex.jsx`. The `marketViability` axes above are unchanged and still
+> feed the Dashboard radar.
+
 ## 5. Admin Platform Health
 
 `PlatformHealth.jsx`, backed by `GET /admin/platform-metrics?days=7|30|90`

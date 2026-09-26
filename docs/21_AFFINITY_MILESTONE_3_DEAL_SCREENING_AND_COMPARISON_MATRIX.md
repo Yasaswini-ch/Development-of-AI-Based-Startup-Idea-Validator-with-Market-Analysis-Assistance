@@ -48,7 +48,8 @@ Body: { "sessionIds": ["<uuid>", "<uuid>", ...] }   // 2 to 5 ids, deduplicated
 
 - Ideas are added from **History** with an "Add to compare" button. The selection is a
   small basket in `localStorage` (`frontend/src/lib/compareList.js`, max 5), so it
-  survives page changes.
+  survives page changes. It is cleared on sign-in and sign-out so one person's
+  selection never shows up for the next person on a shared computer.
 - A user can also paste a session id or a full emailed report link; the `?session=`
   parameter is extracted automatically.
 - Rows shown for each idea: Opportunity score, Market viability, Confidence, Market
