@@ -19,6 +19,7 @@ from fastapi import Header, HTTPException
 from sqlalchemy.exc import IntegrityError
 
 from .db import get_engine, now, users_table
+from .google_auth import verify_google_id_token
 from sqlalchemy import select
 
 # Must be set in production (Render env) - a request-time error there is far
@@ -41,7 +42,13 @@ def _hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
-def _verify_password(password: str, password_hash: str) -> bool:
+def _verify_password(password: str, password_hash: str | None) -> bool:
+    if password_hash is None:
+        # A Google-only account (see login_with_google) never set a
+        # password - fails closed the same as a wrong password, not a
+        # crash, so a passwordless account can't be logged into here at
+        # all rather than raising on the None.encode() below.
+        return False
     try:
         return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
     except ValueError:
@@ -76,6 +83,61 @@ def signup(email: str, password: str) -> dict:
         raise AuthError("An account with that email already exists.") from exc
 
     return {"token": _issue_token(user_id, email), "user": {"id": user_id, "email": email}}
+
+
+def _row_to_user(row) -> dict:
+    return {
+        "id": row.id,
+        "email": row.email,
+        "authProvider": row.auth_provider,
+        "avatarUrl": row.avatar_url,
+    }
+
+
+def login_with_google(id_token_str: str) -> dict:
+    """Verify the Google ID token (agent/google_auth.py) and sign the
+    caller in, creating a new passwordless account on first sign-in.
+
+    Looked up by email, same as the local login() above - a Google
+    account with the same (Google-verified) email as an existing local
+    account is treated as that same account rather than a second, linked
+    identity: simpler than real account linking, and safe here because
+    Google's own email_verified claim is the trust anchor either way.
+    """
+    claims = verify_google_id_token(id_token_str)
+    email = claims["email"]
+
+    engine = get_engine()
+    with engine.begin() as conn:
+        row = conn.execute(select(users_table).where(users_table.c.email == email)).first()
+
+        if row is None:
+            user_id = str(uuid.uuid4())
+            conn.execute(
+                users_table.insert().values(
+                    id=user_id,
+                    email=email,
+                    password_hash=None,
+                    created_at=now(),
+                    auth_provider="google",
+                    avatar_url=claims.get("picture"),
+                )
+            )
+            row = conn.execute(select(users_table).where(users_table.c.id == user_id)).first()
+        elif row.auth_provider != "google" or row.avatar_url != claims.get("picture"):
+            # Keep an existing account's provider/avatar in sync with
+            # Google's own record on every sign-in - a local account that
+            # later signs in with Google picks up "google" once it has
+            # actually verified that email through Google, and an avatar
+            # Google has since changed follows along too.
+            conn.execute(
+                users_table.update()
+                .where(users_table.c.id == row.id)
+                .values(auth_provider="google", avatar_url=claims.get("picture"))
+            )
+            row = conn.execute(select(users_table).where(users_table.c.id == row.id)).first()
+
+    return {"token": _issue_token(row.id, row.email), "user": _row_to_user(row)}
 
 
 def login(email: str, password: str) -> dict:

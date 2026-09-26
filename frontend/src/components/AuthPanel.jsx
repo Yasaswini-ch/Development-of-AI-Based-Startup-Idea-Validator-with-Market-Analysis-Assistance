@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { IconAlertTriangle, IconColumns, IconGauge, IconUser } from './icons'
+import GoogleSignInButton from './GoogleSignInButton'
 
 const MIN_PASSWORD_LENGTH = 8
 
@@ -45,6 +46,28 @@ export default function AuthPanel({ apiUrl, onAuthenticated, onBack }) {
     }
   }
 
+  async function handleGoogleCredential(idToken) {
+    setError('')
+    setIsSubmitting(true)
+    try {
+      const res = await fetch(`${apiUrl}/auth/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setError(data.error || 'Google sign-in failed. Please try again.')
+        return
+      }
+      onAuthenticated(data)
+    } catch {
+      setError('Could not reach the server. Please try again.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   return (
     <div className="mx-auto grid max-w-3xl gap-10 lg:grid-cols-[1fr,20rem] lg:items-start">
       <div>
@@ -70,7 +93,15 @@ export default function AuthPanel({ apiUrl, onAuthenticated, onBack }) {
             : 'One email and password, nothing else - your validations get tied to this account instead of only this device.'}
         </p>
 
-        <form onSubmit={handleSubmit} className="rounded-2xl border border-border bg-panel p-6 shadow-sm">
+        <div className="rounded-2xl border border-border bg-panel p-6 shadow-sm">
+        <GoogleSignInButton onCredential={handleGoogleCredential} onError={setError} />
+        <div className="my-5 flex items-center gap-3">
+          <span className="h-px flex-1 bg-border" />
+          <span className="font-mono text-[10px] uppercase tracking-widest text-muted">or</span>
+          <span className="h-px flex-1 bg-border" />
+        </div>
+
+        <form onSubmit={handleSubmit}>
         <div className="space-y-4">
           <div>
             <label htmlFor="auth-email" className="mb-1.5 flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider text-muted">
@@ -131,6 +162,7 @@ export default function AuthPanel({ apiUrl, onAuthenticated, onBack }) {
           </button>
         </div>
         </form>
+        </div>
       </div>
 
       <div className="hidden lg:block">
