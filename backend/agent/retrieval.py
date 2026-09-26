@@ -1,1360 +1,340 @@
-# agent/retrieval.py
+"""
+Retrieval layer: expands one idea into several search angles, fetches each
+via agent/tools.py, then merges everything into one clean, deduplicated,
+score-ranked list.
 
-from __future__ import annotations
+Kept separate from tools.py (which only knows how to fetch and score results)
+so the "how do we get good, diverse coverage of one idea" logic lives in one
+place and doesn't care which sources tools.py is calling underneath.
+"""
 
-import logging
-import os
 import re
-from typing import Any, Dict, Iterable, List, Optional
 from urllib.parse import urlparse
 
-from dotenv import load_dotenv
+from .tools import fetch_results
 
-load_dotenv()
+try:
+    # Reuse the same spaCy model/singleton competitor_agent already loads
+    # (zero extra load cost in-process) to pull real nouns out of the idea
+    # text, rather than a naive word-position heuristic.
+    from .competitor_agent import _nlp
+except Exception:  # pragma: no cover - matches competitor_agent's own guard
+    _nlp = None
 
-logger = logging.getLogger(__name__)
-
-
-# ============================================================
-# Configuration
-# ============================================================
-
-DEFAULT_MAX_RESULTS = 5
-DEFAULT_SEARCH_RESULTS_PER_QUERY = 8
-
-GENERIC_DOMAINS = {
-    "wikipedia.org",
-    "dictionary.cambridge.org",
-    "merriam-webster.com",
-    "britannica.com",
-    "geeksforgeeks.org",
-    "mbaskool.com",
-    "quora.com",
+# Academic/research-paper domains excluded per mentor guidance - they read as
+# dense literature review material, not the market/competitor signal a
+# founder actually needs from this tool.
+_EXCLUDED_DOMAINS = {
+    "arxiv.org",
+    "researchgate.net",
+    "ssrn.com",
+    "semanticscholar.org",
+    "jstor.org",
+    "sciencedirect.com",
+    "springer.com",
+    "link.springer.com",
+    "ieee.org",
+    "ieeexplore.ieee.org",
+    "pubmed.ncbi.nlm.nih.gov",
+    "ncbi.nlm.nih.gov",
+    "mdpi.com",
+    "dl.acm.org",
+    "wiley.com",
+    "tandfonline.com",
+    # Generic "alternatives to X" / competitor-directory aggregator sites -
+    # their whole content model is a cross-category listicle template, not
+    # idea-specific reporting, so they superficially keyword-match almost
+    # any "X competitors and alternatives" query while contributing zero
+    # real signal. Confirmed live: competitors.app's generic "AI
+    # Alternatives" page scored as the *second-highest-relevance* result
+    # for a bill-negotiation-app query purely on "AI"/"alternatives"/
+    # "competitors" keyword overlap, and its scraped listicle content fed
+    # unrelated app names into Competitor Discovery's NER step as false
+    # "competitors" for that idea.
+    "competitors.app",
+    "alternativeto.net",
+    "saashub.com",
 }
 
-GENERIC_TITLE_PATTERNS = (
-    "definition",
-    "meaning",
-    "what is",
-    "what are",
-    "dictionary",
-    "wikipedia",
-    "tutorial",
-    "example",
-    "examples",
-    "how to",
-)
-
-
-# ============================================================
-# Basic text helpers
-# ============================================================
-
-def _clean_text(value: Any) -> str:
-    """Clean text safely."""
-
-    if value is None:
-        return ""
-
-    text = str(value)
-
-    text = re.sub(r"\s+", " ", text)
-    text = text.strip()
-
-    return text
-
-
-def _remove_leading_generic(text: str) -> str:
-    """
-    Remove generic introductory wording from an idea.
-    """
-
-    text = _clean_text(text)
-
-    patterns = [
-        r"^ai[- ]powered\s+",
-        r"^artificial intelligence[- ]powered\s+",
-        r"^an?\s+ai[- ]powered\s+",
-        r"^an?\s+artificial intelligence[- ]powered\s+",
-        r"^platform\s+that\s+",
-        r"^platform\s+for\s+",
-        r"^solution\s+that\s+",
-        r"^tool\s+that\s+",
-        r"^system\s+that\s+",
-    ]
-
-    result = text
-
-    for pattern in patterns:
-        result = re.sub(pattern, "", result, flags=re.IGNORECASE)
-
-    return result.strip()
-
-
-# ============================================================
-# Academic / domain helpers
-# ============================================================
 
 def _is_academic(url: str) -> bool:
-    """Return True if URL appears to be from an academic/research source."""
-
-    url = _clean_text(url).lower()
-
-    academic_domains = (
-        ".edu",
-        ".ac.",
-        "arxiv.org",
-        "sciencedirect.com",
-        "springer.com",
-        "nature.com",
-        "wiley.com",
-        "onlinelibrary.wiley.com",
-        "tandfonline.com",
-        "researchgate.net",
-        "jstor.org",
-        "ieeexplore.ieee.org",
-        "pubmed.ncbi.nlm.nih.gov",
-    )
-
-    return any(domain in url for domain in academic_domains)
+    host = urlparse(url).hostname or ""
+    host = host.removeprefix("www.")
+    return host in _EXCLUDED_DOMAINS
 
 
-def _extract_domain(url: str) -> str:
-    """Extract hostname from URL."""
+# Trailing function words that make a truncated query fragment read as a
+# mid-sentence cut ("... aged 25-45 who", "... hard because recipes")
+# instead of a clean noun phrase. Stripped iteratively off the *end* only,
+# after word-count truncation, since a free-tier search provider matches a
+# dangling connector word far worse than the same query one word shorter -
+# confirmed live: "...aged 25-45 who" returned 0 results, the same fragment
+# with trailing stopwords trimmed returned real matches.
+_TRAILING_STOPWORDS = {
+    "who",
+    "which",
+    "that",
+    "because",
+    "since",
+    "is",
+    "are",
+    "was",
+    "were",
+    "and",
+    "or",
+    "but",
+    "at",
+    "in",
+    "on",
+    "for",
+    "with",
+    "of",
+    "to",
+    "the",
+    "a",
+    "an",
+    "do",
+    "does",
+    "did",
+    "not",
+}
 
-    try:
-        parsed = urlparse(url)
 
-        domain = parsed.netloc.lower()
-
-        if domain.startswith("www."):
-            domain = domain[4:]
-
-        return domain
-
-    except Exception:
+def _compact_subject(text: str, max_words: int = 10) -> str:
+    """Keep search queries short enough for free providers to match reliably."""
+    cleaned = " ".join(text.split()).strip(" .,:;-")
+    if not cleaned:
         return ""
 
-
-# ============================================================
-# Compact subject
-# ============================================================
-
-def _compact_subject(
-    idea: str,
-    industry: str = "",
-    max_words: int = 8,
-) -> str:
-    """
-    Convert a long startup idea into a short search subject.
-
-    IMPORTANT:
-    deterministic_fallback.py calls this function with max_words,
-    so max_words must remain supported.
-    """
-
-    text = _clean_text(idea).lower()
-    industry_text = _clean_text(industry).lower()
-
-    mappings = [
-        (
-            [
-                "customer review",
-                "customer reviews",
-                "online reviews",
-                "review analysis",
-                "review analytics",
-            ],
-            "customer review analytics",
-        ),
-        (
-            [
-                "customer feedback",
-                "feedback analytics",
-                "feedback analysis",
-            ],
-            "customer feedback analytics",
-        ),
-        (
-            [
-                "sentiment analysis",
-                "customer sentiment",
-            ],
-            "customer sentiment analysis",
-        ),
-        (
-            [
-                "competitor analysis",
-                "competitive analysis",
-                "competitor intelligence",
-            ],
-            "competitive intelligence",
-        ),
-        (
-            [
-                "market research",
-                "market analysis",
-            ],
-            "market research",
-        ),
-        (
-            [
-                "business intelligence",
-                "business analytics",
-            ],
-            "business intelligence",
-        ),
-    ]
-
-    # First check the startup idea.
-    for patterns, label in mappings:
-        if any(pattern in text for pattern in patterns):
-            return label
-
-    # Then check industry.
-    for patterns, label in mappings:
-        if any(pattern in industry_text for pattern in patterns):
-            return label
-
-    # Generic fallback.
-    stop_words = {
-        "an",
-        "a",
-        "the",
-        "and",
-        "or",
-        "for",
-        "to",
-        "of",
-        "that",
-        "with",
-        "in",
-        "on",
-        "is",
-        "are",
-        "this",
-        "platform",
-        "system",
-        "tool",
-        "solution",
-        "based",
-        "using",
-        "used",
-        "which",
-        "can",
-        "helps",
-        "help",
-        "provides",
-        "provide",
-    }
-
-    words = [
-        word
-        for word in text.split()
-        if word not in stop_words
-    ]
-
-    try:
-        limit = max(1, int(max_words))
-    except (TypeError, ValueError):
-        limit = 8
-
-    result = " ".join(words[:limit])
-
-    return result or "startup idea"
-
-
-# ============================================================
-# Key phrase
-# ============================================================
-
-def _key_phrase(
-    idea: str,
-    industry: str = "",
-) -> str:
-    """
-    Return the primary searchable phrase.
-    """
-
-    subject = _compact_subject(
-        idea,
-        industry=industry,
-        max_words=8,
+    # Product descriptions commonly start with the useful noun phrase and
+    # continue with "that/which ...". Search engines perform better when the
+    # long feature clause is removed from every angle.
+    cleaned = re.split(r"\b(?:that|which)\b", cleaned, maxsplit=1, flags=re.IGNORECASE)[0]
+    # "AI"/"artificial intelligence" is generic marketing language in almost
+    # every pitch today, not a distinguishing word - and unlike the
+    # "-powered" phrasing this used to require, founders overwhelmingly
+    # phrase it as a bare leading adjective ("AI resume tool", "AI meal
+    # planner"). Confirmed live: without also stripping the bare form, "AI"
+    # itself became every angle's search subject for such ideas, surfacing
+    # generic AI-company results (OpenAI, Google, Claude) instead of
+    # anything about the actual product. Loops so a stacked
+    # "an AI-powered smart resume tool" strips both adjectives, not just one.
+    _leading_adjective = re.compile(
+        r"^(?:an?\s+|the\s+)?"
+        r"(?:ai(?:[- ]powered)?|artificial intelligence(?:[- ]powered)?|smart|intelligent)\s+",
+        re.IGNORECASE,
     )
+    while True:
+        stripped = _leading_adjective.sub("", cleaned)
+        if stripped == cleaned:
+            break
+        cleaned = stripped
+    # A leading "a/an/the" is dead weight in a search query regardless of
+    # what follows it - strip it unconditionally, not just ahead of an
+    # "ai-powered" style adjective.
+    cleaned = re.sub(r"^(?:an?|the)\s+", "", cleaned, flags=re.IGNORECASE)
+    words = cleaned.split()[:max_words]
+    while words and words[-1].lower() in _TRAILING_STOPWORDS:
+        words.pop()
+    return " ".join(words)
 
-    return subject
+
+# Filler words dropped from *anywhere* in free-text customer/problem
+# fields, not just the end - unlike _compact_subject (which keeps a
+# product description's natural word order intact), a user-written
+# sentence like "...aged 25-45 who enjoy mixology but do not want to buy
+# full bottles..." reads as a garbled, ungrammatical fragment once merely
+# truncated to N words, and free search providers (DuckDuckGo/Wikipedia)
+# were confirmed live to return zero results for that fragment while
+# matching fine on the same content words with filler stripped out.
+_FILLER_WORDS = _TRAILING_STOPWORDS | {
+    "but",
+    "not",
+    "do",
+    "does",
+    "did",
+    "want",
+    "enjoy",
+    "this",
+    "these",
+    "those",
+    "their",
+    "they",
+    "them",
+    "it",
+    "its",
+}
 
 
-# ============================================================
-# Distinctive nouns
-# ============================================================
-
-def _distinctive_nouns(
-    idea: str,
-    industry: str = "",
-) -> List[str]:
+def _key_phrase(text: str, max_words: int = 5) -> str:
+    """Extract the first few *content* words (filler dropped, original
+    order preserved) instead of a literal N-word prefix - turns a full
+    sentence into a short, keyword-dense search phrase.
     """
-    Extract useful keywords from the startup idea.
+    cleaned = " ".join(text.split()).strip(" .,:;-")
+    if not cleaned:
+        return ""
+    words = [w for w in cleaned.split() if w.lower() not in _FILLER_WORDS]
+    return " ".join(words[:max_words])
+
+
+# Generic product/business-type nouns that show up in almost every startup
+# pitch regardless of domain ("subscription", "app", "platform"...) and
+# therefore match huge numbers of completely unrelated pages (a dictionary
+# definition of "subscription", Netflix, HBO) with no real topical overlap.
+# Excluded from the *distinctive*-noun pick specifically - they still show
+# up in `subject` via _compact_subject, just aren't trusted alone to prove
+# a result is relevant.
+_GENERIC_PRODUCT_NOUNS = {
+    "service", "services", "platform", "platforms", "app", "apps",
+    "application", "applications", "tool", "tools", "solution",
+    "solutions", "product", "products", "business", "businesses",
+    "company", "companies", "subscription", "subscriptions", "box",
+    "boxes", "system", "systems", "software", "startup", "idea",
+    # "What's inside the box" structural nouns - real, non-generic words,
+    # but describe *how* a delivery/kit business is packaged rather than
+    # *what domain* it's in, so they show up across totally unrelated
+    # subscription businesses (meal kits, craft kits, cocktail kits all
+    # ship "ingredients"/"recipes"/"kits"). Confirmed live: ranking
+    # "ingredients" above "cocktails"/"bartenders" purely for being a
+    # longer word produced a fallback query that matched generic
+    # "Meal kit"/"Home Chef" pages instead of anything cocktail-related.
+    "ingredients", "ingredient", "recipes", "recipe", "kit", "kits",
+    "items", "item", "supplies", "materials", "contents", "plans", "plan",
+    "features", "package", "packages", "delivery", "deliveries",
+}
+
+
+def _distinctive_nouns(text: str, max_words: int = 3) -> list[str]:
+    """Real nouns from the idea text, ranked by length (a cheap proxy for
+    specificity, same trick as tools._keyword_weight) and generic
+    product-type nouns excluded, so the actual domain the idea is *about*
+    (e.g. "cocktails", "bartenders") isn't lost.
+
+    This exists because the old subject extraction split the idea at the
+    first "that/which" and kept only what came *before* it - which for a
+    pitch phrased as "A subscription box service that delivers ... for
+    home bartenders to make craft cocktails" is exactly the generic
+    opening noun phrase, discarding the entire clause holding every real,
+    differentiating word. Confirmed live: without this, every
+    Market/Competitors/Industry-news query for that idea searched only
+    "subscription box service" with zero reference to cocktails at all,
+    surfacing Netflix, HBO, and dictionary-definition pages as top
+    "matches".
     """
-
-    text = _clean_text(
-        f"{idea} {industry}"
-    ).lower()
-
-    stop_words = {
-        "the",
-        "a",
-        "an",
-        "and",
-        "or",
-        "for",
-        "to",
-        "of",
-        "in",
-        "on",
-        "with",
-        "that",
-        "this",
-        "is",
-        "are",
-        "be",
-        "by",
-        "from",
-        "as",
-        "at",
-        "into",
-        "through",
-        "using",
-        "use",
-        "based",
-        "platform",
-        "system",
-        "tool",
-        "solution",
-        "business",
-        "businesses",
-        "small",
-        "medium",
-        "sized",
-        "size",
-        "ai",
-        "powered",
-        "artificial",
-        "intelligence",
-    }
-
-    words = re.findall(
-        r"[a-zA-Z][a-zA-Z0-9\-]{2,}",
-        text,
-    )
-
-    result: List[str] = []
-
-    for word in words:
-
-        if word in stop_words:
-            continue
-
-        if word not in result:
-            result.append(word)
-
-    return result[:12]
-
-
-# ============================================================
-# Search angles
-# ============================================================
-
-def build_search_angles(
-    idea: str,
-    target_customer: str = "",
-    problem: str = "",
-    industry: str = "",
-    location: str = "",
-) -> List[str]:
-    """
-    Build multiple search queries around the startup idea.
-
-    Queries intentionally target:
-    - market
-    - competitors
-    - customer pain
-    - startups
-    - software
-    - trends
-    """
-
-    idea_clean = _clean_text(idea)
-    customer_clean = _clean_text(target_customer)
-    problem_clean = _clean_text(problem)
-    industry_clean = _clean_text(industry)
-    location_clean = _clean_text(location)
-
-    subject = _compact_subject(
-        idea_clean,
-        industry=industry_clean,
-        max_words=8,
-    )
-
-    key_phrase = _key_phrase(
-        idea_clean,
-        industry=industry_clean,
-    )
-
-    location_suffix = ""
-
-    if location_clean:
-        location_suffix = f" {location_clean}"
-
-    queries: List[str] = []
-
-    # ========================================================
-    # Specific domain queries
-    # ========================================================
-
-    if "customer review" in subject:
-        queries.extend(
-            [
-                f'"customer feedback analytics" market{location_suffix}',
-                f'"customer review analytics" market{location_suffix}',
-                f'"review analytics" market{location_suffix}',
-                f'"customer feedback analytics" software competitors',
-                f'"customer review analytics" companies',
-                f'"review management" software alternatives',
-                f'"customer feedback analytics" startups funding',
-                f'"sentiment analysis" customer reviews startups',
-                f'"small business" customer reviews analytics',
-                f'"SMB" customer feedback management pain points',
-                f'"customer reviews" analytics software businesses',
-                f'"online review analytics" software market',
-            ]
-        )
-
-    elif "customer feedback" in subject:
-        queries.extend(
-            [
-                f'"customer feedback analytics" market{location_suffix}',
-                f'"customer feedback management" software competitors',
-                f'"customer feedback analytics" startups',
-                f'"customer feedback" SMB pain points',
-                f'"customer feedback software" market',
-                f'"customer feedback analysis" companies',
-                f'"customer feedback platform" competitors',
-            ]
-        )
-
-    elif "competitive intelligence" in subject:
-        queries.extend(
-            [
-                f'"competitive intelligence" software market{location_suffix}',
-                f'"competitor analysis software" companies',
-                f'"competitive intelligence" startups funding',
-                f'"competitor intelligence" SMB',
-                f'"competitive analysis tools" market',
-            ]
-        )
-
-    else:
-        queries.extend(
-            [
-                f'"{key_phrase}" market{location_suffix}',
-                f'"{key_phrase}" software competitors',
-                f'"{key_phrase}" startups',
-                f'"{key_phrase}" market size',
-                f'"{key_phrase}" customer pain points',
-                f'"{key_phrase}" companies',
-            ]
-        )
-
-    # ========================================================
-    # Customer-specific query
-    # ========================================================
-
-    if customer_clean:
-        customer_short = " ".join(
-            customer_clean.split()[:8]
-        )
-
-        queries.append(
-            f'"{key_phrase}" "{customer_short}"'
-        )
-
-    # ========================================================
-    # Problem-specific query
-    # ========================================================
-
-    if problem_clean:
-        problem_words = problem_clean.split()
-
-        if len(problem_words) > 10:
-            problem_short = " ".join(problem_words[:10])
-        else:
-            problem_short = problem_clean
-
-        queries.append(
-            f'"{key_phrase}" "{problem_short}"'
-        )
-
-    # ========================================================
-    # Industry-specific
-    # ========================================================
-
-    if industry_clean:
-        industry_short = " ".join(
-            industry_clean.split()[:8]
-        )
-
-        queries.append(
-            f'"{key_phrase}" "{industry_short}"'
-        )
-
-    # ========================================================
-    # Generic market / startup queries
-    # ========================================================
-
-    queries.extend(
-        [
-            f'"{key_phrase}" market trends',
-            f'"{key_phrase}" industry trends',
-            f'"{key_phrase}" SaaS',
-            f'"{key_phrase}" B2B SaaS',
-        ]
-    )
-
-    return _dedupe_queries(queries)
-
-
-# ============================================================
-# Query deduplication
-# ============================================================
-
-def _dedupe_queries(
-    queries: Iterable[str],
-) -> List[str]:
-
-    seen = set()
-    result = []
-
-    for query in queries:
-
-        query = _clean_text(query)
-
-        if not query:
-            continue
-
-        key = query.lower()
-
-        if key in seen:
-            continue
-
-        seen.add(key)
-        result.append(query)
-
-    return result
-
-
-# ============================================================
-# Normalize search result
-# ============================================================
-
-def _normalize_result(
-    result: Any,
-) -> Optional[Dict[str, Any]]:
-    """
-    Normalize results from different search providers.
-
-    DDGS 9.x commonly returns:
-        href
-        title
-        body
-
-    Older versions / other providers may return:
-        url
-        title
-        snippet
-    """
-
-    if not isinstance(result, dict):
-        return None
-
-    title = (
-        result.get("title")
-        or result.get("name")
-        or ""
-    )
-
-    # IMPORTANT:
-    # DDGS uses href, not url.
-    url = (
-        result.get("url")
-        or result.get("href")
-        or result.get("link")
-        or ""
-    )
-
-    # IMPORTANT:
-    # DDGS uses body, not snippet.
-    snippet = (
-        result.get("snippet")
-        or result.get("body")
-        or result.get("description")
-        or ""
-    )
-
-    title = _clean_text(title)
-    url = _clean_text(url)
-    snippet = _clean_text(snippet)
-
-    if not url:
-        return None
-
-    if not url.startswith(("http://", "https://")):
-        return None
-
-    return {
-        "title": title,
-        "url": url,
-        "snippet": snippet,
-    }
-
-
-# ============================================================
-# Domain filtering
-# ============================================================
-
-def _is_generic_domain(url: str) -> bool:
-    domain = _extract_domain(url)
-
-    if not domain:
-        return True
-
-    for blocked in GENERIC_DOMAINS:
-
-        if domain == blocked:
-            return True
-
-        if domain.endswith("." + blocked):
-            return True
-
-    return False
-
-
-def _is_generic_title(title: str) -> bool:
-    title_lower = _clean_text(title).lower()
-
-    if not title_lower:
-        return False
-
-    for pattern in GENERIC_TITLE_PATTERNS:
-
-        if title_lower.startswith(pattern):
-            return True
-
-    return False
-
-
-# ============================================================
-# Tavily search
-# ============================================================
-
-def _search_tavily(
-    query: str,
-    max_results: int = DEFAULT_SEARCH_RESULTS_PER_QUERY,
-) -> List[Dict[str, Any]]:
-
-    api_key = os.getenv("TAVILY_API_KEY")
-
-    if not api_key:
+    if _nlp is None:
         return []
-
-    try:
-
-        from tavily import TavilyClient
-
-        client = TavilyClient(
-            api_key=api_key
-        )
-
-        response = client.search(
-            query=query,
-            max_results=max_results,
-            search_depth="advanced",
-        )
-
-        results = response.get(
-            "results",
-            [],
-        )
-
-        return results or []
-
-    except Exception as exc:
-
-        logger.warning(
-            "Tavily search failed for %r: %s",
-            query,
-            exc,
-        )
-
-        return []
+    doc = _nlp(text)
+    seen: set[str] = set()
+    candidates = []
+    for token in doc:
+        if token.pos_ not in ("NOUN", "PROPN"):
+            continue
+        word = token.text
+        lw = word.lower()
+        if lw in _GENERIC_PRODUCT_NOUNS or lw in seen or len(word) <= 2:
+            continue
+        seen.add(lw)
+        candidates.append(word)
+    candidates.sort(key=len, reverse=True)
+    return candidates[:max_words]
 
 
-# ============================================================
-# DuckDuckGo search
-# ============================================================
+def build_search_angles(idea: str, target_customer: str, problem: str) -> list[tuple[str, list[str]]]:
+    """Turn one idea into a few distinct research angles instead of a single
+    query, so results cover market sizing, competitors, and demand rather
+    than whatever one combined query happens to surface.
 
-def _search_ddgs(
-    query: str,
-    max_results: int = DEFAULT_SEARCH_RESULTS_PER_QUERY,
-) -> List[Dict[str, Any]]:
-
-    try:
-
-        from ddgs import DDGS
-
-        with DDGS() as ddgs:
-
-            results = list(
-                ddgs.text(
-                    query,
-                    max_results=max_results,
-                )
-            )
-
-        return results
-
-    except Exception as exc:
-
-        logger.warning(
-            "DDGS search failed for %r: %s",
-            query,
-            exc,
-        )
-
-        return []
-
-
-# ============================================================
-# Unified search
-# ============================================================
-
-def _search(
-    query: str,
-    max_results: int = DEFAULT_SEARCH_RESULTS_PER_QUERY,
-) -> List[Dict[str, Any]]:
-
-    tavily_results = _search_tavily(
-        query,
-        max_results=max_results,
-    )
-
-    if tavily_results:
-
-        logger.info(
-            '[web_search] Tavily query="%s" results=%d',
-            query,
-            len(tavily_results),
-        )
-
-        return tavily_results
-
-    logger.info(
-        "TAVILY_API_KEY not configured or Tavily returned no results. "
-        "Using DDGS fallback."
-    )
-
-    ddgs_results = _search_ddgs(
-        query,
-        max_results=max_results,
-    )
-
-    logger.info(
-        '[web_search] DDGS query="%s" results=%d',
-        query,
-        len(ddgs_results),
-    )
-
-    return ddgs_results
-
-
-# ============================================================
-# Relevance scoring
-# ============================================================
-
-def _relevance_score(
-    result: Dict[str, Any],
-    idea: str,
-    target_customer: str = "",
-    problem: str = "",
-    industry: str = "",
-    location: str = "",
-) -> float:
+    Returns (label, [query, ...fallback queries]) pairs - label is a short,
+    human-friendly name for grouping results in the UI. Each angle carries
+    more than one candidate query, tried in order by collect(): the free
+    DuckDuckGo/Wikipedia search backing this when no Tavily key is set is
+    confirmed live to be flaky per exact query wording - the same subject
+    can return 0 raw hits with one extra word and several hits with it
+    removed, independent of relevance. A shorter, more generic fallback
+    gives an angle a second chance instead of surfacing "no reliable
+    sources" purely because its first-choice query didn't happen to match
+    anything today.
     """
-    Calculate lightweight local relevance score.
+    prefix = _compact_subject(idea, max_words=1)
+    distinctive = _distinctive_nouns(idea, max_words=3)
+    distinctive_new = [w for w in distinctive if w.lower() not in prefix.lower()]
+    subject = " ".join([prefix] + distinctive_new) or prefix
+    subject_fallback = " ".join([prefix] + distinctive_new[:1]) if distinctive_new else prefix
+    # Shorter than `subject`: DuckDuckGo's free-tier search is an implicit
+    # AND across every term, and confirmed live to return zero hits once a
+    # query combines the full subject *and* several customer/problem
+    # keywords (too many required terms for any one page to satisfy).
+    # Trading some specificity for a shorter, more matchable query.
+    short_subject = " ".join([prefix] + distinctive[:1]) if distinctive else prefix
+    customer = _key_phrase(target_customer, max_words=3)
+    problem_subject = _key_phrase(problem, max_words=3)
 
-    Score is based on keyword overlap between the startup context
-    and search result title/snippet/url.
-    """
-
-    title = _clean_text(
-        result.get("title", "")
-    ).lower()
-
-    snippet = _clean_text(
-        result.get("snippet", "")
-    ).lower()
-
-    url = _clean_text(
-        result.get("url", "")
-    ).lower()
-
-    searchable = (
-        f"{title} {snippet} {url}"
-    )
-
-    context = " ".join(
-        [
-            _clean_text(idea),
-            _clean_text(target_customer),
-            _clean_text(problem),
-            _clean_text(industry),
-            _clean_text(location),
-        ]
-    ).lower()
-
-    score = 0.0
-
-    # ========================================================
-    # Strong exact domain phrases
-    # ========================================================
-
-    strong_phrases = [
-        "customer review analytics",
-        "customer feedback analytics",
-        "review analytics",
-        "feedback analytics",
-        "sentiment analysis",
-        "customer sentiment",
-        "review management",
-        "customer feedback",
-        "online reviews",
-        "competitive intelligence",
-        "competitor analysis",
+    angles = [
+        ("Market size & trends", [f"{subject} market size", f"{subject_fallback} market"]),
+        ("Competitors", [f"{subject} competitors alternatives", f"{subject_fallback} competitors"]),
+        ("Industry news", [f"{subject} industry news", f"{subject_fallback} news"]),
     ]
-
-    for phrase in strong_phrases:
-
-        if phrase in searchable:
-
-            score += 2.0
-
-            if phrase in context:
-                score += 1.0
-
-    # ========================================================
-    # Important individual keywords
-    # ========================================================
-
-    keywords = [
-        "customer",
-        "review",
-        "reviews",
-        "feedback",
-        "analytics",
-        "sentiment",
-        "software",
-        "saas",
-        "competitor",
-        "competition",
-        "market",
-        "startup",
-        "business",
-        "smb",
-        "small business",
-        "medium business",
-        "india",
-    ]
-
-    for keyword in keywords:
-
-        if keyword in searchable:
-            score += 0.5
-
-    # ========================================================
-    # Context overlap
-    # ========================================================
-
-    context_words = set(
-        re.findall(
-            r"[a-zA-Z][a-zA-Z0-9\-]{3,}",
-            context,
+    if customer:
+        angles.append(("Customer demand", [f"{short_subject} {customer} demand", f"{prefix} {customer}"]))
+    if problem_subject:
+        angles.append(
+            ("How others solve this", [f"{short_subject} {problem_subject} solutions", f"{prefix} {problem_subject}"])
         )
-    )
-
-    result_words = set(
-        re.findall(
-            r"[a-zA-Z][a-zA-Z0-9\-]{3,}",
-            searchable,
-        )
-    )
-
-    stop_words = {
-        "this",
-        "that",
-        "with",
-        "from",
-        "into",
-        "your",
-        "their",
-        "about",
-        "which",
-        "what",
-        "when",
-        "where",
-        "have",
-        "will",
-        "been",
-        "were",
-        "they",
-        "them",
-        "than",
-        "then",
-        "more",
-        "some",
-        "such",
-        "using",
-    }
-
-    overlap = (
-        context_words
-        & result_words
-        - stop_words
-    )
-
-    score += min(
-        len(overlap) * 0.25,
-        3.0,
-    )
-
-    # ========================================================
-    # Academic bonus
-    # ========================================================
-
-    if _is_academic(url):
-        score += 0.5
-
-    # ========================================================
-    # Market/company/source signals
-    # ========================================================
-
-    source_signals = [
-        "market",
-        "funding",
-        "startup",
-        "company",
-        "companies",
-        "software",
-        "competitor",
-        "pricing",
-        "customers",
-        "industry",
-        "research",
-        "report",
-    ]
-
-    for signal in source_signals:
-
-        if signal in searchable:
-            score += 0.2
-
-    return round(
-        min(score, 10.0),
-        2,
-    )
+    return angles
 
 
-# ============================================================
-# Filter results
-# ============================================================
+def collect(idea: str, target_customer: str, problem: str, per_angle: int = 10) -> list[dict]:
+    """Run every angle, drop duplicate URLs *within the same angle*, filter
+    out academic/research-paper sources, and return the combined list ranked
+    by computed relevance score, best first. Each result keeps an "angle"
+    label alongside its "query" for grouping in the UI.
 
-def _filter_results(
-    results: List[Dict[str, Any]],
-    idea: str,
-    target_customer: str = "",
-    problem: str = "",
-    industry: str = "",
-    location: str = "",
-) -> List[Dict[str, Any]]:
-
-    filtered: List[Dict[str, Any]] = []
-
-    seen_urls = set()
-
-    for raw_result in results:
-
-        result = _normalize_result(raw_result)
-
-        if not result:
-            continue
-
-        url = result["url"]
-
-        normalized_url = url.rstrip(
-            "/"
-        ).lower()
-
-        if normalized_url in seen_urls:
-            continue
-
-        seen_urls.add(normalized_url)
-
-        # Block generic domains.
-        if _is_generic_domain(url):
-            logger.debug(
-                "Skipping generic domain: %s",
-                url,
-            )
-            continue
-
-        # Block generic dictionary/tutorial results.
-        if _is_generic_title(
-            result.get("title", "")
-        ):
-            logger.debug(
-                "Skipping generic title: %s",
-                result.get("title", ""),
-            )
-            continue
-
-        score = _relevance_score(
-            result,
-            idea=idea,
-            target_customer=target_customer,
-            problem=problem,
-            industry=industry,
-            location=location,
-        )
-
-        result["relevance_score"] = score
-
-        filtered.append(result)
-
-    # Highest relevance first.
-    filtered.sort(
-        key=lambda item: (
-            item.get("relevance_score", 0.0),
-            len(item.get("snippet", "")),
-        ),
-        reverse=True,
-    )
-
-    return filtered
-
-
-# ============================================================
-# Main collect function
-# ============================================================
-
-def collect(
-    idea: str,
-    target_customer: str = "",
-    problem: str = "",
-    industry: str = "",
-    location: str = "",
-    max_results: int = DEFAULT_MAX_RESULTS,
-) -> List[Dict[str, Any]]:
+    Dedup is scoped per angle (not globally across all angles): a genuinely
+    relevant source can legitimately answer more than one research
+    question - e.g. a "best meal planning apps" roundup is evidence for both
+    "Competitors" and "How others solve this". Collapsing it down to a
+    single angle (the old behavior) silently emptied out whichever angle
+    lost the tie-break, showing "no reliable sources" for a group that
+    actually had matching evidence - confirmed live: a real result existed
+    but only under a different tab than the one it was evidence for.
     """
-    Collect market/competitor sources for a startup idea.
-    """
+    angles = build_search_angles(idea, target_customer, problem)
 
-    logger.info(
-        "Retrieval subject: %s",
-        _compact_subject(
-            idea,
-            industry=industry,
-        ),
-    )
-
-    queries = build_search_angles(
-        idea=idea,
-        target_customer=target_customer,
-        problem=problem,
-        industry=industry,
-        location=location,
-    )
-
-    logger.info(
-        "Search angles generated: %d",
-        len(queries),
-    )
-
-    all_results: List[Dict[str, Any]] = []
-
-    # Search each angle.
-    for query in queries:
-
-        logger.info(
-            '[web_search] query="%s"',
-            query,
-        )
-
-        results = _search(
-            query,
-            max_results=DEFAULT_SEARCH_RESULTS_PER_QUERY,
-        )
-
-        logger.info(
-            '[web_search] query="%s" raw_results=%d',
-            query,
-            len(results),
-        )
-
-        all_results.extend(results)
-
-        # Avoid excessive web requests.
-        if len(all_results) >= max_results * 8:
+    best_by_angle_url: dict[tuple[str, str], dict] = {}
+    for label, queries in angles:
+        for query in queries:
+            hits = [item for item in fetch_results(query, max_results=per_angle) if not _is_academic(item["url"])]
+            if not hits:
+                # Try the next, shorter/more generic candidate query for
+                # this angle instead of giving up - see build_search_angles.
+                continue
+            for item in hits:
+                item["angle"] = label
+                key = (label, item["url"])
+                existing = best_by_angle_url.get(key)
+                if existing is None or item["score"] > existing["score"]:
+                    best_by_angle_url[key] = item
             break
 
-    filtered = _filter_results(
-        all_results,
-        idea=idea,
-        target_customer=target_customer,
-        problem=problem,
-        industry=industry,
-        location=location,
-    )
-
-    # Keep requested number.
-    final_results = filtered[:max_results]
-
-    logger.info(
-        "Retrieval finished: %d unique sources",
-        len(final_results),
-    )
-
-    for index, result in enumerate(
-        final_results,
-        start=1,
-    ):
-
-        logger.info(
-            "[web_search] RESULT #%d title=%s url=%s score=%s",
-            index,
-            result.get("title", ""),
-            result.get("url", ""),
-            result.get("relevance_score", 0.0),
-        )
-
-    return final_results
+    return sorted(best_by_angle_url.values(), key=lambda r: r["score"], reverse=True)
 
 
-# ============================================================
-# Scoped retrieval
-# ============================================================
+def collect_scoped(query: str, max_results: int = 5) -> list[dict]:
+    """Run one bounded follow-up query for chat instead of all research angles."""
+    query = " ".join(query.split()).strip()
+    if not query:
+        return []
 
-def collect_scoped(
-    idea: str,
-    target_customer: str = "",
-    problem: str = "",
-    industry: str = "",
-    location: str = "",
-    max_results: int = DEFAULT_MAX_RESULTS,
-    scope: str = "",
-) -> List[Dict[str, Any]]:
-    """
-    Scoped retrieval.
-
-    scope examples:
-        market
-        competitor
-        customer
-        trend
-    """
-
-    base_queries = build_search_angles(
-        idea=idea,
-        target_customer=target_customer,
-        problem=problem,
-        industry=industry,
-        location=location,
-    )
-
-    scope_lower = _clean_text(scope).lower()
-
-    scoped_queries: List[str] = []
-
-    for query in base_queries:
-
-        if scope_lower == "market":
-
-            if any(
-                token in query.lower()
-                for token in [
-                    "market",
-                    "industry",
-                    "trend",
-                    "saas",
-                ]
-            ):
-                scoped_queries.append(query)
-
-        elif scope_lower == "competitor":
-
-            if any(
-                token in query.lower()
-                for token in [
-                    "competitor",
-                    "companies",
-                    "software",
-                    "startup",
-                ]
-            ):
-                scoped_queries.append(query)
-
-        elif scope_lower == "customer":
-
-            if any(
-                token in query.lower()
-                for token in [
-                    "customer",
-                    "smb",
-                    "business",
-                ]
-            ):
-                scoped_queries.append(query)
-
-        elif scope_lower == "trend":
-
-            if any(
-                token in query.lower()
-                for token in [
-                    "trend",
-                    "market",
-                    "industry",
-                ]
-            ):
-                scoped_queries.append(query)
-
-        else:
-            scoped_queries.append(query)
-
-    scoped_queries = _dedupe_queries(
-        scoped_queries
-    )
-
-    results: List[Dict[str, Any]] = []
-
-    for query in scoped_queries:
-
-        results.extend(
-            _search(
-                query,
-                max_results=DEFAULT_SEARCH_RESULTS_PER_QUERY,
-            )
-        )
-
-        if len(results) >= max_results * 6:
-            break
-
-    filtered = _filter_results(
-        results,
-        idea=idea,
-        target_customer=target_customer,
-        problem=problem,
-        industry=industry,
-        location=location,
-    )
-
-    return filtered[:max_results]
-
-
-# ============================================================
-# Compact sources
-# ============================================================
-
-def compact_sources(
-    results: List[Dict[str, Any]],
-    max_chars: int = 12000,
-) -> str:
-    """
-    Convert retrieval results into compact text for LLM prompts.
-    """
-
-    chunks: List[str] = []
-
-    total_chars = 0
-
-    for index, result in enumerate(
-        results,
-        start=1,
-    ):
-
-        title = _clean_text(
-            result.get("title", "")
-        )
-
-        url = _clean_text(
-            result.get("url", "")
-        )
-
-        snippet = _clean_text(
-            result.get("snippet", "")
-        )
-
-        score = result.get(
-            "relevance_score",
-            0.0,
-        )
-
-        chunk = (
-            f"Source {index}\n"
-            f"Title: {title}\n"
-            f"URL: {url}\n"
-            f"Relevance: {score}\n"
-            f"Summary: {snippet}"
-        )
-
-        if total_chars + len(chunk) > max_chars:
-            break
-
-        chunks.append(chunk)
-
-        total_chars += len(chunk)
-
-    return "\n\n".join(chunks)
-
-
-# ============================================================
-# Debug helper
-# ============================================================
-
-def debug_search_angles(
-    idea: str,
-    target_customer: str = "",
-    problem: str = "",
-    industry: str = "",
-    location: str = "",
-) -> List[str]:
-    """
-    Return generated search queries for debugging.
-    """
-
-    queries = build_search_angles(
-        idea=idea,
-        target_customer=target_customer,
-        problem=problem,
-        industry=industry,
-        location=location,
-    )
-
-    for index, query in enumerate(
-        queries,
-        start=1,
-    ):
-        logger.info(
-            "SEARCH ANGLE #%d: %s",
-            index,
-            query,
-        )
-
-    return queries
+    best_by_url = {}
+    for raw_item in fetch_results(query, max_results=max_results):
+        item = dict(raw_item)
+        url = item.get("url", "")
+        if not url or _is_academic(url):
+            continue
+        item["angle"] = "Follow-up research"
+        item["query"] = query
+        existing = best_by_url.get(url)
+        if existing is None or item.get("score", 0) > existing.get("score", 0):
+            best_by_url[url] = item
+    return sorted(best_by_url.values(), key=lambda result: result.get("score", 0), reverse=True)
