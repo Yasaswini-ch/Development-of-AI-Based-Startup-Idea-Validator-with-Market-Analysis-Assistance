@@ -455,6 +455,7 @@ def _create_validation_session(payload: ValidateRequest, response: dict, user_id
             # produced real assumptions/revenueModels data.
             "assumptions": response.get("assumptions"),
             "revenueModels": response.get("revenueModels"),
+            "verdict": response.get("verdict"),
         },
         user_id=user_id,
     )
@@ -634,6 +635,7 @@ def _run_pipeline_and_build_response(payload: ValidateRequest, cache_key: str, a
         # Novel features
         "assumptions": state.get("assumptions"),
         "revenueModels": state.get("revenueModels"),
+        "verdict": state.get("verdict"),
         "errors": state.get("errors", {}),
         "mode": state.get("mode", "deep"),
     }
