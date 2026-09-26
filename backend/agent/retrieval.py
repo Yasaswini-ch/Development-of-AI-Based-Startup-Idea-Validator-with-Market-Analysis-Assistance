@@ -1434,9 +1434,30 @@ def fetch_results(
         max_results=max_results,
     )
 
-    filtered = _filter_results(
-        raw_results,
-        idea=query,
-    )
+    deduped: List[Dict[str, Any]] = []
+    seen_urls = set()
 
-    return filtered[:max_results]
+    for raw_result in raw_results:
+        normalized = _normalize_result(raw_result)
+        if not normalized:
+            continue
+
+        url = normalized["url"].rstrip("/").lower()
+        if url in seen_urls:
+            continue
+
+        if _is_generic_domain(normalized["url"]):
+            continue
+
+        if _is_generic_title(normalized.get("title", "")):
+            continue
+
+        seen_urls.add(url)
+        normalized["relevance_score"] = (
+            raw_result.get("relevance_score", 0.0)
+            if isinstance(raw_result, dict)
+            else 0.0
+        )
+        deduped.append(normalized)
+
+    return deduped[:max_results]
