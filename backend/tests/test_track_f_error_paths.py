@@ -142,14 +142,15 @@ class InvalidInputTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 422)
 
     def test_excessively_long_idea_is_rejected(self):
-        resp = self.client.post("/validate", json={"idea": "x" * 501})
+        resp = self.client.post("/validate", json={"idea": "x" * 2501})
         self.assertEqual(resp.status_code, 422)
 
-    def test_idea_at_the_length_boundary_is_accepted_by_validation(self):
-        # Shape-only check: confirms the 500-char idea itself clears
+    @patch("main.pipeline.invoke", return_value={"summary": "ok", "results": [], "errors": {}})
+    def test_idea_at_the_length_boundary_is_accepted_by_validation(self, _invoke):
+        # Shape-only check: confirms the 2500-char idea itself clears
         # Pydantic validation (a 422 here would mean the boundary is off by
         # one) - not a full pipeline run, so any other status is fine too.
-        resp = self.client.post("/validate", json={"idea": "x" * 500})
+        resp = self.client.post("/validate", json={"idea": "x" * 2500})
         self.assertNotEqual(resp.status_code, 422)
 
 

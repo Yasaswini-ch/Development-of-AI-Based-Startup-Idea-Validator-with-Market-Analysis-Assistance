@@ -441,6 +441,8 @@ class MilestoneThreeTests(unittest.TestCase):
         self.assertIn("sessionId", response)
         self.assertEqual(response["gtm"]["positioning"], "Position")
 
+    @patch("agent.graph.analyze_revenue_models")
+    @patch("agent.graph.analyze_assumptions")
     @patch("agent.graph.analyze_gtm")
     @patch("agent.graph.analyze_mvp")
     @patch("agent.graph.analyze_swot")
@@ -455,7 +457,11 @@ class MilestoneThreeTests(unittest.TestCase):
         swot,
         mvp,
         gtm,
+        assumptions,
+        revenue,
     ):
+        revenue.return_value = {"models": []}
+        assumptions.return_value = {"assumptions": []}
         collect.return_value = [
             {
                 "title": "Demand grows",
