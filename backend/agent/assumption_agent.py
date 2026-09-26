@@ -10,6 +10,7 @@ import logging
 
 from crewai import Agent, Crew, Process, Task
 
+from .deterministic_fallback import deterministic_assumptions
 from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback
 from .prompts.loader import load_prompt
 from .structured_output import (
@@ -43,11 +44,29 @@ def _valid_assumption(item) -> bool:
     )
 
 
-def _valid_shape(value: dict) -> bool:
+def _normalize_assumption(item):
+    """Models often capitalise enum values ("High", "Demand"); lower-case
+    them so one cosmetic slip doesn't reject an otherwise valid answer."""
+    if not isinstance(item, dict):
+        return item
+    normalized = dict(item)
+    for field in ("category", "uncertainty"):
+        if isinstance(normalized.get(field), str):
+            normalized[field] = normalized[field].strip().lower()
+    return normalized
+
+
+def _usable_assumptions(value: dict) -> list:
     assumptions = value.get("assumptions")
-    if not isinstance(assumptions, list) or not assumptions:
-        return False
-    return all(_valid_assumption(item) for item in assumptions)
+    if not isinstance(assumptions, list):
+        return []
+    return [item for item in map(_normalize_assumption, assumptions) if _valid_assumption(item)]
+
+
+def _valid_shape(value: dict) -> bool:
+    # Accept the answer when at least one assumption is valid; the invalid
+    # ones are dropped below instead of discarding the whole response.
+    return bool(_usable_assumptions(value))
 
 
 def _build_crew(
@@ -116,14 +135,14 @@ def analyze_assumptions(
                 "timeToValidate": (item.get("timeToValidate") or "").strip() or None,
                 "sourceIds": sanitize_source_ids(item.get("sourceIds"), valid_ids),
             }
-            for item in data["assumptions"][:_MAX_ASSUMPTIONS]
+            for item in _usable_assumptions(data)[:_MAX_ASSUMPTIONS]
         ]
         return data
     except Exception as exc:
         if not allow_local:
             raise NeedsDeepAnalysisError(str(exc)) from exc
         logger.warning(
-            "Assumption agent: LLM unavailable, returning empty assumptions",
+            "Assumption agent: LLM unavailable, using deterministic assumptions",
             exc_info=True,
         )
-        return {"assumptions": [], "degraded": True}
+        return deterministic_assumptions(idea, target_customer, problem, swot, market_opportunity, mvp)
