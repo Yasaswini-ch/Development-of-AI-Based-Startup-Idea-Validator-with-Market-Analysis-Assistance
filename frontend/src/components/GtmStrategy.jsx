@@ -1,6 +1,7 @@
 import { IconAlertTriangle, IconGlobe, IconTrendingUp, IconUsers } from './icons'
 import DegradedBanner from './DegradedBanner'
 import Citation from './Citation'
+import GtmCommercialModel from './GtmCommercialModel'
 
 // Derives a 3-phase launch timeline from the existing GTM fields the backend
 // already returns (positioning, channels, earlyCustomerApproach) — no new
@@ -190,6 +191,8 @@ export default function GtmStrategy({ data, error, sourceMap }) {
           )
         })}
       </div>
+
+      <GtmCommercialModel data={data.commercialModel} />
     </div>
   )
 }

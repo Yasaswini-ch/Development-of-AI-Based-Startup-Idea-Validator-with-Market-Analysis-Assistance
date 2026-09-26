@@ -1,6 +1,7 @@
 import { IconAlertTriangle, IconLightbulb } from './icons'
 import DegradedBanner from './DegradedBanner'
 import Citation from './Citation'
+import MvpDeliveryRoadmap from './MvpDeliveryRoadmap'
 
 const LEVEL_STYLES = {
   low:     'border-border-strong bg-panel text-muted-strong',
@@ -181,6 +182,8 @@ export default function MvpRecommendations({ data, error, sourceMap }) {
           ))}
         </div>
       )}
+
+      <MvpDeliveryRoadmap data={data.deliveryRoadmap} />
     </div>
   )
 }
