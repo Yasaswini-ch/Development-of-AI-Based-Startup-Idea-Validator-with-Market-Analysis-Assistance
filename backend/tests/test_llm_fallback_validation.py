@@ -53,6 +53,11 @@ class ShapeValidationFallbackTests(unittest.TestCase):
     """The 4-model chain here mirrors the real one: primary + the 3
     FALLBACK_MODELS (currently gpt-oss-20b, gpt-oss-120b, gemini)."""
 
+    def setUp(self):
+        patcher = patch("agent.llm._CLOUD_RETRY_COOLDOWN_SECONDS", 0)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_advances_past_a_network_successful_but_malformed_response(self):
         # Primary rate-limited, fallback 1 responds but with a bad shape,
         # fallback 2 is good - the chain must reach fallback 2, not stop at
@@ -100,10 +105,13 @@ class ShapeValidationFallbackTests(unittest.TestCase):
         with self.assertRaises(NeedsDeepAnalysisError):
             kickoff_with_fallback(build_crew, validate=_valid_shape)
 
-        # Primary + all 3 configured fallbacks, not just the first one that
-        # happened to respond with a bad shape.
-        self.assertEqual(len(calls), 1 + len(FALLBACK_MODELS))
-        self.assertEqual(len(set(calls)), 1 + len(FALLBACK_MODELS))
+        # Primary + every configured fallback, not just the first one that
+        # happened to respond with a bad shape - then one more full pass
+        # after the cooldown (kickoff_with_fallback's cloud retry).
+        chain_length = 1 + len(FALLBACK_MODELS)
+        self.assertEqual(len(calls), 2 * chain_length)
+        self.assertEqual(len(set(calls)), chain_length)
+        self.assertEqual(calls[:chain_length], calls[chain_length:])
 
     def test_falls_back_to_local_model_when_allow_local_and_every_cloud_model_is_malformed(self):
         cloud_calls = []
@@ -114,7 +122,8 @@ class ShapeValidationFallbackTests(unittest.TestCase):
             cloud_calls.append(model)
             return FakeCrew(FakeOutput("BAD"))
 
-        result = kickoff_with_fallback(build_crew, allow_local=True, validate=_valid_shape)
+        with patch("agent.llm.local_llm_available", return_value=True):
+            result = kickoff_with_fallback(build_crew, allow_local=True, validate=_valid_shape)
 
         self.assertEqual(result.raw, "GOOD")
         self.assertEqual(len(cloud_calls), 1 + len(FALLBACK_MODELS))
