@@ -954,6 +954,8 @@ def _collect_claims(state: PipelineState) -> list[dict]:
         value = market.get(tier)
         if isinstance(value, dict) and "sourceIds" in value:
             claims.append(value)
+    if isinstance(market.get("marketSizeSourceIds"), list):
+        claims.append({"text": market.get("marketSize", ""), "sourceIds": market["marketSizeSourceIds"]})
 
     return claims
 
