@@ -271,27 +271,30 @@ def confidence_node(
         bucket["percentage"] = percentage
         bucket["label"] = f"{agreeing}/{total} sources agree"
 
+    total_sources = sum(
+        item["totalSources"]
+        for item in per_angle.values()
+    )
+    agreeing_sources = sum(
+        item["agreeingSources"]
+        for item in per_angle.values()
+    )
+
     confidence = {
-        "agreeingSources": sum(
-            item["agreeingSources"]
-            for item in per_angle.values()
-        ),
-        "sourceCount": len(results),
-        "totalSources": len(results),
+        "agreeingSources": agreeing_sources,
+        "sourceCount": total_sources,
+        "totalSources": total_sources,
         "sourceCoverage": (
-            100 if results else 0
+            100 if total_sources else 0
         ),
         "percentage": round(
             (
-                sum(
-                    item["agreeingSources"]
-                    for item in per_angle.values()
-                )
-                / len(results)
+                agreeing_sources
+                / total_sources
             )
             * 100
         )
-        if results
+        if total_sources
         else 0,
         "perAngle": per_angle,
     }
