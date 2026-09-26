@@ -1,4 +1,5 @@
 import { IconAlertTriangle, IconTrendingUp } from './icons'
+import StrategicWedgeSection from './StrategicWedgeCard'
 
 const _GENERIC_EVIDENCE = 'Grounded in the retrieved market sources.'
 
@@ -94,6 +95,8 @@ export default function WhiteSpaceAnalysis({ data }) {
           )
         })}
       </div>
+
+      <StrategicWedgeSection blueprints={data.blueprints} />
     </div>
   )
 }
