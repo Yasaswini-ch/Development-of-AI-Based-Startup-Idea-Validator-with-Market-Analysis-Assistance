@@ -244,11 +244,56 @@ def confidence_node(
         [],
     )
 
+    per_angle = {}
+
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+
+        angle = result.get("angle") or "General"
+        bucket = per_angle.setdefault(
+            angle,
+            {
+                "agreeingSources": 0,
+                "totalSources": 0,
+            },
+        )
+        bucket["totalSources"] += 1
+
+        score = result.get("score", 0)
+        if isinstance(score, (int, float)) and score >= 0.5:
+            bucket["agreeingSources"] += 1
+
+    for bucket in per_angle.values():
+        total = bucket["totalSources"]
+        agreeing = bucket["agreeingSources"]
+        percentage = round((agreeing / total) * 100) if total else 0
+        bucket["percentage"] = percentage
+        bucket["label"] = f"{agreeing}/{total} sources agree"
+
     confidence = {
+        "agreeingSources": sum(
+            item["agreeingSources"]
+            for item in per_angle.values()
+        ),
         "sourceCount": len(results),
+        "totalSources": len(results),
         "sourceCoverage": (
             100 if results else 0
         ),
+        "percentage": round(
+            (
+                sum(
+                    item["agreeingSources"]
+                    for item in per_angle.values()
+                )
+                / len(results)
+            )
+            * 100
+        )
+        if results
+        else 0,
+        "perAngle": per_angle,
     }
 
     logger.info(

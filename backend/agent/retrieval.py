@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
@@ -153,7 +153,7 @@ def _compact_subject(
     so max_words must remain supported.
     """
 
-    text = _clean_text(idea).lower()
+    text = _remove_leading_generic(idea).lower()
     industry_text = _clean_text(industry).lower()
 
     mappings = [
@@ -371,7 +371,7 @@ def build_search_angles(
     problem: str = "",
     industry: str = "",
     location: str = "",
-) -> List[str]:
+) -> List[Tuple[str, List[str]]]:
     """
     Build multiple search queries around the startup idea.
 
@@ -521,7 +521,14 @@ def build_search_angles(
         ]
     )
 
-    return _dedupe_queries(queries)
+    normalized_queries = [
+        _clean_text(query).replace('"', "")
+        for query in queries
+    ]
+
+    return [
+        ("Market size & trends", _dedupe_queries(normalized_queries)),
+    ]
 
 
 # ============================================================
@@ -1075,7 +1082,7 @@ def collect(
         ),
     )
 
-    queries = build_search_angles(
+    search_angles = build_search_angles(
         idea=idea,
         target_customer=target_customer,
         problem=problem,
@@ -1083,35 +1090,53 @@ def collect(
         location=location,
     )
 
+    query_count = sum(
+        len(angle_queries)
+        for _, angle_queries in search_angles
+    )
+
     logger.info(
         "Search angles generated: %d",
-        len(queries),
+        query_count,
     )
 
     all_results: List[Dict[str, Any]] = []
 
     # Search each angle.
-    for query in queries:
+    for angle, queries in search_angles:
 
-        logger.info(
-            '[web_search] query="%s"',
-            query,
-        )
+        for query in queries:
 
-        results = _search(
-            query,
-            max_results=DEFAULT_SEARCH_RESULTS_PER_QUERY,
-        )
+            logger.info(
+                '[web_search] query="%s"',
+                query,
+            )
 
-        logger.info(
-            '[web_search] query="%s" raw_results=%d',
-            query,
-            len(results),
-        )
+            results = _search(
+                query,
+                max_results=DEFAULT_SEARCH_RESULTS_PER_QUERY,
+            )
 
-        all_results.extend(results)
+            logger.info(
+                '[web_search] query="%s" raw_results=%d',
+                query,
+                len(results),
+            )
 
-        # Avoid excessive web requests.
+            for result in results:
+                if isinstance(result, dict):
+                    all_results.append(
+                        {
+                            **result,
+                            "angle": result.get("angle") or angle,
+                        }
+                    )
+                else:
+                    all_results.append(result)
+
+            # Avoid excessive web requests.
+            if len(all_results) >= max_results * 8:
+                break
         if len(all_results) >= max_results * 8:
             break
 
@@ -1171,7 +1196,36 @@ def collect_scoped(
         trend
     """
 
-    base_queries = build_search_angles(
+    query_text = _clean_text(idea)
+
+    if (
+        query_text
+        and not _clean_text(target_customer)
+        and not _clean_text(problem)
+        and not _clean_text(industry)
+        and not _clean_text(location)
+        and not _clean_text(scope)
+    ):
+        scoped_results = fetch_results(
+            query_text,
+            max_results=max_results,
+        )
+        deduped: List[Dict[str, Any]] = []
+        seen = set()
+        for result in scoped_results:
+            url = _clean_text(result.get("url", "")).rstrip("/").lower()
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            deduped.append(
+                {
+                    **result,
+                    "angle": result.get("angle") or "Follow-up research",
+                }
+            )
+        return deduped[:max_results]
+
+    base_angles = build_search_angles(
         idea=idea,
         target_customer=target_customer,
         problem=problem,
@@ -1183,60 +1237,62 @@ def collect_scoped(
 
     scoped_queries: List[str] = []
 
-    for query in base_queries:
+    for _, angle_queries in base_angles:
 
-        if scope_lower == "market":
+        for query in angle_queries:
 
-            if any(
-                token in query.lower()
-                for token in [
-                    "market",
-                    "industry",
-                    "trend",
-                    "saas",
-                ]
-            ):
+            if scope_lower == "market":
+
+                if any(
+                    token in query.lower()
+                    for token in [
+                        "market",
+                        "industry",
+                        "trend",
+                        "saas",
+                    ]
+                ):
+                    scoped_queries.append(query)
+
+            elif scope_lower == "competitor":
+
+                if any(
+                    token in query.lower()
+                    for token in [
+                        "competitor",
+                        "companies",
+                        "software",
+                        "startup",
+                    ]
+                ):
+                    scoped_queries.append(query)
+
+            elif scope_lower == "customer":
+
+                if any(
+                    token in query.lower()
+                    for token in [
+                        "customer",
+                        "smb",
+                        "business",
+                    ]
+                ):
+                    scoped_queries.append(query)
+
+            elif scope_lower == "trend":
+
+                if any(
+                    token in query.lower()
+                    for token in [
+                        "trend",
+                        "market",
+                        "industry",
+                    ]
+                ):
+                    scoped_queries.append(query)
+
+            else:
                 scoped_queries.append(query)
-
-        elif scope_lower == "competitor":
-
-            if any(
-                token in query.lower()
-                for token in [
-                    "competitor",
-                    "companies",
-                    "software",
-                    "startup",
-                ]
-            ):
-                scoped_queries.append(query)
-
-        elif scope_lower == "customer":
-
-            if any(
-                token in query.lower()
-                for token in [
-                    "customer",
-                    "smb",
-                    "business",
-                ]
-            ):
-                scoped_queries.append(query)
-
-        elif scope_lower == "trend":
-
-            if any(
-                token in query.lower()
-                for token in [
-                    "trend",
-                    "market",
-                    "industry",
-                ]
-            ):
-                scoped_queries.append(query)
-
-        else:
-            scoped_queries.append(query)
 
     scoped_queries = _dedupe_queries(
         scoped_queries
@@ -1339,7 +1395,7 @@ def debug_search_angles(
     Return generated search queries for debugging.
     """
 
-    queries = build_search_angles(
+    search_angles = build_search_angles(
         idea=idea,
         target_customer=target_customer,
         problem=problem,
@@ -1347,8 +1403,13 @@ def debug_search_angles(
         location=location,
     )
 
+    flat_queries: List[str] = []
+
+    for _, queries in search_angles:
+        flat_queries.extend(queries)
+
     for index, query in enumerate(
-        queries,
+        flat_queries,
         start=1,
     ):
         logger.info(
@@ -1357,4 +1418,25 @@ def debug_search_angles(
             query,
         )
 
-    return queries
+    return flat_queries
+
+
+def fetch_results(
+    query: str,
+    max_results: int = DEFAULT_MAX_RESULTS,
+) -> List[Dict[str, Any]]:
+    """
+    Fetch and normalize results for a direct query.
+    """
+
+    raw_results = _search(
+        query,
+        max_results=DEFAULT_SEARCH_RESULTS_PER_QUERY,
+    )
+
+    filtered = _filter_results(
+        raw_results,
+        idea=query,
+    )
+
+    return filtered[:max_results]
