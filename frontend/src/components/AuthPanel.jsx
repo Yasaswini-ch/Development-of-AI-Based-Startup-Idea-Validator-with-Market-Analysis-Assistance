@@ -10,62 +10,77 @@ const BENEFITS = [
   { Icon: IconColumns, text: 'Compare past ideas side by side from any device.' },
 ]
 
+// Render's free-tier backend spins down after idling and can take 30-60s to
+// wake on the first request. Without this, the submit button just sits on
+// "One moment..." with no feedback, which reads as broken/stuck.
+const SLOW_REQUEST_NOTICE_MS = 6000
+
 export default function AuthPanel({ apiUrl, onAuthenticated, onBack }) {
   const [mode, setMode] = useState('login') // 'login' | 'signup'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isWaking, setIsWaking] = useState(false)
   const [error, setError] = useState('')
+
+  async function withSubmitting(request) {
+    setError('')
+    setIsSubmitting(true)
+    const wakeTimer = setTimeout(() => setIsWaking(true), SLOW_REQUEST_NOTICE_MS)
+    try {
+      await request()
+    } finally {
+      clearTimeout(wakeTimer)
+      setIsSubmitting(false)
+      setIsWaking(false)
+    }
+  }
 
   async function handleSubmit(event) {
     event.preventDefault()
-    setError('')
 
     if (mode === 'signup' && password.length < MIN_PASSWORD_LENGTH) {
       setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`)
       return
     }
 
-    setIsSubmitting(true)
-    try {
-      const res = await fetch(`${apiUrl}/auth/${mode}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        setError(data.error || 'Something went wrong. Please try again.')
-        return
+    await withSubmitting(async () => {
+      try {
+        const res = await fetch(`${apiUrl}/auth/${mode}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        })
+        const data = await res.json()
+        if (!res.ok) {
+          setError(data.error || 'Something went wrong. Please try again.')
+          return
+        }
+        onAuthenticated(data)
+      } catch {
+        setError('Could not reach the server. Please try again.')
       }
-      onAuthenticated(data)
-    } catch {
-      setError('Could not reach the server. Please try again.')
-    } finally {
-      setIsSubmitting(false)
-    }
+    })
   }
 
   async function handleGoogleCredential(idToken) {
-    setError('')
-    setIsSubmitting(true)
-    try {
-      const res = await fetch(`${apiUrl}/auth/google`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        setError(data.error || 'Google sign-in failed. Please try again.')
-        return
+    await withSubmitting(async () => {
+      try {
+        const res = await fetch(`${apiUrl}/auth/google`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken }),
+        })
+        const data = await res.json()
+        if (!res.ok) {
+          setError(data.error || 'Google sign-in failed. Please try again.')
+          return
+        }
+        onAuthenticated(data)
+      } catch {
+        setError('Could not reach the server. Please try again.')
       }
-      onAuthenticated(data)
-    } catch {
-      setError('Could not reach the server. Please try again.')
-    } finally {
-      setIsSubmitting(false)
-    }
+    })
   }
 
   return (
@@ -140,6 +155,12 @@ export default function AuthPanel({ apiUrl, onAuthenticated, onBack }) {
               <IconAlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>{error}</span>
             </div>
+          )}
+
+          {isWaking && (
+            <p className="text-center font-mono text-[11px] uppercase tracking-wide text-muted">
+              Waking up the server, this can take up to a minute…
+            </p>
           )}
 
           <button
