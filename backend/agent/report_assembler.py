@@ -50,7 +50,7 @@ def assemble_report(session_id: str, context: dict) -> dict:
     targetCustomer, problem, summary, sources, confidence,
     marketOpportunity, competitors, whiteSpace, swot, mvp, gtm,
     marketViability, contradictions, experiments, actionPlan,
-    assumptions, revenueModels).
+    assumptions, revenueModels, verdict).
     """
     market_opportunity = context.get("marketOpportunity") or {}
 
@@ -77,6 +77,7 @@ def assemble_report(session_id: str, context: dict) -> dict:
         "actionPlan": context.get("actionPlan"),
         "assumptions": context.get("assumptions"),
         "revenueModels": context.get("revenueModels"),
+        "verdict": context.get("verdict"),
         "sources": context.get("sources") or [],
         "sectionErrors": _section_errors(context),
         "degradedSections": _degraded_sections(context),
@@ -105,4 +106,5 @@ def report_to_pdf_input(report: dict) -> dict:
         "swot": report.get("swot"),
         "mvp": report.get("mvp"),
         "gtm": report.get("gtm"),
+        "verdict": report.get("verdict"),
     }

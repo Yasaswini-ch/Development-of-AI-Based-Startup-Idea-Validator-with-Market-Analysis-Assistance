@@ -19,6 +19,7 @@ from .revenue_agent import analyze_revenue_models
 from .opportunity_score import calculate_opportunity_score
 from .structured_output import compact_sources
 from .swot_agent import analyze_swot
+from .verdict import build_verdict
 from .viability_score import calculate_market_viability
 from .white_space import analyze_white_space
 
@@ -154,6 +155,9 @@ class PipelineState(TypedDict, total=False):
     # Novel features: assumption tracker + revenue model suggester
     assumptions: dict
     revenueModels: dict
+
+    # Go / no-go verdict (recombines the scores above, no LLM call)
+    verdict: dict
 
     # Errors
     error: Annotated[str | None, _merge_error]
@@ -419,11 +423,15 @@ def competitor_discovery_node(state: PipelineState) -> PipelineState:
     results = state.get("results", [])
 
     try:
+        # Quick mode keeps competitor discovery LLM-free (NER only); deep
+        # mode adds one bounded profiling call on top of it.
         competitors = analyze_competitors(
             idea,
             target_customer,
             problem,
             results,
+            profile=state.get("mode") != "quick",
+            allow_local=state.get("allowLocalLlm", False),
         )
 
         logger.info("[competitor_discovery] COMPLETE")
@@ -1059,6 +1067,27 @@ def confidence_dashboard_node(state: PipelineState) -> PipelineState:
     return {**state, "confidence": confidence}
 
 
+def verdict_node(state: PipelineState) -> PipelineState:
+    """Final go / no-go verdict (see verdict.py). Runs last so it can read
+    viability, SWOT risks, assumptions and the confidence dashboard. Runs
+    in quick mode too, falling back to the Opportunity Score, since a
+    headline answer is still useful without the strategy nodes."""
+    if state.get("error"):
+        return state
+    try:
+        value = build_verdict(
+            state.get("marketOpportunity"),
+            market_viability=state.get("marketViability"),
+            swot=state.get("swot"),
+            assumptions=state.get("assumptions"),
+            confidence=state.get("confidence"),
+        )
+    except Exception:
+        logger.exception("[verdict] FAILED")
+        return state
+    return {**state, "verdict": value}
+
+
 # --------------------------------------------------
 # NOVEL FEATURE: ASSUMPTION TRACKER
 # --------------------------------------------------
@@ -1241,6 +1270,7 @@ def build_pipeline():
     # agreement, direct-evidence ratio) - runs last so it can see every
     # strategy agent's sourceIds-bearing claims.
     graph.add_node("confidence_dashboard", _timed("confidence_dashboard", confidence_dashboard_node))
+    graph.add_node("compute_verdict", _timed("verdict", verdict_node))
 
     # --------------------------------------------------
     # PIPELINE FLOW
@@ -1310,7 +1340,8 @@ def build_pipeline():
     graph.add_edge("action_plan", "assumption_tracker")
     graph.add_edge("assumption_tracker", "revenue_models")
     graph.add_edge("revenue_models", "confidence_dashboard")
-    graph.add_edge("confidence_dashboard", END)
+    graph.add_edge("confidence_dashboard", "compute_verdict")
+    graph.add_edge("compute_verdict", END)
 
     return graph.compile()
 
