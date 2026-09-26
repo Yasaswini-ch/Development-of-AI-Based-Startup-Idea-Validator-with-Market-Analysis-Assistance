@@ -13,7 +13,8 @@ import DeepAnalysisPrompt from './components/DeepAnalysisPrompt'
 import AccountMenu from './components/AccountMenu'
 import useCountUp from './hooks/useCountUp'
 import useLoadingSteps from './hooks/useLoadingSteps'
-import { addHistoryEntry } from './lib/history'
+import { addHistoryEntry, clearHistory } from './lib/history'
+import { clearCompareList } from './lib/compareList'
 import { authHeaders, clearAuth, getStoredUser, getToken, setAuth } from './lib/auth'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -176,6 +177,15 @@ export default function App() {
     try {
       sessionStorage.removeItem(STORAGE_KEY)
     } catch {}
+    // lib/history.js and lib/compareList.js are device-local (localStorage),
+    // not per-user - on a shared computer, whatever the previous, possibly
+    // signed-out visitor validated was still sitting there and would show
+    // up in this account's History/Compare screens the moment they signed
+    // in. This account's own validations live server-side (GET
+    // /me/history) once signed in, so the local lists have nothing this
+    // account needs preserved.
+    clearHistory()
+    clearCompareList()
     setView('form')
     // Signing in doesn't remount App, so the mount effect above never
     // reruns for this token - without this, isAdmin (and anything else
@@ -197,6 +207,12 @@ export default function App() {
     try {
       sessionStorage.removeItem(STORAGE_KEY)
     } catch {}
+    // Same reasoning as handleAuthenticated: don't leave this account's
+    // validations sitting in the device-local History/Compare lists for
+    // the next, possibly different, person to sign in (or stay signed out)
+    // on this same browser and see them.
+    clearHistory()
+    clearCompareList()
     setView('landing')
   }
 
@@ -232,11 +248,16 @@ export default function App() {
         setValidation(adaptReportToValidation(report))
         setUpdatedAt(report.generatedAt ? new Date(report.generatedAt) : new Date())
         setView('form')
-        addHistoryEntry({
-          sessionId,
-          idea: report.ideaSummary?.idea,
-          targetCustomer: report.ideaSummary?.targetCustomer,
-        })
+        // Signed-in accounts already get this recorded server-side (see
+        // /reports/{id} + GET /me/history) - only anonymous visits need the
+        // device-local fallback list.
+        if (!authToken) {
+          addHistoryEntry({
+            sessionId,
+            idea: report.ideaSummary?.idea,
+            targetCustomer: report.ideaSummary?.targetCustomer,
+          })
+        }
       } catch {
         // Link expired/invalid, or offline - fall back to the normal empty
         // form silently rather than showing an error for a background
@@ -304,7 +325,14 @@ export default function App() {
 
       setValidation(data)
       setUpdatedAt(new Date())
-      addHistoryEntry({ sessionId: data.sessionId, idea: payload.idea, targetCustomer: payload.targetCustomer })
+      // Signed-in accounts already get this recorded server-side; only
+      // anonymous visits need the device-local fallback list (see
+      // lib/history.js) - writing it either way is what let one signed-in
+      // account's validations leak into the next, possibly different,
+      // person's device-local History screen.
+      if (!authToken) {
+        addHistoryEntry({ sessionId: data.sessionId, idea: payload.idea, targetCustomer: payload.targetCustomer })
+      }
     } catch {
       setErrorMessage('Could not reach the server. Please try again.')
     } finally {
@@ -329,11 +357,13 @@ export default function App() {
           setValidation(result)
           setUpdatedAt(new Date())
           setProcessingMessage('')
-          addHistoryEntry({
-            sessionId: result.sessionId,
-            idea: lastSubmission?.idea,
-            targetCustomer: lastSubmission?.targetCustomer,
-          })
+          if (!authToken) {
+            addHistoryEntry({
+              sessionId: result.sessionId,
+              idea: lastSubmission?.idea,
+              targetCustomer: lastSubmission?.targetCustomer,
+            })
+          }
           return
         }
 
