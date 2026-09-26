@@ -112,6 +112,12 @@ export default function App() {
           clearAuth()
           setAuthToken(null)
           setCurrentUser(null)
+          setValidation(null)
+          setLastSubmission(null)
+          setUpdatedAt(null)
+          try {
+            sessionStorage.removeItem(STORAGE_KEY)
+          } catch {}
         }
       })
       .catch(() => {
@@ -139,6 +145,12 @@ export default function App() {
           clearAuth()
           setAuthToken(null)
           setCurrentUser(null)
+          setValidation(null)
+          setLastSubmission(null)
+          setUpdatedAt(null)
+          try {
+            sessionStorage.removeItem(STORAGE_KEY)
+          } catch {}
         }
       })
       .catch(() => {
@@ -155,6 +167,15 @@ export default function App() {
     setAuth({ token, user })
     setAuthToken(token)
     setCurrentUser(user)
+    setValidation(null)
+    setLastSubmission(null)
+    setUpdatedAt(null)
+    setErrorMessage('')
+    setProcessingMessage('')
+    setDeepAnalysisMessage('')
+    try {
+      sessionStorage.removeItem(STORAGE_KEY)
+    } catch {}
     setView('form')
     // Signing in doesn't remount App, so the mount effect above never
     // reruns for this token - without this, isAdmin (and anything else
@@ -167,6 +188,16 @@ export default function App() {
     clearAuth()
     setAuthToken(null)
     setCurrentUser(null)
+    setValidation(null)
+    setLastSubmission(null)
+    setUpdatedAt(null)
+    setErrorMessage('')
+    setProcessingMessage('')
+    setDeepAnalysisMessage('')
+    try {
+      sessionStorage.removeItem(STORAGE_KEY)
+    } catch {}
+    setView('landing')
   }
 
   useEffect(() => {
