@@ -1,13 +1,34 @@
 # Affinity Technical Documentation Hub & Master Index
 **System Name:** Affinity — AI-Based Startup Idea Validator with Market Analysis Assistance  
-**Documentation Version:** 2.0 · September 2026 (Milestones 1 & 2 Complete)  
+**Documentation Version:** 3.0 · updated 2026-09-26 (Milestones 1–4 and the analytics/access-control follow-ups)  
 **Verification Status:** Verified & Operational  
 
 ---
 
 ## 📑 Master Documentation Index
 
-Welcome to the central documentation hub for **Affinity**. Every document in this directory is kept in sync with active production implementation in the codebase.
+Welcome to the central documentation hub for **Affinity**.
+
+> **Two doc sets, one system.** This folder has a numbered set (`01`–`22`, written as a
+> formal report) and a lowercase set (`architecture.md`, `api-reference.md`, ...) that
+> engineers update alongside code. They overlap. Both were reconciled against the
+> `staging` code on 2026-09-26. **Where they disagree, the lowercase doc and the code
+> win.** Dated logs (`milestone*-plan.md`, `milestone*-status.md`,
+> `milestone*-verification.md`, `track-f-*`, doc 08) record what was true at the time
+> and are intentionally not updated. See
+> [Known Limitations §5](known-limitations-and-future-work.md#5-documentation-two-overlapping-doc-sets-process-lesson).
+>
+> | Numbered doc | Lowercase counterpart (authoritative) |
+> |---|---|
+> | 04 System topology, 12 Diagrams | [`architecture.md`](architecture.md) |
+> | 05 AI/ML engine | [`prompt-engineering-agent-design.md`](prompt-engineering-agent-design.md), [`architecture.md` §2](architecture.md#2-agent-breakdown) |
+> | 06 Data models, 07 REST API | [`api-reference.md`](api-reference.md), [`architecture.md` §4](architecture.md#4-api-contract) |
+> | 09 Deployment runbooks | [`../DEPLOYMENT.md`](../DEPLOYMENT.md), [`ops-runbook-troubleshooting.md`](ops-runbook-troubleshooting.md) |
+> | 10 User manual | [`frontend-spec.md`](frontend-spec.md) (UI), doc 22 (dashboards) |
+> | 13 Unit economics | [`api-cost-accuracy-performance-metrics.md`](api-cost-accuracy-performance-metrics.md) |
+> | 17 Roadmap | [`product-strategy-and-personas.md`](product-strategy-and-personas.md), [`known-limitations-and-future-work.md`](known-limitations-and-future-work.md) |
+> | 19 Persistence & auth | [`security-privacy-ethics.md`](security-privacy-ethics.md), [`../DEPLOYMENT.md`](../DEPLOYMENT.md#database-postgresql-on-render) |
+> | Confidence (mentioned in 03, 05, 10) | [`confidence-and-evidence-scoring-methodology.md`](confidence-and-evidence-scoring-methodology.md) |
 
 ```mermaid
 flowchart TD
@@ -45,23 +66,27 @@ flowchart TD
 | **09** | [`09_AFFINITY_CLOUD_DEPLOYMENT_AND_DEVOPS_RUNBOOKS.md`](09_AFFINITY_CLOUD_DEPLOYMENT_AND_DEVOPS_RUNBOOKS.md) | DevOps Engineers | Render deployment (`render.yaml`), environment variables, 5 incident playbooks. |
 | **10** | [`10_AFFINITY_USER_OPERATIONS_AND_DOSSIER_MANUAL.md`](10_AFFINITY_USER_OPERATIONS_AND_DOSSIER_MANUAL.md) | End Users / Founders | Step-by-step UI walkthrough, pitch phrasing tips, dossier interpretation, troubleshooting. |
 | **11** | [`11_AFFINITY_FINAL_CAPSTONE_PROJECT_THESIS.md`](11_AFFINITY_FINAL_CAPSTONE_PROJECT_THESIS.md) | Viva Committees | Capstone academic report, methodology, novelty, team roles, and 7 mentor Q&As. |
-| **12** | [`12_AFFINITY_VISUAL_ARCHITECTURE_DIAGRAM_GALLERY.md`](12_AFFINITY_VISUAL_ARCHITECTURE_DIAGRAM_GALLERY.md) | Technical Reviewers | Complete gallery of 8 GFM-compliant Mermaid diagrams. |
+| **12** | [`12_AFFINITY_VISUAL_ARCHITECTURE_DIAGRAM_GALLERY.md`](12_AFFINITY_VISUAL_ARCHITECTURE_DIAGRAM_GALLERY.md) | Technical Reviewers | Gallery of 11 GFM-compliant Mermaid diagrams, including accounts/dashboards, the confidence recompute and the LLM fallback chain. |
 | **13** | [`13_AFFINITY_UNIT_ECONOMICS_COST_AND_ACCURACY_METRICS.md`](13_AFFINITY_UNIT_ECONOMICS_COST_AND_ACCURACY_METRICS.md) | Technical Lead | Unit economics ($0.00067 paid / $0.00 free), latency breakdown (~10.2s), token metrics. |
 | **14** | [`14_AFFINITY_COMPETITOR_GRID_AND_POSITIONING_PARSER.md`](14_AFFINITY_COMPETITOR_GRID_AND_POSITIONING_PARSER.md) | AI / Product | spaCy NER entity discovery, product context checks (`_has_product_context`), 3x3 grid algorithm. |
 | **15** | [`15_AFFINITY_OPPORTUNITY_SCORE_MATHEMATICAL_MODEL.md`](15_AFFINITY_OPPORTUNITY_SCORE_MATHEMATICAL_MODEL.md) | Data Engineers | Opportunity Score mathematical derivation ($\text{Score} = \text{Clamp}(50 + S_{\text{mkt}} + S_{\text{growth}} - S_{\text{den}} + S_{\text{gaps}})$, 0-100 bounds). |
 | **16** | [`16_AFFINITY_SEARCH_RETRIEVAL_AND_DOMAIN_FILTER.md`](16_AFFINITY_SEARCH_RETRIEVAL_AND_DOMAIN_FILTER.md) | Backend Engineers | 5-angle query expansion, domain exclusion (`_EXCLUDED_DOMAINS`), zero-cost search fallback chain. |
 | **17** | [`17_AFFINITY_MILESTONE_3_4_TECHNICAL_ROADMAP.md`](17_AFFINITY_MILESTONE_3_4_TECHNICAL_ROADMAP.md) | Product / DevOps | Technical spec for Milestones 3 & 4 (PDF export, comparison matrix, user accounts, webhooks). |
-| **18** | [`18_AFFINITY_ACADEMIC_VIVA_SLIDE_DECK_OUTLINE.md`](18_AFFINITY_ACADEMIC_VIVA_SLIDE_DECK_OUTLINE.md) | Presenters / Evaluators | 15-slide presentation deck outline, speaker notes, and capstone defense Q&A. |
-| **19** | [`19_AFFINITY_MILESTONE_3_POSTGRESQL_AUTH_AND_DATA_PERSISTENCE.md`](19_AFFINITY_MILESTONE_3_POSTGRESQL_AUTH_AND_DATA_PERSISTENCE.md) | Database | Milestone 4's real Postgres/SQLite persistence layer (`agent/db.py`) — sessions, jobs, cache. No auth/users/workspaces exist; corrected from an earlier draft that falsely claimed otherwise. |
-| **20** | [`20_AFFINITY_MILESTONE_3_PDF_DOSSIER_EXPORTER_AND_REPORTS.md`](20_AFFINITY_MILESTONE_3_PDF_DOSSIER_EXPORTER_AND_REPORTS.md) | Backend | The real ReportLab-only PDF exporter (`agent/pdf_exporter.py`) and its two real endpoints. No Playwright, no auth; corrected from an earlier draft that invented both. |
-| **21** | [`21_AFFINITY_MILESTONE_3_DEAL_SCREENING_AND_COMPARISON_MATRIX.md`](21_AFFINITY_MILESTONE_3_DEAL_SCREENING_AND_COMPARISON_MATRIX.md) | Product | Honest status: this feature was never built. Kept as a short design proposal; corrected from an earlier draft that falsely claimed it was implemented and operational. |
+| **18** | [`18_AFFINITY_ACADEMIC_VIVA_SLIDE_DECK_OUTLINE.md`](18_AFFINITY_ACADEMIC_VIVA_SLIDE_DECK_OUTLINE.md) | Presenters / Evaluators | 17-slide presentation deck outline, speaker notes, and capstone defense Q&A. |
+| **19** | [`19_AFFINITY_MILESTONE_3_POSTGRESQL_AUTH_AND_DATA_PERSISTENCE.md`](19_AFFINITY_MILESTONE_3_POSTGRESQL_AUTH_AND_DATA_PERSISTENCE.md) | Database / Security | Postgres/SQLite persistence (`agent/db.py`), optional JWT accounts, the `is_admin` flag and `ADMIN_EMAILS`, retention/TTL, and the free-tier 30-day expiry. No team workspaces. |
+| **20** | [`20_AFFINITY_MILESTONE_3_PDF_DOSSIER_EXPORTER_AND_REPORTS.md`](20_AFFINITY_MILESTONE_3_PDF_DOSSIER_EXPORTER_AND_REPORTS.md) | Backend | The ReportLab-only PDF exporter (`agent/pdf_exporter.py`) and its two endpoints, which take no auth header (session ids act as share links). |
+| **21** | [`21_AFFINITY_MILESTONE_3_DEAL_SCREENING_AND_COMPARISON_MATRIX.md`](21_AFFINITY_MILESTONE_3_DEAL_SCREENING_AND_COMPARISON_MATRIX.md) | Product | Multi-idea comparison: `POST /reports/compare`, the Compare Ideas view, and the Dashboard's Comparison matrix tab. |
+| **22** | [`22_AFFINITY_MILESTONE_5_ANALYTICS_DASHBOARDS_AND_ACCESS_CONTROL.md`](22_AFFINITY_MILESTONE_5_ANALYTICS_DASHBOARDS_AND_ACCESS_CONTROL.md) | Engineers / Examiners | Founder Dashboard (4 tabs), admin Platform Health, `competitionClarity`/`timing` viability axes, the account-menu redesign, and the `events.py` durable log. |
 
 ---
 
 ## 🛠️ Specialized Technical References
 
-In addition to the 21 numbered modules above, the following detailed reference specifications are maintained in this directory:
+In addition to the 22 numbered modules above, the following detailed reference specifications are maintained in this directory:
 
+- [`confidence-and-evidence-scoring-methodology.md`](confidence-and-evidence-scoring-methodology.md) — How the headline confidence % and each evidence tile are computed, and which population each measures.
+- [`known-limitations-and-future-work.md`](known-limitations-and-future-work.md) — Retention TTLs, free-tier Postgres expiry, missing password reset, local-model hardware needs, and the duplicate-doc-set lesson.
+- [`milestone4-verification.md`](milestone4-verification.md) — Dated log of bugs found in live testing in September 2026, with root causes, fixes and regression tests.
 - [`architecture.md`](architecture.md) — Technical system specification & data contracts.
 - [`prompt-engineering-agent-design.md`](prompt-engineering-agent-design.md) — Deep dive into LLM prompt engineering, `reasoning_effort` tuning, and JSON repair.
 - [`security-privacy-ethics.md`](security-privacy-ethics.md) — Information security, cryptographic caching, and AI hallucination safeguards.
@@ -70,4 +95,4 @@ In addition to the 21 numbered modules above, the following detailed reference s
 - [`ops-runbook-troubleshooting.md`](ops-runbook-troubleshooting.md) — Operational incident playbooks and diagnostic commands.
 - [`milestone2-verification.md`](milestone2-verification.md) — Live empirical verification log across 7 distinct startup domains.
 - [`milestone2-status.md`](milestone2-status.md) — Milestone 2 task tracking and timeline.
-- [`milestone1-plan.md`](milestone1-plan.md), [`milestone2-plan.md`](milestone2-plan.md), [`milestone3-plan.md`](milestone3-plan.md), [`milestone4-plan.md`](milestone4-plan.md) — Historical and future milestone engineering plans.
+- [`milestone1-plan.md`](milestone1-plan.md), [`milestone3-plan.md`](milestone3-plan.md) — Historical milestone engineering plans (point-in-time, not updated).
