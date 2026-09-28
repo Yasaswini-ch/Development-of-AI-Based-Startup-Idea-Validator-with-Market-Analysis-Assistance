@@ -100,7 +100,13 @@ See [confidence-and-evidence-scoring-methodology.md](confidence-and-evidence-sco
 A relevant source can still be wrong, and the 0.5 threshold is an uncalibrated
 heuristic.
 
-### 3.4 Market figures depend on what search returns
+### 3.4 Competitor detection and confidence scoring (review feedback)
+Competitors come only from spaCy NER over a few search snippets (capped at 4), and fewer
+competitors found raises the Opportunity Score. Confidence measures source relevance,
+not agreement. Options and a recommended plan are in
+[competitor-detection-and-confidence-scoring-proposal.md](competitor-detection-and-confidence-scoring-proposal.md).
+
+### 3.5 Market figures depend on what search returns
 TAM/SAM/SOM tiers are `null` whenever the retrieved snippets don't state them, which is
 common for niche ideas. That's the intended behaviour (no guessing), but it means many
 reports show only a narrative market size.

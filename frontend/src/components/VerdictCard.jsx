@@ -3,7 +3,9 @@
 // on the page (opportunity score, dynamics breakdown, wedge grounding) is a
 // labelled secondary view. Renders nothing when the backend had no market
 // signal to base a verdict on.
-const DECISION_STYLES = {
+// Exported so the landing page's demo card can preview a verdict in the
+// same colors as the real report, instead of inventing its own palette.
+export const DECISION_STYLES = {
   pursue: { border: 'border-success/50', badge: 'border-success/40 bg-success/15 text-success' },
   validate_first: { border: 'border-accent/50', badge: 'border-accent/40 bg-accent/10 text-accent' },
   rethink: { border: 'border-danger/40', badge: 'border-danger/40 bg-danger/10 text-danger' },

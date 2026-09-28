@@ -139,6 +139,58 @@ export function StackedHBarChart({ rows, legend }) {
 }
 
 // --------------------------------------------------
+// Stacked column chart - daily token usage (prompt vs completion)
+// --------------------------------------------------
+
+export function StackedColumnChart({ columns, series, height = 160, formatValue = (v) => v }) {
+  const totals = (columns || []).map((c) => series.reduce((sum, s) => sum + (c.values[s.key] || 0), 0))
+  if (!columns || columns.length === 0 || totals.every((t) => t === 0)) return <EmptyChart />
+  const max = Math.max(...totals, 1)
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap gap-3 text-[11px] text-muted">
+        {series.map((s) => (
+          <span key={s.key} className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-sm" style={{ background: s.color }} />
+            {s.label}
+          </span>
+        ))}
+      </div>
+      <div className="flex items-end gap-px" style={{ height }} role="img" aria-label="Stacked column chart">
+        {columns.map((col, i) => (
+          <div key={col.label} className="group relative flex h-full flex-1 flex-col justify-end">
+            <div className="flex flex-col-reverse gap-[2px]" style={{ height: `${(totals[i] / max) * 100}%` }}>
+              {series.map((s, j) =>
+                col.values[s.key] > 0 ? (
+                  <div
+                    key={s.key}
+                    className={j === series.length - 1 || !series.slice(j + 1).some((n) => col.values[n.key] > 0) ? 'rounded-t-sm' : ''}
+                    style={{ flexGrow: col.values[s.key], flexBasis: 0, minHeight: 1, background: s.color }}
+                  />
+                ) : null,
+              )}
+            </div>
+            <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-panel px-2 py-1 font-mono text-[10px] text-text shadow-sm group-hover:block">
+              <div className="text-muted">{col.label}</div>
+              {series.map((s) => (
+                <div key={s.key}>
+                  {s.label}: {formatValue(col.values[s.key] || 0)}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-between font-mono text-[10px] text-muted">
+        <span>{columns[0].label}</span>
+        <span>{columns[columns.length - 1].label}</span>
+      </div>
+    </div>
+  )
+}
+
+// --------------------------------------------------
 // Radar chart - viability dimensions
 // --------------------------------------------------
 

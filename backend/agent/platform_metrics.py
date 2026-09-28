@@ -22,6 +22,7 @@ from sqlalchemy import select
 from . import events, metrics
 from .db import get_engine, sessions_table
 from .llm import DEFAULT_MODEL, FALLBACK_MODELS
+from .pricing import estimate_cost_usd
 
 # The pipeline's genuinely LLM-backed nodes - competitor_discovery uses
 # local spaCy NER (no LLM call, see competitor_agent.py), and every
@@ -63,6 +64,70 @@ def _daily_series(rows: list[dict], days: int) -> list[dict]:
         key = _day_key(day)
         series.append({"date": key, "count": counts.get(key, 0)})
     return series
+
+
+def _token_usage(model_events: list[dict], days: int, total_runs: int) -> dict:
+    """Token totals and estimated cost from "model_used" events. Calls
+    recorded before token counts were stored carry no token fields and
+    count as calls only, so tokensTrackedCalls says how many calls the
+    totals actually cover.
+    """
+    by_day: dict[str, dict] = {}
+    by_model: dict[str, dict] = {}
+    prompt_total = completion_total = 0
+    cost_total = 0.0
+    tracked = 0
+
+    for e in model_events:
+        detail = e["detail"] or {}
+        model = detail.get("model", "unknown")
+        prompt = detail.get("promptTokens")
+        completion = detail.get("completionTokens")
+        model_row = by_model.setdefault(model, {"model": model, "calls": 0, "tokens": 0, "costUsd": 0.0})
+        model_row["calls"] += 1
+        if prompt is None and completion is None:
+            continue
+        tracked += 1
+        prompt, completion = prompt or 0, completion or 0
+        cost = estimate_cost_usd(model, prompt, completion)
+        prompt_total += prompt
+        completion_total += completion
+        cost_total += cost
+        model_row["tokens"] += prompt + completion
+        model_row["costUsd"] += cost
+        day = by_day.setdefault(_day_key(e["createdAt"]), {"promptTokens": 0, "completionTokens": 0, "costUsd": 0.0})
+        day["promptTokens"] += prompt
+        day["completionTokens"] += completion
+        day["costUsd"] += cost
+
+    daily = []
+    for point in _daily_series([], days):
+        day = by_day.get(point["date"], {"promptTokens": 0, "completionTokens": 0, "costUsd": 0.0})
+        daily.append({
+            "date": point["date"],
+            "promptTokens": day["promptTokens"],
+            "completionTokens": day["completionTokens"],
+            "totalTokens": day["promptTokens"] + day["completionTokens"],
+            "costUsd": round(day["costUsd"], 6),
+        })
+
+    total_tokens = prompt_total + completion_total
+    return {
+        "totalTokens": total_tokens,
+        "promptTokens": prompt_total,
+        "completionTokens": completion_total,
+        "estimatedCostUsd": round(cost_total, 6),
+        "avgTokensPerValidation": round(total_tokens / total_runs) if total_runs and tracked else None,
+        "avgCostPerValidationUsd": round(cost_total / total_runs, 6) if total_runs and tracked else None,
+        "tokensTrackedCalls": tracked,
+        "totalCalls": len(model_events),
+        "daily": daily,
+        "byModel": sorted(
+            ({**row, "costUsd": round(row["costUsd"], 6)} for row in by_model.values()),
+            key=lambda row: row["costUsd"],
+            reverse=True,
+        ),
+    }
 
 
 def _active_users(since: float) -> int:
@@ -144,6 +209,7 @@ def get_platform_metrics(days: int = 30) -> dict:
         "nodeSuccessRates": {node: _node_rate(snapshot, node) for node in _ALL_TRACKED_NODES if _node_rate(snapshot, node) is not None},
         "modelUsage": [{"model": model, "count": count, "percentage": _pct(count, len(model_events))} for model, count in model_counts.most_common()],
         "latencyByNode": avg_latency_by_node,
+        "tokenUsage": _token_usage(model_events, days, total_runs),
         "topCategories": [{"category": cat, "count": count} for cat, count in category_counts.most_common()],
         "recentErrors": error_rows,
         "emailDelivery": {

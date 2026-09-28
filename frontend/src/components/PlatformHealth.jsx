@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { authHeaders } from '../lib/auth'
-import { DonutChart, HBarChart, LineChart, CHART_COLORS } from './charts'
+import { DonutChart, HBarChart, LineChart, StackedColumnChart, CHART_COLORS } from './charts'
 
 const TIME_FILTERS = [
   { label: '7d', days: 7 },
@@ -58,6 +58,66 @@ function ChartCard({ title, subtitle, children, className = '' }) {
       {subtitle && <p className="mt-0.5 text-[11px] text-muted">{subtitle}</p>}
       <div className="mt-4">{children}</div>
     </div>
+  )
+}
+
+function formatTokens(value) {
+  if (value === null || value === undefined) return '—'
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`
+  return String(value)
+}
+
+function formatUsd(value) {
+  if (value === null || value === undefined) return '—'
+  if (value === 0) return '$0'
+  if (value < 0.01) return `$${value.toFixed(4)}`
+  return `$${value.toFixed(2)}`
+}
+
+const TOKEN_SERIES = [
+  { key: 'promptTokens', label: 'Prompt tokens', color: 'var(--color-accent)' },
+  { key: 'completionTokens', label: 'Completion tokens', color: 'var(--color-info)' },
+]
+
+function TokensAndCost({ usage }) {
+  if (!usage) return null
+  const columns = usage.daily.map((d) => ({ label: d.date, values: { promptTokens: d.promptTokens, completionTokens: d.completionTokens } }))
+  const costPoints = usage.daily.map((d) => ({ label: d.date, y: d.costUsd }))
+  const maxModelCost = Math.max(...usage.byModel.map((r) => r.costUsd), 0)
+  const modelRows = usage.byModel
+    .filter((r) => r.tokens > 0)
+    .map((r) => ({ label: r.model, value: r.costUsd, max: maxModelCost || 1, color: 'var(--color-accent)' }))
+
+  return (
+    <section className="space-y-4">
+      <div>
+        <p className="font-serif text-lg text-text">Tokens &amp; cost</p>
+        <p className="text-[11px] text-muted">
+          Cost is estimated from each call's token counts at list price per model.
+          {usage.tokensTrackedCalls < usage.totalCalls && ` ${usage.totalCalls - usage.tokensTrackedCalls} older calls in this window predate token tracking and aren't counted.`}
+        </p>
+      </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Kpi label="Tokens used" value={formatTokens(usage.totalTokens)} sub={`${formatTokens(usage.promptTokens)} prompt · ${formatTokens(usage.completionTokens)} completion`} tone="accent" />
+        <Kpi label="Estimated cost" value={formatUsd(usage.estimatedCostUsd)} sub="LLM calls, this window" tone="info" />
+        <Kpi label="Avg tokens / validation" value={formatTokens(usage.avgTokensPerValidation)} tone="accent" />
+        <Kpi label="Avg cost / validation" value={formatUsd(usage.avgCostPerValidationUsd)} tone="info" />
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <ChartCard title="Daily token usage" subtitle="Prompt and completion tokens across all LLM calls" className="lg:col-span-2">
+          <StackedColumnChart columns={columns} series={TOKEN_SERIES} formatValue={(v) => v.toLocaleString()} />
+        </ChartCard>
+        <ChartCard title="Daily estimated cost" subtitle="USD per day">
+          <div className="h-40">
+            <LineChart points={costPoints} yMin={0} color="var(--color-info)" />
+          </div>
+        </ChartCard>
+        <ChartCard title="Estimated cost by model" subtitle="Which models the spend went to">
+          <HBarChart rows={modelRows} formatValue={formatUsd} />
+        </ChartCard>
+      </div>
+    </section>
   )
 }
 
@@ -184,6 +244,8 @@ function PlatformHealthBody({ data }) {
           <HBarChart rows={categoryRows} />
         </ChartCard>
       </div>
+
+      <TokensAndCost usage={data.tokenUsage} />
 
       <div className="rounded-2xl border border-border bg-panel shadow-sm">
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
