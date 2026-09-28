@@ -100,7 +100,16 @@ from .structured_output import extract_json_object
 
 logger = logging.getLogger(__name__)
 
-_MAX_COMPETITORS = 6
+# No product-imposed cap on how many competitors get shown - Yalene asked for
+# every genuinely-grounded competitor the evidence supports, not an arbitrary
+# top-N. This is still a real ceiling, not "unlimited": each competitor must
+# be grounded to a source (_ground_and_clean_competitors), and the
+# "Competitors" search angle itself is bounded to ~20 raw results
+# (retrieval.py's per_angle=10 x _QUERIES_PER_ANGLE["Competitors"]=2), so in
+# practice this can never return more distinct, evidenced names than that -
+# raised here mainly so the count is no longer artificially truncated below
+# what the evidence actually supports.
+_MAX_COMPETITORS = 20
 
 _GAP_DISCLOSURE = (
     "Identified automatically from search results - a detailed, idea-specific "
@@ -592,6 +601,60 @@ def _clean_matrix(raw, names: set[str]) -> list[dict]:
     return rows
 
 
+_PRICE_LABELS = {
+    "low": "Low (under $10/mo)",
+    "mid": "Mid ($10-25/mo)",
+    "high": "High (over $25/mo)",
+    "unknown": "unknown",
+}
+_BREADTH_LABELS = {
+    "narrow": "Narrow - a focused feature set",
+    "moderate": "Moderate feature set",
+    "broad": "Broad feature set",
+    "unknown": "unknown",
+}
+_CLASSIFICATION_LABELS = {
+    "direct": "Direct competitor",
+    "indirect": "Indirect competitor",
+    "unknown": "Unclear positioning",
+}
+
+
+def _build_fallback_matrix(competitors: list[dict]) -> list[dict]:
+    """A deterministic comparisonMatrix built only from fields this module
+    already computes for every competitor (estimatedPrice, featureBreadth,
+    classification) - used whenever the LLM discovery pass didn't produce
+    one (it wasn't run, timed out, or found no competitors to build one
+    from), so the comparison view isn't contingent on that one LLM call
+    succeeding. It's honest about the idea's own side: at validation time
+    there's no real pricing or shipped feature set to compare with, so the
+    "idea" column says exactly that instead of inventing one - same
+    fabricate-nothing rule the rest of this module follows (see
+    _GAP_DISCLOSURE for the same tradeoff on a different field).
+    """
+    if not competitors:
+        return []
+    return [
+        {
+            "dimension": "Price",
+            "idea": "Not yet priced - pre-launch",
+            "competitors": {c["name"]: _PRICE_LABELS[c.get("estimatedPrice", "unknown")] for c in competitors},
+        },
+        {
+            "dimension": "Feature breadth",
+            "idea": "Not yet built - pre-launch",
+            "competitors": {c["name"]: _BREADTH_LABELS[c.get("featureBreadth", "unknown")] for c in competitors},
+        },
+        {
+            "dimension": "Positioning",
+            "idea": "New entrant addressing this need",
+            "competitors": {
+                c["name"]: _CLASSIFICATION_LABELS[c.get("classification", "unknown")] for c in competitors
+            },
+        },
+    ]
+
+
 _MAX_ENRICHED = 4
 _WIKIDATA_SEARCH_URL = "https://www.wikidata.org/w/api.php"
 _WIKIDATA_FOUNDING_YEAR = re.compile(r"\b(1[89]\d{2}|20[0-4]\d)\b")
@@ -982,6 +1045,16 @@ def analyze_competitors(
     if not profile or not competitors:
         return result
 
-    result["comparisonMatrix"] = discovered["comparisonMatrix"] if discovered else []
+    matrix = discovered["comparisonMatrix"] if discovered else []
+    # The LLM discovery pass is what would normally build this (see
+    # competitor_discovery_task.md Step 3), but it's one more LLM call that
+    # can fail/rate-limit/return nothing - which used to mean the whole
+    # comparison view silently disappeared regardless of how good the
+    # competitor list itself was. Falling back to a matrix built from data
+    # this module already has (estimatedPrice/featureBreadth/classification)
+    # means the comparison always renders whenever there are competitors to
+    # compare against, independent of that one call's success - it's a
+    # thinner matrix than the LLM's idea-specific one, never a missing one.
+    result["comparisonMatrix"] = matrix if matrix else _build_fallback_matrix(competitors)
     result["profiled"] = discovered is not None
     return result
