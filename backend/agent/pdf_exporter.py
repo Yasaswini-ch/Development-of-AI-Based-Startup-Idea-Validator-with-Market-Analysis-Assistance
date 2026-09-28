@@ -488,7 +488,7 @@ class _Sections:
     def __init__(self, story, s):
         self.story, self.s, self.n = story, s, 0
 
-    def add(self, title, estimate=False):
+    def add(self, title, estimate=False, keep_with=120):
         self.n += 1
         badge = _pill("Estimate", WARNING, self.s) if estimate else None
         heading = Table(
@@ -505,7 +505,7 @@ class _Sections:
             ("LINEBELOW", (0, 0), (-1, 0), 0.9, BORDER_STRONG),
         ]))
         # Never strand a heading at the foot of a page.
-        self.story.append(CondPageBreak(120))
+        self.story.append(CondPageBreak(keep_with))
         self.story.append(Spacer(1, 16))
         self.story.append(heading)
         self.story.append(Spacer(1, 10))
@@ -970,7 +970,8 @@ def _viability(story, d, s, sections):
             if isinstance(x, dict)]
     if not dims:
         return
-    sections.add("Market viability & dynamics")
+    # The radar card is tall - keep the heading on the same page as it.
+    sections.add("Market viability & dynamics", keep_with=360)
     axes = []
     for x in dims:
         try:
