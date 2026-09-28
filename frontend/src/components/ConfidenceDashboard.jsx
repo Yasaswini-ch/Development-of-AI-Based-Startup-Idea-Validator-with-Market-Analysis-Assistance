@@ -100,7 +100,7 @@ export default function ConfidenceDashboard({ data }) {
           <MetricTile
             label="Cross-source agreement"
             percent={crossSourceAgreement.percentage}
-            detail={`${crossSourceAgreement.corroboratedSources ?? crossSourceAgreement.claimsWithMultipleSources ?? 0}/${crossSourceAgreement.totalUniqueSources ?? crossSourceAgreement.totalClaims ?? 0} sources back multiple findings.`}
+            detail={`${crossSourceAgreement.corroboratedSources ?? crossSourceAgreement.claimsWithMultipleSources ?? 0}/${crossSourceAgreement.totalUniqueSources ?? crossSourceAgreement.totalClaims ?? 0} sources cited by 2+ findings.`}
           />
         )}
         {directEvidenceRatio && (
