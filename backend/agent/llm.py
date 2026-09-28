@@ -52,7 +52,7 @@ _LLM_CALL_TIMEOUT_SECONDS = float(os.environ.get("LLM_CALL_TIMEOUT_SECONDS", "30
 # already in .env - is the real fix for "every model I can reach shares one
 # account's budget." See get_llm's docstring for why this was previously
 # reverted and why the retest changed that.
-FALLBACK_MODELS = ("groq/openai/gpt-oss-20b", "groq/openai/gpt-oss-120b", "gemini/gemini-3.6-flash", "gemini/gemini-3.8-flash")
+FALLBACK_MODELS = ("groq/openai/gpt-oss-20b", "groq/openai/gpt-oss-120b", "gemini/gemini-3.6-flash", "gemini/gemini-2.5-flash")
 _MAX_RETRY_WAIT_SECONDS = 30
 
 # Last-resort tier, tried only when a caller opts in via
@@ -109,7 +109,7 @@ _REASONING_EFFORT = {
     "groq/openai/gpt-oss-20b": "low",
     "groq/openai/gpt-oss-120b": "low",
     "gemini/gemini-3.6-flash": "none",
-    "gemini/gemini-3.8-flash": "none",
+    "gemini/gemini-2.5-flash": "none",
 }
 
 

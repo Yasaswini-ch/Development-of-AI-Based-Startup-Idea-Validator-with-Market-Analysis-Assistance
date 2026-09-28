@@ -436,14 +436,15 @@ def competitor_discovery_node(state: PipelineState) -> PipelineState:
     results = state.get("results", [])
 
     try:
-        # Quick mode keeps competitor discovery LLM-free (NER only); deep
-        # mode adds one bounded profiling call on top of it.
+        # Competitor discovery always runs the LLM profiling pass (for the
+        # comparison matrix and idea-specific gap analysis) regardless of
+        # pipeline mode - it fails silently back to NER-only on quota issues.
         competitors = analyze_competitors(
             idea,
             target_customer,
             problem,
             results,
-            profile=state.get("mode") != "quick",
+            profile=True,
             allow_local=state.get("allowLocalLlm", False),
         )
 
