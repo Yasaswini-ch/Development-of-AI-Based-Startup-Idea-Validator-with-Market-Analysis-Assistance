@@ -70,10 +70,13 @@ class GroundAndCleanCompetitorsTests(unittest.TestCase):
         self.assertEqual(len(cleaned), 1)
 
     def test_caps_at_max_competitors(self):
+        # One more candidate than the cap, so this still exercises capping
+        # itself rather than assuming a specific cap value.
+        count = competitor_agent._MAX_COMPETITORS + 1
         sources = {
-            f"r{i}": _source(f"Competitor{i} is a popular meal kit service.") for i in range(1, 10)
+            f"r{i}": _source(f"Competitor{i} is a popular meal kit service.") for i in range(1, count + 1)
         }
-        raw = [{"name": f"Competitor{i}", "sourceIds": [f"r{i}"]} for i in range(1, 10)]
+        raw = [{"name": f"Competitor{i}", "sourceIds": [f"r{i}"]} for i in range(1, count + 1)]
         cleaned = competitor_agent._ground_and_clean_competitors(raw, sources)
         self.assertEqual(len(cleaned), competitor_agent._MAX_COMPETITORS)
 
@@ -190,6 +193,56 @@ class AnalyzeCompetitorsMergeTests(unittest.TestCase):
     def test_zero_competitor_angle_results_reports_zero_count(self):
         result = competitor_agent.analyze_competitors("Idea", "Target", "Problem", [], profile=False)
         self.assertEqual(result["searchResultCount"], 0)
+
+    @patch("agent.competitor_agent._discover_with_llm")
+    def test_falls_back_to_deterministic_matrix_when_discovery_matrix_is_empty(self, mock_discover):
+        # Discovery found competitors but its own comparisonMatrix came back
+        # empty (e.g. the model omitted it, or the discovery call failed
+        # entirely and only the NER-only list is available) - the report
+        # must still show a comparison rather than nothing.
+        mock_discover.return_value = None
+        results = [
+            {
+                "angle": "Competitors",
+                "title": "HelloFresh review",
+                "snippet": (
+                    "HelloFresh is a popular meal kit service charging $60/week for "
+                    "weekly boxes. Many customers switch from HelloFresh to cheaper options."
+                ),
+                "url": "https://example.com/roundup",
+            }
+        ]
+        result = competitor_agent.analyze_competitors(
+            "Meal kits", "Busy parents", "No time to cook", results, profile=True
+        )
+        self.assertTrue(result["competitors"])
+        self.assertTrue(result["comparisonMatrix"])
+        dimensions = {row["dimension"] for row in result["comparisonMatrix"]}
+        self.assertEqual(dimensions, {"Price", "Feature breadth", "Positioning"})
+        for row in result["comparisonMatrix"]:
+            for name in {c["name"] for c in result["competitors"]}:
+                self.assertIn(name, row["competitors"])
+
+
+class BuildFallbackMatrixTests(unittest.TestCase):
+    def test_empty_without_competitors(self):
+        self.assertEqual(competitor_agent._build_fallback_matrix([]), [])
+
+    def test_builds_three_rows_from_existing_fields(self):
+        competitors = [
+            {"name": "HelloFresh", "estimatedPrice": "high", "featureBreadth": "broad", "classification": "direct"},
+            {"name": "Obscurename", "estimatedPrice": "unknown", "featureBreadth": "unknown", "classification": "unknown"},
+        ]
+        matrix = competitor_agent._build_fallback_matrix(competitors)
+        self.assertEqual(len(matrix), 3)
+        by_dimension = {row["dimension"]: row for row in matrix}
+        self.assertEqual(by_dimension["Price"]["competitors"]["HelloFresh"], "High (over $25/mo)")
+        self.assertEqual(by_dimension["Price"]["competitors"]["Obscurename"], "unknown")
+        # Never invents data about the idea itself - only honest, generic
+        # pre-launch language, never a fabricated price/feature claim.
+        for row in matrix:
+            self.assertIn("idea", row)
+            self.assertNotIn("$", row["idea"])
 
 
 if __name__ == "__main__":
