@@ -1059,14 +1059,24 @@ def _confidence_dashboard(state: PipelineState) -> dict:
 
     cited_ids: set[str] = set()
     claims_with_source = 0
-    claims_with_multiple = 0
+    source_id_claim_count: dict[str, int] = {}
     for claim in claims:
         source_ids = claim.get("sourceIds") or []
         if source_ids:
             claims_with_source += 1
             cited_ids.update(source_ids)
-        if len(source_ids) >= 2:
-            claims_with_multiple += 1
+        for sid in source_ids:
+            source_id_claim_count[sid] = source_id_claim_count.get(sid, 0) + 1
+
+    # "Cross-source agreement" = sources that back 2+ distinct findings.
+    # The old metric (claims with 2+ sourceIds each) was structurally always
+    # 0 because the strategy agents attach at most one sourceId per claim —
+    # so it reported 0% on every run regardless of evidence quality.
+    # Corroborated sources (one source cited by multiple findings) is the
+    # meaningful signal: does the same evidence thread appear in more than
+    # one part of the analysis?
+    corroborated = sum(1 for cnt in source_id_claim_count.values() if cnt >= 2)
+    total_unique_cited = len(source_id_claim_count)
 
     def _pct(numerator: int, denominator: int) -> int:
         return round((numerator / denominator) * 100) if denominator else 0
@@ -1093,9 +1103,9 @@ def _confidence_dashboard(state: PipelineState) -> dict:
         },
         "averageRelevance": average_relevance,
         "crossSourceAgreement": {
-            "claimsWithMultipleSources": claims_with_multiple,
-            "totalClaims": total_claims,
-            "percentage": _pct(claims_with_multiple, total_claims),
+            "corroboratedSources": corroborated,
+            "totalUniqueSources": total_unique_cited,
+            "percentage": _pct(corroborated, total_unique_cited),
         },
         "directEvidenceRatio": {
             "direct": claims_with_source,
