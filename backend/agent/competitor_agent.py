@@ -804,6 +804,34 @@ def _valid_discovery_shape(data: dict) -> bool:
     return all(isinstance(c, dict) and isinstance(c.get("name"), str) for c in competitors)
 
 
+def _local_text_near_name(text: str, name: str) -> str:
+    """The sentence(s) mentioning `name` plus the one right after each,
+    instead of the whole shared source text - mirrors how _local_context
+    scopes an NER entity's context, for the same reason and the same
+    known limit: a single "Competitors" source snippet routinely names
+    several competitors (e.g. a listicle), each with its own price/
+    features stated nearby. Without this scoping, _estimate_price/
+    _estimate_breadth ran over the *entire* source text and could pick up
+    a different competitor's numbers - confirmed live: two competitors
+    sharing one source, one cheap and one expensive, both came out with
+    the cheaper one's price bucket, since _estimate_price just takes the
+    cheapest amount found anywhere in the text it's given. This bounds
+    that to at most the immediately-following sentence (the same
+    comparison-table shape _local_context's own 2-sentence window exists
+    for - a name on one line, its price on the very next), not a full
+    source's worth of unrelated competitors' numbers; it can still bleed
+    into a different competitor's price when that competitor's own line
+    comes immediately after this one's, same tradeoff as _local_context.
+    Falls back to the full text if the name can't be located in it
+    (defensive only - callers already confirm a case-insensitive
+    substring match exists before calling this).
+    """
+    sentences = [s for s in text.split(". ") if s]
+    lowered_name = name.lower()
+    matches = [". ".join(sentences[i : i + 2]) for i, s in enumerate(sentences) if lowered_name in s.lower()]
+    return " ".join(matches) if matches else text
+
+
 def _ground_and_clean_competitors(raw: list, sources: dict[str, dict]) -> list[dict]:
     """Keep only competitors the model can prove: a name is dropped unless
     it names a `sourceIds` entry we actually gave the model AND the name
@@ -835,7 +863,7 @@ def _ground_and_clean_competitors(raw: list, sources: dict[str, dict]) -> list[d
 
         seen_lower.add(name.lower())
         primary_source = sources[matching_ids[0]]["result"]
-        local_text = " ".join(sources[sid]["text"] for sid in matching_ids)
+        local_text = " ".join(_local_text_near_name(sources[sid]["text"], name) for sid in matching_ids)
         profile = _clean_profile(item)
         gap = profile.pop("gap")
         offering = _short_text(item.get("offering"), 200) or _clean_offering(

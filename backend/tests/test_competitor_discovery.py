@@ -86,6 +86,55 @@ class GroundAndCleanCompetitorsTests(unittest.TestCase):
         cleaned = competitor_agent._ground_and_clean_competitors(raw, sources)
         self.assertEqual(cleaned[0]["gap"], competitor_agent._GAP_DISCLOSURE)
 
+    def test_price_not_misattributed_across_a_whole_multi_competitor_source(self):
+        # Regression: a single shared source naming several competitors used
+        # to give ALL of them the SAME estimatedPrice (whichever was
+        # cheapest anywhere in the whole source text), because the price
+        # heuristic ran over the entire source instead of just the text
+        # near each name. A third, unrelated sentence keeps this source's
+        # cheapest price ($8) away from Blue Apron's own line entirely, so
+        # this isolates the "whole source" bug from the narrower
+        # immediately-adjacent-sentence case _local_text_near_name still
+        # allows (see LocalTextNearNameTests).
+        sources = {
+            "r1": _source(
+                "Onyx costs $8 a month, a budget option. "
+                "This roundup also covers several other tools in the space. "
+                "Blue Apron costs $120 a month, a premium option."
+            )
+        }
+        raw = [
+            {"name": "Onyx", "sourceIds": ["r1"], "classification": "direct"},
+            {"name": "Blue Apron", "sourceIds": ["r1"], "classification": "direct"},
+        ]
+        cleaned = competitor_agent._ground_and_clean_competitors(raw, sources)
+        by_name = {c["name"]: c for c in cleaned}
+        self.assertEqual(by_name["Onyx"]["estimatedPrice"], "low")
+        self.assertEqual(by_name["Blue Apron"]["estimatedPrice"], "high")
+
+
+class LocalTextNearNameTests(unittest.TestCase):
+    def test_scopes_away_from_a_non_adjacent_sentence(self):
+        text = "Onyx costs $8 a month. Unrelated filler sentence here. Blue Apron costs $120 a month."
+        scoped = competitor_agent._local_text_near_name(text, "Onyx")
+        self.assertIn("Onyx", scoped)
+        self.assertIn("$8", scoped)
+        self.assertNotIn("$120", scoped)
+
+    def test_can_still_include_an_immediately_following_sentence(self):
+        # Known, accepted tradeoff (same as _local_context): the window
+        # includes the sentence right after the name's own sentence, so a
+        # comparison-table row split across two lines ("Name. $Price.")
+        # still gets its price - even when that next sentence happens to
+        # be a different competitor's own line.
+        text = "Onyx costs $8 a month. Blue Apron costs $120 a month."
+        scoped = competitor_agent._local_text_near_name(text, "Onyx")
+        self.assertIn("$120", scoped)
+
+    def test_falls_back_to_full_text_when_name_not_found(self):
+        text = "Some unrelated text."
+        self.assertEqual(competitor_agent._local_text_near_name(text, "Nope"), text)
+
 
 class DiscoverWithLlmTests(unittest.TestCase):
     def test_returns_none_without_any_competitors_angle_results(self):
