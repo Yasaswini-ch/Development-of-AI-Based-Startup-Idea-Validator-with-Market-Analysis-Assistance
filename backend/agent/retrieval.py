@@ -272,7 +272,10 @@ def build_search_angles(idea: str, target_customer: str, problem: str) -> list[t
 
     angles = [
         ("Market size & trends", [f"{subject} market size", f"{subject_fallback} market"]),
-        ("Competitors", [f"{subject} competitors alternatives", f"{subject_fallback} competitors"]),
+        (
+            "Competitors",
+            [f"{subject} competitors alternatives", f"{subject_fallback} alternatives", f"{subject_fallback} competitors"],
+        ),
         ("Industry news", [f"{subject} industry news", f"{subject_fallback} news"]),
     ]
     if customer:
@@ -282,6 +285,16 @@ def build_search_angles(idea: str, target_customer: str, problem: str) -> list[t
             ("How others solve this", [f"{short_subject} {problem_subject} solutions", f"{prefix} {problem_subject}"])
         )
     return angles
+
+
+# How many candidate queries (that actually return hits) to merge per
+# angle. Every angle stops at its first successful query except
+# Competitors: competitor discovery can only name companies that appear
+# in these snippets, so one "competitors alternatives" query alone often
+# missed well-known rivals. A second, "<subject> alternatives"-phrased
+# query surfaces listicle/comparison pages that name more of them, for
+# one extra search call per run.
+_QUERIES_PER_ANGLE = {"Competitors": 2}
 
 
 def collect(idea: str, target_customer: str, problem: str, per_angle: int = 10) -> list[dict]:
@@ -303,6 +316,8 @@ def collect(idea: str, target_customer: str, problem: str, per_angle: int = 10) 
 
     best_by_angle_url: dict[tuple[str, str], dict] = {}
     for label, queries in angles:
+        successful_queries = 0
+        wanted = _QUERIES_PER_ANGLE.get(label, 1)
         for query in queries:
             hits = [item for item in fetch_results(query, max_results=per_angle) if not _is_academic(item["url"])]
             if not hits:
@@ -315,7 +330,9 @@ def collect(idea: str, target_customer: str, problem: str, per_angle: int = 10) 
                 existing = best_by_angle_url.get(key)
                 if existing is None or item["score"] > existing["score"]:
                     best_by_angle_url[key] = item
-            break
+            successful_queries += 1
+            if successful_queries >= wanted:
+                break
 
     return sorted(best_by_angle_url.values(), key=lambda r: r["score"], reverse=True)
 
