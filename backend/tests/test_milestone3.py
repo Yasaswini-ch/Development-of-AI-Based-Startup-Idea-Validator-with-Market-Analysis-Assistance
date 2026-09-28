@@ -174,10 +174,11 @@ class MilestoneThreeTests(unittest.TestCase):
 
         # 3 of 5 claims cite at least one source: strengths, opportunities, risks.
         self.assertEqual(confidence["sourceCoverage"], {"claimsWithSource": 3, "totalClaims": 5, "percentage": 60})
-        # Only "opportunities" cites 2+ sources.
+        # src-1 is cited by strengths + opportunities, src-2 by opportunities + risks:
+        # both are corroborated (cited by 2+ distinct findings) out of 2 unique sources.
         self.assertEqual(
             confidence["crossSourceAgreement"],
-            {"claimsWithMultipleSources": 1, "totalClaims": 5, "percentage": 20},
+            {"corroboratedSources": 2, "totalUniqueSources": 2, "percentage": 100},
         )
         self.assertEqual(confidence["directEvidenceRatio"], {"direct": 3, "inferred": 2, "percentage": 60})
         # Cited sources are src-1 (score 0.8) and src-2 (score 0.4) -> mean 0.6.
@@ -220,10 +221,11 @@ class MilestoneThreeTests(unittest.TestCase):
         # 2 of 3 market claims cite at least one source: the trend with
         # src-1, and the segment with src-1/src-2.
         self.assertEqual(confidence["sourceCoverage"], {"claimsWithSource": 2, "totalClaims": 3, "percentage": 67})
-        # Only the segment cites 2+ sources.
+        # src-1 is cited by the trend + the segment (corroborated); src-2 only by the
+        # segment, out of 2 unique cited sources.
         self.assertEqual(
             confidence["crossSourceAgreement"],
-            {"claimsWithMultipleSources": 1, "totalClaims": 3, "percentage": 33},
+            {"corroboratedSources": 1, "totalUniqueSources": 2, "percentage": 50},
         )
 
     def test_confidence_dashboard_source_recency_reports_known_and_unknown_dates(self):
