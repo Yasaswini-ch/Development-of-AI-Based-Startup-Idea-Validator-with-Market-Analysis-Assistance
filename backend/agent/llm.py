@@ -52,7 +52,7 @@ _LLM_CALL_TIMEOUT_SECONDS = float(os.environ.get("LLM_CALL_TIMEOUT_SECONDS", "30
 # already in .env - is the real fix for "every model I can reach shares one
 # account's budget." See get_llm's docstring for why this was previously
 # reverted and why the retest changed that.
-FALLBACK_MODELS = ("groq/openai/gpt-oss-20b", "groq/openai/gpt-oss-120b", "gemini/gemini-3.6-flash", "gemini/gemini-2.5-flash")
+FALLBACK_MODELS = ("groq/openai/gpt-oss-20b", "groq/openai/gpt-oss-120b", "gemini/gemini-3.6-flash", "gemini/gemini-3.8-flash")
 _MAX_RETRY_WAIT_SECONDS = 30
 
 # Last-resort tier, tried only when a caller opts in via
@@ -104,12 +104,23 @@ class NeedsDeepAnalysisError(Exception):
 # its default, it spends its entire max_tokens budget on hidden reasoning
 # and returns empty content (finish_reason="length", 0 text tokens) -
 # confirmed live, and "none" fixes it the same way, down to a 1-token reply.
+# gemini-3.8-flash has no entry here deliberately - it rejects
+# reasoning_effort="none" outright ("400 Thinking level MINIMAL is not
+# supported for this model"), unlike gemini-3.6-flash. A short-lived swap to
+# gemini-2.5-flash to dodge that turned out worse: that model 404s
+# unconditionally ("no longer available to new users" - confirmed live in
+# production logs, 2026-09-28), so every call to the 4th fallback tier was
+# failing outright instead of just risking an empty-content response. Back
+# on gemini-3.8-flash (the model Google's own 404 message names as current)
+# with no reasoning_effort override - get_llm skips the kwarg entirely for
+# any model not in this dict, so this is a real fallback again rather than a
+# guaranteed dead one, though its behavior without "none" hasn't been
+# confirmed live yet the way the others have.
 _REASONING_EFFORT = {
     "groq/qwen/qwen3.8-27b": "none",
     "groq/openai/gpt-oss-20b": "low",
     "groq/openai/gpt-oss-120b": "low",
     "gemini/gemini-3.6-flash": "none",
-    "gemini/gemini-2.5-flash": "none",
 }
 
 
