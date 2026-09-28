@@ -98,6 +98,43 @@ Options, from cheapest:
 - Indexes on `user_id` / `updated_at` for History and Dashboard queries if they slow down.
 - PgBouncer or a lower per-process pool if many instances are added.
 
+#### 3.6.1 Moving the database off Render (Google Cloud SQL, Firebase, or others)
+
+**Short answer: yes, it's possible.** The backend talks to Postgres through SQLAlchemy
+and reads the connection string from `DATABASE_URL` (`db.py`). Any hosted
+**PostgreSQL** works by changing that one variable in Render, with no code change.
+Firebase's default database (Firestore) is **not** Postgres, so it would mean
+rewriting the data layer.
+
+| Option | Free? | Rough cost after free | Code change | Main catch |
+|---|---|---|---|---|
+| **Google Cloud SQL for PostgreSQL** | No free tier. New Google Cloud accounts get **$300 credit for 90 days** | smallest instance (db-f1-micro, 0.6 GB RAM) **≈ $11/month** + storage | none (`DATABASE_URL` only) | needs a billing account; must allow Render's outbound IPs or use the Cloud SQL connector; ongoing monthly cost |
+| **Firebase Firestore** (Spark plan) | **Yes**, always free: 1 GiB storage, 50K reads, 20K writes, 20K deletes per day | pay-as-you-go on Blaze | **large**: Firestore is a NoSQL document store; `db.py`, `session_store.py`, `job_store.py`, auth, events and the cache would all need rewriting | weeks of work and new tests; SQL-style queries for the Dashboard/History get harder |
+| **Firebase Data Connect / SQL Connect** (Postgres inside Firebase) | **90-day no-cost trial** (db-f1-micro, 10 GB SSD, ~8K operations/day on Spark); not free after that | then normal Cloud SQL pricing (≈ $11/month+) on Blaze; on Spark the database is suspended and deleted after the trial | small if we can connect to it directly; configuration is locked on the Spark trial, so opening it to Render may not be allowed (verify) | a trial with a deadline, like Render's 30-day free database |
+| **Neon** (serverless Postgres) | **Yes**: 0.5 GiB storage, 100 compute-hours/month, no expiry; pauses when idle and wakes on the next query | usage-based from ≈ $0.11 per compute-hour | none (`DATABASE_URL` only) | a short wake-up delay on the first query after idle |
+| **Supabase** (Postgres) | **Yes**: 500 MB database | Pro ≈ $25/month | none (`DATABASE_URL` only) | free projects pause after about a week without activity and must be resumed from the dashboard |
+| Render Postgres (paid) | – | from a few dollars a month | none | simplest: same provider, no data move beyond a dump/restore |
+
+**Recommendation:** for a free database that doesn't expire, move to **Neon** (or
+Supabase). It fixes the 30-day Render expiry (Known Limitations §1.2) with only a
+`DATABASE_URL` change and a `pg_dump`/`pg_restore`. Choose **Cloud SQL** only if the
+team has Google Cloud credits (the $300 trial, or education credits) or wants to be on
+Google Cloud for the project report; budget about $11/month after that. **Avoid
+Firestore** for this project: it's free, but it replaces the whole SQL data layer for
+no scaling benefit at our size.
+
+**Migration steps (any Postgres option):** create the database → `pg_dump` from Render
+→ `pg_restore` into the new one → set `DATABASE_URL` in Render (keep `sslmode=require`)
+→ redeploy → check `GET /health` and sign in → keep the old database until verified.
+Keep `DB_POOL_SIZE` small (≤ 5) on free tiers, which have low connection limits.
+
+*Prices checked 2026-09-28 from the providers' pages and a July 2026 comparison;
+confirm before paying:*
+[Firebase pricing](https://firebase.google.com/pricing),
+[Firebase Data Connect no-cost trial](https://firebase.blog/posts/2026/03/fdc-ift/),
+[Postgres hosting comparison (Bytebase)](https://www.bytebase.com/blog/postgres-hosting-options-pricing-comparison/),
+[Neon free tier FAQ](https://neon.com/faqs/managed-postgres-databases-free-tier).
+
 ### 3.7 Frontend / static assets
 Already a static build; a CDN (Render's static sites are CDN-backed) handles far more
 than we need. No action.
@@ -115,7 +152,7 @@ than we need. No action.
 2. If memory or cold starts fail: **vertical** (3.1).
 3. If LLM fallbacks or `degraded` runs appear: **token reduction + per-user quotas**
    (3.4.1–3.4.3), then a **paid LLM tier** (3.4.4).
-4. Before any demo or real users: **paid Postgres** (3.6).
+4. Before any demo or real users: a **database that does not expire** (3.6.1: Neon free, or a paid plan).
 5. Only if we expect well beyond ~10 concurrent users: **job queue + horizontal**
    (3.3, 3.2).
 
