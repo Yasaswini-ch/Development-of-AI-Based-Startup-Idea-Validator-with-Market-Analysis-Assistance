@@ -110,8 +110,39 @@ def calculate_opportunity_score(market_data, competitor_data, search_results=Non
 
     market_score = _market_size_score(market_data.get("marketSize", ""))
     growth_score = _growth_score(market_data.get("trends", []))
-    competition_score = _competition_score(competitor_data.get("competitors", []))
+    competition_score = _competition_score(competitor_data)  # whole dict, not just the list - see §7
 
     total = market_score + growth_score + competition_score
     return max(0, min(100, total))
 ```
+
+---
+
+## Update 2026-09-28: competition scoring
+
+Review feedback (and
+[competitor-detection-and-confidence-scoring-proposal.md](competitor-detection-and-confidence-scoring-proposal.md)
+§2.2) pointed out that zero found competitors scored a perfect 30/30 unconditionally -
+a competitor-detection *miss* read identically to a genuine open market. `_competition_score`
+now takes the whole `competitor_data` dict (not just its `competitors` list):
+
+- **Zero competitors, thin search coverage** (`searchResultCount` below
+  `_MIN_SEARCH_RESULTS_FOR_CONFIDENT_ZERO = 3`, or missing entirely): scores
+  `_UNKNOWN_COMPETITION_SCORE = 15` - genuinely uncertain, not "wide open" (same
+  reasoning `viability_score.py`'s `_NO_COMPETITOR_DATA_SCORE` already used).
+- **Zero competitors, solid search coverage** (≥ 3 Competitors-angle results):
+  unchanged - scores the full 30, a real signal.
+- **One or more competitors:** each one now counts by `classification` when the
+  grounded LLM discovery pass (doc 14 §7) set it - a `"direct"` competitor (or one
+  with no classification at all, i.e. NER-only/quick-mode) counts fully, an
+  `"indirect"` one counts for half. The weighted total maps onto the same
+  24/18/12/6 anchors the old count-only buckets used (1 → 24, 2 → 18, 3 → 12, 4+ → 6),
+  but continuously (`round(30 - 6 * weighted)`, clamped to 6-24) so a half-weighted
+  indirect competitor actually scores between two direct-competitor buckets instead of
+  rounding down into one of them.
+
+`searchResultCount` is a new field on `competitor_agent.analyze_competitors()`'s return
+value: the number of "Competitors"-angle search results the run had to work with,
+regardless of how many competitors were ultimately found in them.
+
+Tests: `backend/tests/test_competition_scoring.py`.
