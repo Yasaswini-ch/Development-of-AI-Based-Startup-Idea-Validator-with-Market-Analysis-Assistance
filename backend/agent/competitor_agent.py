@@ -644,10 +644,16 @@ def _producthunt_lookup(name: str) -> dict | None:
 
     Product Hunt's public API does not offer plain full-text search across
     all posts (its `posts` query filters by url/topic/date, not free text),
-    so this asks for the named product's own post via a search-style query
-    and only keeps the result if its name matches - if Product Hunt's
-    schema doesn't accept this exact shape, the request fails and this
-    quietly returns None, same as a missing token.
+    so this fetches the top-voted posts overall and only keeps a hit whose
+    name matches - a long shot for most competitors, but the only signal
+    this endpoint exposes without a `url`/`topic` to filter by. The query
+    takes no variables: a `$name` GraphQL variable declared but never
+    referenced inside the query body is invalid per the GraphQL spec
+    itself ("All Variables Used", spec.graphql.org/draft/#sec-All-
+    Variables-Used) - every spec-compliant server rejects that as a
+    validation error, which an earlier version of this query did on every
+    single call, silently swallowed by the except below and
+    indistinguishable from "no match found."
     """
     token = os.environ.get("PRODUCTHUNT_API_TOKEN")
     if not token:
@@ -657,8 +663,7 @@ def _producthunt_lookup(name: str) -> dict | None:
             _PRODUCTHUNT_ENDPOINT,
             data=json.dumps(
                 {
-                    "query": "query($name: String!) { posts(first: 3, order: VOTES) { edges { node { name tagline votesCount website url } } } }",
-                    "variables": {"name": name},
+                    "query": "query { posts(first: 3, order: VOTES) { edges { node { name tagline votesCount website url } } } }"
                 }
             ).encode(),
             method="POST",
