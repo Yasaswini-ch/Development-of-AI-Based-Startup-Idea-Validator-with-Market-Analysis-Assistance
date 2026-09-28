@@ -1,26 +1,58 @@
 import useTypewriter from '../hooks/useTypewriter'
-import useCountUp from '../hooks/useCountUp'
-import ConfidenceGauge from './ConfidenceGauge'
 import GoogleSignInButton from './GoogleSignInButton'
 import useAuthRequest from '../hooks/useAuthRequest'
+import { DECISION_STYLES } from './VerdictCard'
 import {
   IconLightbulb,
   IconGlobe,
   IconCheckCircle,
   IconMessageCircle,
   IconUser,
-  IconGauge,
-  IconAlertTriangle,
   IconListChecks,
   IconColumns,
   IconDownload,
+  IconTrendingUp,
+  IconFlag,
+  IconNewspaper,
 } from './icons'
 
+// Each example idea pairs with a canned verdict so the hero demo previews
+// what the report actually opens with (VerdictCard) instead of a bare
+// confidence percentage - including a "rethink", so the demo doesn't imply
+// every idea gets a pass.
 const EXAMPLE_IDEAS = [
-  'An AI copilot that drafts investor updates from raw metrics',
-  'A marketplace for local plant swaps between neighbors',
-  'A subscription box for home baristas',
-  'A tool that turns support calls into a weekly feedback digest',
+  {
+    idea: 'An AI copilot that drafts investor updates from raw metrics',
+    decision: 'validate_first',
+    label: 'Validate first',
+    score: 62,
+    scoreName: 'Market viability',
+    reason: 'Real demand from early-stage founders, but pricing power is still unproven.',
+  },
+  {
+    idea: 'A marketplace for local plant swaps between neighbors',
+    decision: 'rethink',
+    label: 'Rethink',
+    score: 34,
+    scoreName: 'Market viability',
+    reason: 'Search volume and willingness to pay are both weak in the sources found.',
+  },
+  {
+    idea: 'A subscription box for home baristas',
+    decision: 'validate_first',
+    label: 'Validate first',
+    score: 58,
+    scoreName: 'Market viability',
+    reason: 'Crowded category — the wedge depends on one untested retention claim.',
+  },
+  {
+    idea: 'A tool that turns support calls into a weekly feedback digest',
+    decision: 'pursue',
+    label: 'Pursue',
+    score: 78,
+    scoreName: 'Market viability',
+    reason: 'Corroborated demand across multiple sources and no unmitigated high risk.',
+  },
 ]
 
 const STEPS = [
@@ -32,12 +64,12 @@ const STEPS = [
   {
     Icon: IconGlobe,
     title: 'Multi-agent live research',
-    body: 'Five agents search the web in parallel for market size, competitors, and real demand.',
+    body: 'A team of research agents search the web in parallel for market size, competitors, and real demand.',
   },
   {
     Icon: IconCheckCircle,
-    title: 'A confidence score, not a guess',
-    body: 'Every claim is grounded in a real, clickable source — including a SWOT, MVP plan, and go-to-market.',
+    title: 'A verdict, not a guess',
+    body: 'Pursue, validate first, or rethink — with every claim showing its evidence, and anything unsourced labelled as inference.',
   },
   {
     Icon: IconMessageCircle,
@@ -46,42 +78,49 @@ const STEPS = [
   },
 ]
 
-const FEATURES = [
+// The five evidence pillars behind the report, in the order they appear -
+// this is what actually differentiates the output, so it replaces a grid
+// of generic app features on the landing page.
+const PILLARS = [
   {
-    Icon: IconGauge,
-    title: 'Confidence dashboard',
-    body: 'See exactly how much of the analysis is backed by real evidence versus inference.',
+    Icon: IconMessageCircle,
+    title: 'Voice of the market',
+    body: 'Real customer quotes pulled from the live web, each one tied back to its source.',
   },
   {
-    Icon: IconAlertTriangle,
-    title: 'Contradiction detection',
-    body: "Flags where two sections of the report pull in different directions, so you know what to double-check.",
+    Icon: IconTrendingUp,
+    title: 'Market viability index',
+    body: 'One score built from the dynamics behind it, not a single black-box number.',
+  },
+  {
+    Icon: IconNewspaper,
+    title: 'Competitors & white space',
+    body: 'Who else is already there, and where the gap actually is.',
+  },
+  {
+    Icon: IconFlag,
+    title: 'Strategic wedge',
+    body: 'The angle to enter on, scored across five vectors — not just "differentiate".',
   },
   {
     Icon: IconListChecks,
-    title: 'MVP & go-to-market plan',
-    body: 'Concrete features to build first, priority channels, and how to land early customers.',
-  },
-  {
-    Icon: IconColumns,
-    title: 'Compare ideas side by side',
-    body: 'Stack up to five past validations in one table to see which one actually holds up.',
-  },
-  {
-    Icon: IconUser,
-    title: 'Your own board',
-    body: 'Sign in and every validation you run follows you across devices instead of living in one browser tab.',
-  },
-  {
-    Icon: IconDownload,
-    title: 'Shareable reports',
-    body: 'Export a PDF or email yourself the full write-up to bring to a co-founder or advisor.',
+    title: 'GTM & MVP roadmap',
+    body: 'What to build, sell, and test first, stage by stage.',
   },
 ]
 
+// Account features, kept short since they support the report rather than
+// being the reason to trust it.
+const ACCOUNT_PERKS = [
+  { Icon: IconUser, text: 'Your own board — every validation follows your account' },
+  { Icon: IconColumns, text: 'Compare up to five ideas side by side' },
+  { Icon: IconDownload, text: 'Export a PDF or email yourself the full report' },
+]
+
 export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut, apiUrl, onAuthenticated }) {
-  const { text, settled } = useTypewriter(EXAMPLE_IDEAS)
-  const confidence = useCountUp(settled ? 84 : 0, 900)
+  const { text, settled, index } = useTypewriter(EXAMPLE_IDEAS.map((e) => e.idea))
+  const demo = EXAMPLE_IDEAS[index]
+  const demoStyle = DECISION_STYLES[demo.decision] || DECISION_STYLES.validate_first
   const google = useAuthRequest(apiUrl, onAuthenticated)
 
   function handleGoogleCredential(idToken) {
@@ -94,7 +133,7 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
         <div className="mb-14 flex items-center justify-between">
           <p className="font-mono text-xs uppercase tracking-widest text-accent">Affinity</p>
           <div className="flex items-center gap-2">
-            {currentUser && (
+            {currentUser ? (
               <button
                 type="button"
                 onClick={onSignOut}
@@ -104,11 +143,15 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
                 <IconUser className="h-3 w-3 text-accent" />
                 <span className="max-w-[9rem] truncate normal-case">{currentUser.email}</span>
               </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onSignIn}
+                className="rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-text transition-colors hover:border-accent hover:text-accent"
+              >
+                Sign in
+              </button>
             )}
-            <span className="flex items-center gap-1.5 rounded-full border border-border bg-panel px-3 py-1 font-mono text-[11px] uppercase tracking-wide text-info">
-              <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-info" />
-              Live
-            </span>
           </div>
         </div>
 
@@ -116,10 +159,9 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
           <p className="mb-3 font-mono text-xs uppercase tracking-widest text-muted">
             AI Market Research Agent
           </p>
-          <h1 className="font-serif text-5xl leading-tight text-text sm:text-6xl">
-            Before you build it,
-            <br />
-            measure the <em className="text-accent italic">affinity</em>.
+          <h1 className="font-serif text-4xl leading-tight text-text sm:text-6xl">
+            Before you build it, measure the{' '}
+            <em className="text-accent italic">affinity</em>.
           </h1>
           <p className="mx-auto mt-5 max-w-md text-[15px] leading-relaxed text-muted">
             Describe a startup idea and a team of research agents will search the live web,
@@ -134,17 +176,8 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
                 onClick={onStart}
                 className="rounded-full bg-accent px-7 py-3 font-mono text-sm font-semibold uppercase tracking-wide text-white shadow-sm transition-transform hover:-translate-y-0.5 hover:bg-accent-hover"
               >
-                Test it out →
+                Validate my idea →
               </button>
-              {!currentUser && (
-                <button
-                  type="button"
-                  onClick={onSignIn}
-                  className="rounded-full border border-border bg-panel px-7 py-3 font-mono text-sm font-semibold uppercase tracking-wide text-text shadow-sm transition-colors hover:border-accent hover:text-accent"
-                >
-                  Sign in
-                </button>
-              )}
             </div>
             {!currentUser && apiUrl && onAuthenticated && (
               <div className="mt-1 flex w-full max-w-xs flex-col items-center">
@@ -161,34 +194,39 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
                 )}
               </div>
             )}
-            <p className="font-mono text-[11px] uppercase tracking-widest text-muted">
+            <p className="text-[13px] text-muted">
               {currentUser ? 'Signed in · Your validations are saved to your account' : 'No signup required to try · Sign in to save your history'}
             </p>
           </div>
         </section>
 
         <section
-          className="fade-in-up mx-auto mt-14 max-w-2xl rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-7"
+          className={`fade-in-up mx-auto mt-14 max-w-2xl rounded-2xl border-[1.5px] bg-panel p-6 shadow-sm transition-colors duration-300 sm:p-7 ${settled ? demoStyle.border : 'border-border'}`}
           style={{ animationDelay: '150ms' }}
         >
-          <div className="flex flex-wrap items-center gap-6">
+          <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-muted">
+            Startup idea
+          </p>
+          <p className="font-serif text-lg leading-snug text-text cursor-blink min-h-[3.5rem]">
+            {text}
+          </p>
+          <div
+            className={`mt-3 flex items-start justify-between gap-4 border-t border-border pt-3 transition-opacity duration-300 ${
+              settled ? 'opacity-100' : 'opacity-0'
+            }`}
+          >
             <div className="min-w-0 flex-1">
-              <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-muted">
-                Startup idea
-              </p>
-              <p className="font-serif text-lg leading-snug text-text cursor-blink min-h-[3.5rem]">
-                {text}
-              </p>
-              <div
-                className={`mt-3 flex items-center gap-2 border-t border-border pt-3 font-mono text-xs uppercase tracking-wide transition-opacity duration-300 ${
-                  settled ? 'text-info opacity-100' : 'text-muted opacity-0'
-                }`}
+              <span
+                className={`whitespace-nowrap rounded-full border px-2.5 py-0.5 font-mono text-[11px] font-semibold uppercase tracking-wide ${demoStyle.badge}`}
               >
-                <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-info" />
-                Validating live sources…
-              </div>
+                {demo.label}
+              </span>
+              <span className="ml-2 text-sm leading-relaxed text-muted-strong">{demo.reason}</span>
             </div>
-            <ConfidenceGauge percent={confidence} size={92} />
+            <p className="shrink-0 font-serif text-2xl leading-none text-text">
+              {demo.score}
+              <span className="ml-0.5 font-mono text-xs text-muted">/100</span>
+            </p>
           </div>
         </section>
 
@@ -225,7 +263,7 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
             className="fade-in-up mb-2 text-center font-mono text-xs uppercase tracking-widest text-muted"
             style={{ animationDelay: '250ms' }}
           >
-            Everything in one report
+            Five pillars of evidence
           </p>
           <h2
             className="fade-in-up mb-8 text-center font-serif text-2xl text-text"
@@ -234,7 +272,7 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
             Built for founders who want proof, not vibes.
           </h2>
           <div className="fade-in-up grid gap-x-8 gap-y-6 rounded-2xl border border-border bg-panel p-6 sm:grid-cols-2 sm:p-8 lg:grid-cols-3" style={{ animationDelay: '350ms' }}>
-            {FEATURES.map(({ Icon, title, body }) => (
+            {PILLARS.map(({ Icon, title, body }) => (
               <div key={title} className="flex gap-3">
                 <Icon className="mt-0.5 h-[18px] w-[18px] shrink-0 text-accent" />
                 <div>
@@ -242,6 +280,17 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
                   <p className="mt-1 text-sm leading-relaxed text-muted">{body}</p>
                 </div>
               </div>
+            ))}
+          </div>
+          <div
+            className="fade-in-up mt-4 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 rounded-2xl border border-border bg-panel/60 px-6 py-4"
+            style={{ animationDelay: '400ms' }}
+          >
+            {ACCOUNT_PERKS.map(({ Icon, text }) => (
+              <span key={text} className="flex items-center gap-2 text-[13px] text-muted-strong">
+                <Icon className="h-[15px] w-[15px] shrink-0 text-accent" />
+                {text}
+              </span>
             ))}
           </div>
         </section>
@@ -253,13 +302,11 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
           <button
             type="button"
             onClick={onStart}
-            className="rounded-full border border-border px-6 py-2.5 font-mono text-xs uppercase tracking-wide text-text transition-colors hover:border-accent hover:text-accent"
+            className="rounded-full bg-accent px-7 py-3 font-mono text-sm font-semibold uppercase tracking-wide text-white shadow-sm transition-transform hover:-translate-y-0.5 hover:bg-accent-hover"
           >
-            Test it out →
+            Validate my idea →
           </button>
-          <p className="font-mono text-[11px] uppercase tracking-widest text-muted">
-            Free to try · Full report in minutes
-          </p>
+          <p className="text-[13px] text-muted">Free to try · Full report in minutes</p>
         </div>
       </main>
 

@@ -39,5 +39,5 @@ export default function useTypewriter(items) {
     return () => clearTimeout(timeout)
   }, [text, phase, index, items])
 
-  return { text, settled: phase === 'holding' }
+  return { text, settled: phase === 'holding', index: index % items.length }
 }
