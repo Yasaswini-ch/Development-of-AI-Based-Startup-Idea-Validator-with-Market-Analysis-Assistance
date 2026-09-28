@@ -22,6 +22,8 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
+      - key: PRODUCTHUNT_API_TOKEN
+        sync: false
       - key: SENDGRID_API_KEY
         sync: false
       - key: SENDGRID_FROM_EMAIL

@@ -398,12 +398,15 @@ def _extract_entities(results: list) -> dict[str, dict]:
 
 
 def _clean_offering(snippet: str) -> str:
-    """Collapse a raw snippet's embedded newlines into a single readable
-    line before it reaches the frontend - a comparison-table-scraped
-    snippet (see _normalize_snippet_text) renders as garbled multi-line
-    text like "Noah Kaufman\\n Noah Kaufman\\n\\nBlack and White
-    Roasters\\n\\nCoffee" if shown raw, confirmed live."""
-    return " ".join(snippet.split())
+    """Collapse a raw snippet into a single readable line.
+    Strips markdown headers/bold/italic that some search results return
+    as raw markup (e.g. '#### Pros', '## provider'), then collapses
+    embedded newlines."""
+    import re as _re
+    text = _re.sub(r"^#{1,6}\s+", "", snippet, flags=_re.MULTILINE)
+    text = _re.sub(r"\*{1,2}([^*]+)\*{1,2}", r"\1", text)
+    text = _re.sub(r"_{1,2}([^_]+)_{1,2}", r"\1", text)
+    return " ".join(text.split())
 
 
 def _dedupe_near_matches(mentions: dict[str, dict]) -> list[str]:
