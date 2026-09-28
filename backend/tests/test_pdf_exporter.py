@@ -26,6 +26,47 @@ def _texts(flowables) -> list[str]:
     return out
 
 
+def _charts(flowables) -> list:
+    """Every chart flowable in the story, walking into cards/tables."""
+    out = []
+    for f in flowables:
+        if isinstance(f, (pdf_exporter._HBarChart, pdf_exporter._RadarChart,
+                          pdf_exporter._MatrixChart, pdf_exporter._TimelineChart)):
+            out.append(f)
+        elif isinstance(f, KeepTogether):
+            out += _charts(f._content)
+        elif isinstance(f, Table):
+            for row in f._cellvalues:
+                for cell in row:
+                    out += _charts(cell if isinstance(cell, (list, tuple)) else [cell])
+    return out
+
+
+CHARTED = {
+    "confidence": {
+        "percentage": 62, "label": "8/12 sources agree",
+        "sourceCoverage": {"percentage": 78}, "crossSourceAgreement": {"percentage": 41},
+        "directEvidenceRatio": {"percentage": 55}, "averageRelevance": 0.71,
+        "sourceRecency": {"totalSources": 12, "sourcesWithKnownDate": 5},
+    },
+    "competitors": {"competitors": [
+        {"name": "Waitwhile", "estimatedPrice": "mid", "featureBreadth": "broad"},
+        {"name": "Qless", "estimatedPrice": "unknown", "featureBreadth": "broad"},
+    ]},
+    "swot": {"risks": [
+        {"risk": "Churn", "severity": "high", "likelihood": "medium"},
+        {"risk": "Cost", "severity": "low", "likelihood": "high"},
+    ]},
+    "marketOpportunity": {"viabilityIndex": {"dimensions": [
+        {"name": "Demand", "score": 4}, {"name": "Competition", "score": 2}, {"name": "Pricing", "score": "n/a"},
+        {"name": "Access", "score": 3},
+    ]}},
+    "mvp": {"deliveryRoadmap": {"phases": [
+        {"phaseName": "Discovery", "durationWeeks": 2}, {"phaseName": "Build", "durationWeeks": 4},
+    ]}},
+}
+
+
 FULL = {
     "idea": "QueueLess is a virtual queue for small clinics. Customers join from their phone.",
     "targetCustomer": "Small clinics",
@@ -106,6 +147,22 @@ class PdfLayoutTests(unittest.TestCase):
 
     def test_empty_payload_still_renders(self):
         self.assertTrue(generate_dossier_pdf({}).startswith(b"%PDF"))
+
+    def test_charts_are_drawn_from_report_data(self):
+        charts = _charts(build_story(CHARTED, "28 Sep 2026"))
+        by_type = {type(c).__name__: c for c in charts}
+        self.assertEqual(len(by_type["_HBarChart"].rows), 5)
+        self.assertAlmostEqual(by_type["_HBarChart"].rows[3][1], 71.0)
+        # The unscorable axis is skipped; three remain, enough for a radar.
+        self.assertEqual([a[0] for a in by_type["_RadarChart"].axes], ["Demand", "Competition", "Access"])
+        self.assertEqual(by_type["_TimelineChart"].phases, [("Discovery", 1, 2), ("Build", 3, 6)])
+        matrices = [c for c in charts if isinstance(c, pdf_exporter._MatrixChart)]
+        self.assertEqual(matrices[0].cells, {("mid", "broad"): ["Waitwhile"]})
+        self.assertEqual(matrices[1].cells, {("high", "medium"): ["R1"], ("low", "high"): ["R2"]})
+        self.assertTrue(generate_dossier_pdf(CHARTED).startswith(b"%PDF"))
+
+    def test_charts_are_skipped_without_data(self):
+        self.assertEqual(_charts(build_story({}, "28 Sep 2026")), [])
 
     def test_long_idea_is_shortened_for_the_title_only(self):
         idea = "A" * 200 + ". Second sentence."

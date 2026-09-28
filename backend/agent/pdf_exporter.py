@@ -224,6 +224,243 @@ class _Meter(Flowable):
             c.roundRect(0, 0, max(self.height, self.width * ratio), self.height, self.height / 2, stroke=0, fill=1)
 
 
+# ── Charts ─────────────────────────────────────────────────────────────────
+# Vector charts drawn straight onto the canvas, in the web app's palette.
+# Labels and values use text colours; the series colour only fills marks.
+
+def _fit(text, font, size, max_width) -> str:
+    """Truncate text with an ellipsis so it fits max_width points."""
+    text = str(text or "")
+    if pdfmetrics.stringWidth(text, font, size) <= max_width:
+        return text
+    while text and pdfmetrics.stringWidth(text + "…", font, size) > max_width:
+        text = text[:-1]
+    return text.rstrip() + "…"
+
+
+def _tint(color, alpha):
+    return colors.Color(color.red, color.green, color.blue, alpha=alpha)
+
+
+def _tier_color(percent) -> colors.Color:
+    """Same three tiers as ConfidenceDashboard.jsx's tierFor()."""
+    if percent >= 67:
+        return SUCCESS
+    if percent >= 34:
+        return ACCENT
+    return DANGER
+
+
+class _HBarChart(Flowable):
+    """Labelled horizontal bars on a shared scale: [(label, value, color)]."""
+
+    ROW_H = 17
+
+    def __init__(self, rows, width, maximum=100, fmt=lambda v: f"{v:.0f}%", label_w=118):
+        super().__init__()
+        self.rows, self.maximum, self.fmt, self.label_w = rows, maximum, fmt, label_w
+        self.width, self.height = width, len(rows) * self.ROW_H
+
+    def draw(self):
+        c = self.canv
+        value_w = 34
+        track_x = self.label_w + 6
+        track_w = self.width - track_x - value_w
+        for i, (label, value, color) in enumerate(self.rows):
+            y = self.height - (i + 1) * self.ROW_H + 5
+            c.setFont(_FONTS["mono"], 7)
+            c.setFillColor(MUTED_STRONG)
+            c.drawString(0, y, _fit(str(label).upper(), _FONTS["mono"], 7, self.label_w))
+            c.setFillColor(BORDER)
+            c.roundRect(track_x, y - 0.5, track_w, 5, 2.5, stroke=0, fill=1)
+            ratio = max(0.0, min(1.0, float(value) / self.maximum)) if self.maximum else 0
+            if ratio:
+                c.setFillColor(color)
+                c.roundRect(track_x, y - 0.5, max(5, track_w * ratio), 5, 2.5, stroke=0, fill=1)
+            c.setFont(_FONTS["mono_bold"], 7.5)
+            c.setFillColor(TEXT)
+            c.drawRightString(self.width, y, self.fmt(value))
+
+
+class _RadarChart(Flowable):
+    """Viability profile: one polygon over 0-max rings, like RadarChart in
+    frontend/src/components/charts.jsx."""
+
+    def __init__(self, axes, width, size=230, maximum=5, color=ACCENT):
+        super().__init__()
+        self.axes, self.maximum, self.color = axes, maximum, color
+        self.width, self.height = width, size
+
+    def _point(self, value, index, radius):
+        import math
+
+        angle = math.pi / 2 - (2 * math.pi / len(self.axes)) * index
+        r = max(0.0, min(float(value), self.maximum)) / self.maximum * radius
+        return self.width / 2 + r * math.cos(angle), self.height / 2 + r * math.sin(angle)
+
+    def draw(self):
+        c = self.canv
+        radius = self.height / 2 - 30
+        n = len(self.axes)
+        c.setLineWidth(0.6)
+        c.setStrokeColor(BORDER_STRONG)
+        for step in range(1, int(self.maximum) + 1):
+            path = c.beginPath()
+            for i in range(n):
+                x, y = self._point(step, i, radius)
+                path.moveTo(x, y) if i == 0 else path.lineTo(x, y)
+            path.close()
+            c.drawPath(path, stroke=1, fill=0)
+        for i in range(n):
+            x, y = self._point(self.maximum, i, radius)
+            c.line(self.width / 2, self.height / 2, x, y)
+
+        points = [self._point(value, i, radius) for i, (_, value) in enumerate(self.axes)]
+        path = c.beginPath()
+        for i, (x, y) in enumerate(points):
+            path.moveTo(x, y) if i == 0 else path.lineTo(x, y)
+        path.close()
+        c.setFillColor(_tint(self.color, 0.18))
+        c.setStrokeColor(self.color)
+        c.setLineWidth(1.5)
+        c.drawPath(path, stroke=1, fill=1)
+        c.setFillColor(self.color)
+        c.setStrokeColor(PANEL)
+        c.setLineWidth(1)
+        for x, y in points:
+            c.circle(x, y, 2.6, stroke=1, fill=1)
+
+        cx, cy = self.width / 2, self.height / 2
+        for i, (label, value) in enumerate(self.axes):
+            x, y = self._point(self.maximum, i, radius)
+            dx, dy = x - cx, y - cy
+            # Push the two-line label outward from the spoke tip, clear of
+            # the ring: sideways for side axes, up/down for top/bottom ones.
+            x += 8 if dx > 8 else -8 if dx < -8 else 0
+            y += 14 if dy > 8 else -12 if dy < -8 else 3
+            anchor = c.drawString if dx > 8 else c.drawRightString if dx < -8 else c.drawCentredString
+            c.setFont(_FONTS["mono"], 6.5)
+            c.setFillColor(MUTED_STRONG)
+            anchor(x, y + 1, _fit(str(label).upper(), _FONTS["mono"], 6.5, 120))
+            c.setFont(_FONTS["mono_bold"], 7)
+            c.setFillColor(TEXT)
+            anchor(x, y - 7.5, f"{value:g} / {self.maximum:g}")
+
+
+class _MatrixChart(Flowable):
+    """A 3x3 grid with row/column labels. `cells[(row, col)]` is a list of
+    chip labels; `shade(row, col)` returns the cell's fill colour."""
+
+    def __init__(self, width, rows, cols, cells, shade, x_title, y_title, chip_color=ACCENT, cell_h=46):
+        super().__init__()
+        self.rows, self.cols, self.cells, self.shade = rows, cols, cells, shade
+        self.x_title, self.y_title, self.chip_color, self.cell_h = x_title, y_title, chip_color, cell_h
+        self.width, self.height = width, cell_h * len(rows) + 28
+
+    def draw(self):
+        c = self.canv
+        gutter = 58
+        gap = 3
+        cell_w = (self.width - gutter - gap * (len(self.cols) - 1)) / len(self.cols)
+        top = self.height - 14
+        c.setFont(_FONTS["mono_bold"], 6.5)
+        c.setFillColor(MUTED)
+        c.drawString(0, self.height - 7, self.y_title.upper())
+        c.drawRightString(self.width, 0, self.x_title.upper() + "  →")
+        for ci, (_, col_label) in enumerate(self.cols):
+            c.setFont(_FONTS["mono"], 6.5)
+            c.setFillColor(MUTED_STRONG)
+            c.drawCentredString(gutter + ci * (cell_w + gap) + cell_w / 2, 9, col_label.upper())
+        for ri, (row_key, row_label) in enumerate(self.rows):
+            y = top - (ri + 1) * self.cell_h + gap / 2
+            c.setFont(_FONTS["mono"], 6.5)
+            c.setFillColor(MUTED_STRONG)
+            c.drawString(0, y + self.cell_h / 2 - 3, row_label.upper())
+            for ci, (col_key, _) in enumerate(self.cols):
+                x = gutter + ci * (cell_w + gap)
+                c.setFillColor(self.shade(row_key, col_key))
+                c.setStrokeColor(BORDER)
+                c.setLineWidth(0.6)
+                c.roundRect(x, y, cell_w, self.cell_h - gap, 4, stroke=1, fill=1)
+                self._chips(c, self.cells.get((row_key, col_key)) or [], x + 4, y + self.cell_h - gap - 4, cell_w - 8)
+
+    def _chips(self, c, labels, x, top, max_w):
+        font, size, h = _FONTS["sans_bold"], 6.8, 11
+        cursor_x, cursor_y, lines = x, top - h, 1
+        for i, label in enumerate(labels):
+            text = _fit(label, font, size, max_w - 8)
+            w = pdfmetrics.stringWidth(text, font, size) + 8
+            if cursor_x + w > x + max_w and cursor_x > x:
+                cursor_x, cursor_y, lines = x, cursor_y - h - 2, lines + 1
+            if lines > 3:
+                c.setFont(_FONTS["mono"], 6.5)
+                c.setFillColor(MUTED_STRONG)
+                c.drawString(x, cursor_y + 3, f"+{len(labels) - i} more")
+                return
+            c.setFillColor(_tint(self.chip_color, 0.12))
+            c.setStrokeColor(_tint(self.chip_color, 0.45))
+            c.setLineWidth(0.5)
+            c.roundRect(cursor_x, cursor_y, w, h, 3, stroke=1, fill=1)
+            c.setFont(font, size)
+            c.setFillColor(TEXT)
+            c.drawString(cursor_x + 4, cursor_y + 3.2, text)
+            cursor_x += w + 3
+
+
+class _TimelineChart(Flowable):
+    """Delivery roadmap as a week-by-week Gantt strip: [(name, start, end)]."""
+
+    ROW_H = 18
+
+    def __init__(self, phases, width, total_weeks):
+        super().__init__()
+        self.phases, self.total = phases, max(1, total_weeks)
+        self.width, self.height = width, len(phases) * self.ROW_H + 16
+
+    def draw(self):
+        c = self.canv
+        label_w = 128
+        track_w = self.width - label_w
+        unit = track_w / self.total
+        axis_y = 8
+        tick = max(1, round(self.total / 12))
+        c.setLineWidth(0.5)
+        for week in range(0, self.total + 1, tick):
+            x = label_w + week * unit
+            c.setStrokeColor(BORDER)
+            c.line(x, axis_y + 4, x, self.height)
+            c.setFont(_FONTS["mono"], 6.3)
+            c.setFillColor(MUTED)
+            c.drawCentredString(x, 0, f"W{week}" if week else "0")
+        for i, (name, start, end) in enumerate(self.phases):
+            y = self.height - (i + 1) * self.ROW_H + 4
+            c.setFont(_FONTS["sans_bold"], 7.3)
+            c.setFillColor(TEXT)
+            c.drawString(0, y + 2.5, _fit(name, _FONTS["sans_bold"], 7.3, label_w - 8))
+            x0 = label_w + (start - 1) * unit
+            bar_w = max(6, (end - start + 1) * unit - 2)
+            c.setFillColor(INFO)
+            c.roundRect(x0 + 1, y, bar_w, 10, 3, stroke=0, fill=1)
+            weeks = end - start + 1
+            text = f"{weeks} wk" + ("s" if weeks != 1 else "")
+            c.setFont(_FONTS["mono_bold"], 6.3)
+            if pdfmetrics.stringWidth(text, _FONTS["mono_bold"], 6.3) + 8 < bar_w:
+                c.setFillColor(PANEL)
+                c.drawString(x0 + 5, y + 3, text)
+            else:
+                c.setFillColor(TEXT)
+                c.drawString(x0 + bar_w + 4, y + 3, text)
+
+
+def _chart_card(title, caption, chart, s):
+    """A chart in the standard panel: mono label, caption, then the chart."""
+    content = [_label_row(title, s), Spacer(1, 3)]
+    if caption:
+        content += [Paragraph(_e(caption), s["label"]), Spacer(1, 8)]
+    content.append(chart)
+    return KeepTogether([_card(content, padding=14), Spacer(1, 10)])
+
+
 def _label_row(text, s, dot_color=ACCENT, right=None):
     """`● LABEL` in mono, optionally with a badge flowable on the right."""
     cells = [_Dot(dot_color), Paragraph(_e(text).upper(), s["section"])]
@@ -508,6 +745,55 @@ def _summary_and_stats(story, d, s):
     story.append(_card(strip, padding=14))
 
 
+def _confidence(story, d, s):
+    """Evidence confidence breakdown - the same metrics as
+    ConfidenceDashboard.jsx, drawn as bars on one 0-100% scale."""
+    conf = d.get("confidence") or {}
+    rows = []
+
+    def add(label, value):
+        if isinstance(value, (int, float)):
+            rows.append((label, max(0.0, min(100.0, float(value))), _tier_color(value)))
+
+    add("Source coverage", (conf.get("sourceCoverage") or {}).get("percentage"))
+    add("Cross-source agreement", (conf.get("crossSourceAgreement") or {}).get("percentage"))
+    add("Direct evidence", (conf.get("directEvidenceRatio") or {}).get("percentage"))
+    if isinstance(conf.get("averageRelevance"), (int, float)):
+        add("Average relevance", conf["averageRelevance"] * 100)
+    recency = conf.get("sourceRecency") or {}
+    if recency.get("totalSources"):
+        add("Dated sources", recency.get("sourcesWithKnownDate", 0) / recency["totalSources"] * 100)
+    if not rows:
+        return
+    overall = conf.get("percentage")
+    inner = CONTENT_W - 28
+    bars = _HBarChart(rows, inner - 120 if isinstance(overall, (int, float)) else inner)
+    if isinstance(overall, (int, float)):
+        headline = [
+            Paragraph(f"{overall:.0f}%", ParagraphStyle("ConfOverall", parent=s["stat"], fontSize=30, leading=32,
+                                                          textColor=_tier_color(overall))),
+            Spacer(1, 3), Paragraph("OVERALL", s["stat_label"]),
+        ]
+        if conf.get("label"):
+            headline.append(Paragraph(_e(conf["label"]), s["stat_sub"]))
+        body = Table([[headline, bars]], colWidths=[120, inner - 120])
+        body.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LINEAFTER", (0, 0), (0, -1), 0.5, BORDER),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (0, -1), 12),
+            ("LEFTPADDING", (1, 0), (1, -1), 14), ("RIGHTPADDING", (1, 0), (1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+    else:
+        body = bars
+    story.append(Spacer(1, 12))
+    story.append(_chart_card(
+        "Evidence confidence",
+        "How strong the evidence behind this report is - not a guarantee the business will succeed.",
+        body, s,
+    ))
+
+
 def _market(story, d, s, sections):
     market_opp = d.get("marketOpportunity") or {}
     if not market_opp:
@@ -566,6 +852,25 @@ def _competitors(story, d, s, sections):
         widths = [CONTENT_W - 300, 150, 150]
     story.append(_data_table(rows, widths, s))
 
+    # Positioning snapshot - same price x breadth grid as CompetitorAnalysis.jsx.
+    price_rows = [("high", "High price"), ("mid", "Mid price"), ("low", "Low price")]
+    breadth_cols = [("narrow", "Narrow"), ("moderate", "Moderate"), ("broad", "Broad")]
+    cells: Dict[tuple, List[str]] = {}
+    for c in comp_list:
+        price = c.get("estimatedPrice") if c.get("estimatedPrice") in dict(price_rows) else c.get("priceBucket")
+        breadth = c.get("featureBreadth")
+        if price in dict(price_rows) and breadth in dict(breadth_cols):
+            cells.setdefault((price, breadth), []).append(str(c.get("name") or "Unnamed"))
+    if cells:
+        story.append(Spacer(1, 10))
+        story.append(_chart_card(
+            "Positioning snapshot",
+            "Approximate placement by price and feature breadth, pattern-matched from source text.",
+            _MatrixChart(CONTENT_W - 28, price_rows, breadth_cols, cells, lambda r, c: SURFACE,
+                         "Feature breadth", "Price", cell_h=40),
+            s,
+        ))
+
 
 def _swot(story, d, s, sections):
     swot = d.get("swot") or {}
@@ -606,12 +911,33 @@ def _swot(story, d, s, sections):
             return Paragraph(f'<font color="{_hex(level_color.get(value, MUTED_STRONG))}">{_e(value.capitalize() or "—")}</font>',
                              s["cell_bold"])
 
+        levels = [("high", "High"), ("medium", "Medium"), ("low", "Low")]
+        rank = {"low": 0, "medium": 1, "high": 2}
+        cells: Dict[tuple, List[str]] = {}
+        for i, r in enumerate(risks, 1):
+            sev, lik = str(r.get("severity") or "").lower(), str(r.get("likelihood") or "").lower()
+            if sev in rank and lik in rank:
+                cells.setdefault((sev, lik), []).append(f"R{i}")
+
+        def heat(sev, lik):
+            # One hue, stronger toward high severity x high likelihood.
+            return _tint(DANGER, 0.05 + 0.07 * (rank[sev] + rank[lik]))
+
         story.append(Spacer(1, 4))
+        if cells:
+            story.append(_chart_card(
+                "Risk matrix",
+                "Each risk (R1, R2, ...) placed by severity and likelihood - top right needs attention first.",
+                _MatrixChart(CONTENT_W - 28, levels, list(reversed(levels)), cells, heat,
+                             "Likelihood", "Severity", chip_color=DANGER, cell_h=34),
+                s,
+            ))
         story.append(Paragraph("Key risks", s["h3"]))
         story.append(Spacer(1, 6))
         rows = [["Risk", "Severity", "Likelihood", "Mitigation"]]
-        for r in risks:
-            rows.append([Paragraph(_e(r.get("risk")), s["cell"]), level(r.get("severity")), level(r.get("likelihood")),
+        for i, r in enumerate(risks, 1):
+            rows.append([Paragraph(f'<font name="{_FONTS["mono_bold"]}" color="{_hex(DANGER)}">R{i}&nbsp;&nbsp;</font>{_e(r.get("risk"))}', s["cell"]),
+                         level(r.get("severity")), level(r.get("likelihood")),
                          Paragraph(_e(r.get("mitigation") or "—"), s["cell"])])
         story.append(_data_table(rows, [180, 58, 62, CONTENT_W - 300], s))
 
@@ -645,6 +971,15 @@ def _viability(story, d, s, sections):
     if not dims:
         return
     sections.add("Market viability & dynamics")
+    axes = []
+    for x in dims:
+        try:
+            axes.append((x.get("name") or "Axis", max(0.0, min(5.0, float(x.get("score"))))))
+        except (TypeError, ValueError):
+            continue
+    if len(axes) >= 3:
+        story.append(_chart_card("Viability profile", "Each axis scored 0-5; a larger shape means a stronger market.",
+                                 _RadarChart(axes, CONTENT_W - 28), s))
     rows = [["Axis", "Score", "Evidence", "Why"]]
     for x in dims:
         status = (x.get("provenance") or {}).get("status") or ("grounded" if x.get("sourceIds") else "inferred")
@@ -697,14 +1032,19 @@ def _roadmap(story, d, s, sections):
     if not phases:
         return
     sections.add("Delivery roadmap", estimate=True)
-    rows = [["Weeks", "Phase", "Deliverables", "Exit gate"]]
+    spans = []
     start = 1
     for phase in phases:
         try:
             weeks = max(1, int(phase.get("durationWeeks") or 1))
         except (TypeError, ValueError):
             weeks = 1
-        end = start + weeks - 1
+        spans.append((str(phase.get("phaseName") or "Phase"), start, start + weeks - 1))
+        start += weeks
+    story.append(_chart_card("Timeline", f"{spans[-1][2]} weeks end to end, one bar per phase.",
+                             _TimelineChart(spans, CONTENT_W - 28, spans[-1][2]), s))
+    rows = [["Weeks", "Phase", "Deliverables", "Exit gate"]]
+    for phase, (_, start, end) in zip(phases, spans):
         rows.append([
             Paragraph(f"{start}&ndash;{end}" if end > start else str(start),
                       ParagraphStyle("Weeks", parent=s["cell_bold"], fontName=_FONTS["mono_bold"], textColor=ACCENT)),
@@ -712,7 +1052,6 @@ def _roadmap(story, d, s, sections):
             _bullets(phase.get("coreDeliverables") or [], s, color=INFO) or Paragraph("—", s["cell"]),
             _bullets(phase.get("exitGateMilestones") or [], s, color=SUCCESS) or Paragraph("—", s["cell"]),
         ])
-        start = end + 1
     story.append(_data_table(rows, [48, 110, (CONTENT_W - 158) / 2, (CONTENT_W - 158) / 2], s, zebra=False))
 
 
@@ -748,7 +1087,7 @@ def _economics(story, d, s, sections):
 
 def build_story(dossier_data: Dict[str, Any], generated: str) -> list:
     """The report's flowables in reading order: idea context, verdict,
-    summary + KPI strip, then the numbered analysis sections (each skipped
+    summary + KPI strip, evidence confidence, then the numbered analysis sections (each skipped
     when its data is missing, e.g. older sessions)."""
     _register_fonts()
     d = dossier_data or {}
@@ -757,6 +1096,7 @@ def build_story(dossier_data: Dict[str, Any], generated: str) -> list:
     _cover(story, d, s, _concept_title(d.get("idea") or d.get("ideaTitle") or ""), generated)
     _verdict(story, d, s)
     _summary_and_stats(story, d, s)
+    _confidence(story, d, s)
 
     sections = _Sections(story, s)
     _market(story, d, s, sections)

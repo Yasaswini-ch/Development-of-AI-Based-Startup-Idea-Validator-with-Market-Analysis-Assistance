@@ -78,6 +78,29 @@ class PlatformMetricsAggregationTests(unittest.TestCase):
         self.assertEqual(usage["groq/qwen/qwen3.8-27b"], 2)
         self.assertEqual(usage["gemini/gemini-3.6-flash"], 1)
 
+    def test_token_usage_and_estimated_cost(self):
+        events.record("cache_miss")
+        events.record("model_used", detail={"model": "groq/qwen/qwen3.8-27b", "elapsedMs": 100, "promptTokens": 1_000_000, "completionTokens": 1_000_000, "totalTokens": 2_000_000})
+        events.record("model_used", detail={"model": "groq/openai/gpt-oss-20b", "elapsedMs": 100, "promptTokens": 1000, "completionTokens": 0, "totalTokens": 1000})
+        # An older event with no token fields counts as a call, not as tokens.
+        events.record("model_used", detail={"model": "groq/qwen/qwen3.8-27b", "elapsedMs": 100})
+        usage = get_platform_metrics(days=7)["tokenUsage"]
+        self.assertEqual(usage["totalTokens"], 2_001_000)
+        self.assertEqual(usage["promptTokens"], 1_001_000)
+        self.assertEqual(usage["tokensTrackedCalls"], 2)
+        self.assertEqual(usage["totalCalls"], 3)
+        self.assertAlmostEqual(usage["estimatedCostUsd"], 0.29 + 0.59 + 0.00015, places=6)
+        self.assertEqual(usage["avgTokensPerValidation"], 2_001_000)
+        self.assertEqual(len(usage["daily"]), 7)
+        self.assertEqual(usage["daily"][-1]["totalTokens"], 2_001_000)
+        self.assertEqual(usage["byModel"][0]["model"], "groq/qwen/qwen3.8-27b")
+        self.assertEqual(usage["byModel"][0]["calls"], 2)
+
+    def test_token_usage_empty_window(self):
+        usage = get_platform_metrics()["tokenUsage"]
+        self.assertEqual(usage["totalTokens"], 0)
+        self.assertIsNone(usage["avgCostPerValidationUsd"])
+
     def test_latency_by_node_averages_samples(self):
         events.record("node_latency", node="swot", detail={"seconds": 8.0})
         events.record("node_latency", node="swot", detail={"seconds": 10.0})

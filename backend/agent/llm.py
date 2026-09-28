@@ -241,6 +241,13 @@ def _is_switch_worthy_error(exc: Exception) -> bool:
     return any(ind in text or ind in exc_type for ind in provider_error_indicators)
 
 
+def _as_int(value) -> int | None:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _kickoff_with_metrics(model: str, build_crew):
     """Runs one crew.kickoff() call and logs latency + token usage - the
     real numbers Track F's optimization pass needs to tune prompt/limit
@@ -274,7 +281,16 @@ def _kickoff_with_metrics(model: str, build_crew):
     # exception from build_crew(model).kickoff() propagates straight out of
     # this function), so this is exactly "which model actually served the
     # call," not every model merely attempted.
-    events.record("model_used", detail={"model": model, "elapsedMs": elapsed_ms})
+    # Token counts ride along so the "Tokens & cost" charts can sum usage
+    # and estimate spend per day/model (see agent/pricing.py).
+    detail = {"model": model, "elapsedMs": elapsed_ms}
+    if usage is not None:
+        detail.update(
+            promptTokens=_as_int(getattr(usage, "prompt_tokens", None)),
+            completionTokens=_as_int(getattr(usage, "completion_tokens", None)),
+            totalTokens=_as_int(getattr(usage, "total_tokens", None)),
+        )
+    events.record("model_used", detail=detail)
     return output
 
 

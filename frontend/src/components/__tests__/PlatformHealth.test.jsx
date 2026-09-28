@@ -22,6 +22,21 @@ const PLATFORM_METRICS_FIXTURE = {
     { timestamp: '2026-09-24T14:32:00Z', node: 'swot', errorType: 'NeedsDeepAnalysisError', modelChain: 'groq/qwen/qwen3.8-27b → groq/openai/gpt-oss-20b', outcome: 'Deep analysis fallback' },
   ],
   emailDelivery: { attempted: 75, sent: 71, deliveryRate: 94.7, failed: 4 },
+  tokenUsage: {
+    totalTokens: 1_520_000,
+    promptTokens: 1_200_000,
+    completionTokens: 320_000,
+    estimatedCostUsd: 0.54,
+    avgTokensPerValidation: 7600,
+    avgCostPerValidationUsd: 0.0027,
+    tokensTrackedCalls: 200,
+    totalCalls: 212,
+    daily: [
+      { date: '2026-09-23', promptTokens: 600_000, completionTokens: 160_000, totalTokens: 760_000, costUsd: 0.27 },
+      { date: '2026-09-24', promptTokens: 600_000, completionTokens: 160_000, totalTokens: 760_000, costUsd: 0.27 },
+    ],
+    byModel: [{ model: 'groq/qwen/qwen3.8-27b', calls: 200, tokens: 1_520_000, costUsd: 0.54 }],
+  },
 }
 
 describe('PlatformHealth', () => {
@@ -39,6 +54,17 @@ describe('PlatformHealth', () => {
     expect(global.fetch).toHaveBeenCalledWith('http://api/admin/platform-metrics?days=30', expect.objectContaining({ headers: { Authorization: 'Bearer tok' } }))
     expect(screen.getByText('61%')).toBeInTheDocument()
     expect(screen.getByText('NeedsDeepAnalysisError')).toBeInTheDocument()
+  })
+
+  it('renders token and estimated cost totals', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => PLATFORM_METRICS_FIXTURE })
+
+    render(<PlatformHealth apiUrl="http://api" token="tok" />)
+
+    await waitFor(() => expect(screen.getByText('1.5M')).toBeInTheDocument())
+    expect(screen.getByText('Daily token usage')).toBeInTheDocument()
+    expect(screen.getByText('$0.0027')).toBeInTheDocument()
+    expect(screen.getByText(/12 older calls/)).toBeInTheDocument()
   })
 
   it('shows a forbidden state on a 403', async () => {
