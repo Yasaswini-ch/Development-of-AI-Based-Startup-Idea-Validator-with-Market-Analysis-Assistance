@@ -658,12 +658,21 @@ def _producthunt_lookup(name: str) -> dict | None:
     token = os.environ.get("PRODUCTHUNT_API_TOKEN")
     if not token:
         return None
+    # PH v2 GraphQL `posts` supports a `query` argument for full-text search.
+    # The previous version fetched the top 3 all-time posts with no filter,
+    # then exact-name-matched against that tiny list — almost never a hit.
+    # Passing `query: $name` makes PH actually search for the competitor name.
     try:
         request = urllib.request.Request(
             _PRODUCTHUNT_ENDPOINT,
             data=json.dumps(
                 {
-                    "query": "query { posts(first: 3, order: VOTES) { edges { node { name tagline votesCount website url } } } }"
+                    "query": (
+                        "query SearchProduct($name: String!) { "
+                        "posts(query: $name, first: 5, order: VOTES) { "
+                        "edges { node { name tagline votesCount website url } } } }"
+                    ),
+                    "variables": {"name": name},
                 }
             ).encode(),
             method="POST",
@@ -672,7 +681,12 @@ def _producthunt_lookup(name: str) -> dict | None:
         with urllib.request.urlopen(request, timeout=5) as resp:
             body = json.loads(resp.read())
         edges = body.get("data", {}).get("posts", {}).get("edges") or []
-        match = next((e["node"] for e in edges if e.get("node", {}).get("name", "").lower() == name.lower()), None)
+        nodes = [e["node"] for e in edges if e.get("node")]
+        # Prefer an exact name match; fall back to the top search result.
+        match = next(
+            (n for n in nodes if n.get("name", "").lower() == name.lower()),
+            nodes[0] if nodes else None,
+        )
         if not match:
             return None
         return {

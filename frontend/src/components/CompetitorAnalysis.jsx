@@ -79,8 +79,30 @@ function TraitList({ title, items, tone }) {
   )
 }
 
+function EnrichmentBadge({ enrichment }) {
+  if (!enrichment) return null
+  const isPH = enrichment.source === 'producthunt'
+  return (
+    <a
+      href={enrichment.url}
+      target="_blank"
+      rel="noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      className={`flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wide transition-colors ${
+        isPH
+          ? 'border-orange-300/60 bg-orange-50 text-orange-600 hover:bg-orange-100 dark:bg-orange-900/20 dark:text-orange-400'
+          : 'border-blue-300/60 bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400'
+      }`}
+    >
+      {isPH ? '🚀' : '📖'} {isPH ? 'Product Hunt' : 'Wikidata'}
+      {isPH && enrichment.votesCount ? ` · ${enrichment.votesCount}` : ''}
+    </a>
+  )
+}
+
 function CompetitorCard({ competitor }) {
   const { name, offering, url, gap, estimatedPrice, featureBreadth } = competitor
+  const enrichment = competitor.enrichment || null
   const classification = known(competitor.classification)
   const pricing = known(competitor.pricing)
   const businessModel = known(competitor.businessModel)
@@ -88,26 +110,38 @@ function CompetitorCard({ competitor }) {
   const weaknesses = competitor.weaknesses || []
   const confidence = confidenceFor(competitor)
   const isGeneric = !gap || gap === _GAP_DISCLOSURE
+
+  // Use enrichment website as the card link if the source URL is a search snippet
+  const cardUrl = enrichment?.website || url
+
   return (
     <a
-      href={url}
+      href={cardUrl}
       target="_blank"
       rel="noreferrer"
       className={`block rounded-2xl border-[1.5px] bg-panel p-5 transition-shadow duration-200 hover:shadow-md hover:shadow-black/5 ${CONFIDENCE_STYLES[confidence]}`}
     >
       <div className="flex items-start justify-between gap-2">
         <h4 className="font-serif text-base font-semibold text-text">{name}</h4>
-        {confidence === 'high' ? (
-          <span className="flex shrink-0 items-center gap-1 rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 font-mono text-[10.5px] font-semibold uppercase tracking-wide text-accent">
-            <IconCheckCircle className="h-3 w-3" />
-            Analyzed
-          </span>
-        ) : (
-          <span className="shrink-0 rounded-full border border-border-strong bg-panel px-2 py-0.5 font-mono text-[10.5px] font-semibold uppercase tracking-wide text-muted-strong">
-            Auto-identified
-          </span>
-        )}
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          {confidence === 'high' ? (
+            <span className="flex items-center gap-1 rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 font-mono text-[10.5px] font-semibold uppercase tracking-wide text-accent">
+              <IconCheckCircle className="h-3 w-3" />
+              Analyzed
+            </span>
+          ) : (
+            <span className="rounded-full border border-border-strong bg-panel px-2 py-0.5 font-mono text-[10.5px] font-semibold uppercase tracking-wide text-muted-strong">
+              Auto-identified
+            </span>
+          )}
+          <EnrichmentBadge enrichment={enrichment} />
+        </div>
       </div>
+
+      {/* Show PH tagline if it's more informative than the scraped offering */}
+      {enrichment?.tagline && (
+        <p className="mt-1 text-xs font-medium text-accent/80 leading-snug">{enrichment.tagline}</p>
+      )}
       <p className="mt-1.5 text-sm text-muted leading-relaxed">{offering}</p>
 
       <div className="mt-3 flex flex-wrap gap-1.5">
@@ -151,9 +185,9 @@ function CompetitorCard({ competitor }) {
         </div>
       )}
 
-      {url && (
+      {cardUrl && (
         <p className="mt-2 truncate font-mono text-[11px] uppercase tracking-wide text-muted/60">
-          {hostnameOf(url)}
+          {hostnameOf(cardUrl)}
         </p>
       )}
     </a>
