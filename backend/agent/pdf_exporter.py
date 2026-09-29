@@ -37,6 +37,7 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from .output_guard import provenance
 from .structured_output import extract_inline_citations
 
 logger = logging.getLogger(__name__)
@@ -604,10 +605,31 @@ def _bullets(items, s, color=BORDER_STRONG, style="bullet"):
     return [Paragraph(dot + _e(item), indented) for item in items if str(item or "").strip()]
 
 
-def _texts(items) -> List[str]:
-    """SWOT items are {"text", "sourceIds"} objects (docs/unique-features-plan.md
-    §5.1); str() covers any older plain-string shape too."""
-    return [item.get("text", "") if isinstance(item, dict) else str(item) for item in items or []]
+def _bullets_with_provenance(items, s, color=BORDER_STRONG, style="bullet"):
+    """Like _bullets(), but tags each line GROUNDED/INFERRED from its own
+    sourceIds (output_guard.provenance() - the same grounded/inferred scale
+    already used for Market Viability axes), instead of discarding sourceIds
+    by collapsing every item to a bare string first. Requested by Yalene
+    2026-09-29 to match a rival report's per-claim confidence tags on
+    SWOT/opportunity bullets, which our SWOT section didn't carry even
+    though the same {"text", "sourceIds"} shape already supports it.
+    """
+    base = s[style]
+    indented = ParagraphStyle(f"{base.name}Bullet", parent=base, leftIndent=10, bulletIndent=0, spaceAfter=2)
+    dot = f'<bullet><font color="{_hex(color)}" size="6">●</font></bullet>'
+    paras = []
+    for item in items or []:
+        text = item.get("text", "") if isinstance(item, dict) else str(item)
+        if not str(text or "").strip():
+            continue
+        source_ids = item.get("sourceIds") if isinstance(item, dict) else None
+        status = provenance(source_ids)["status"]
+        tag_color = INFO if status == "grounded" else WARNING
+        tag = f'&nbsp;&nbsp;<font name="{_FONTS["mono_bold"]}" size="6.5" color="{_hex(tag_color)}">{status.upper()}</font>'
+        paras.append(Paragraph(dot + _e(text) + tag, indented))
+    return paras
+
+
 
 
 def _concept_title(idea: str) -> str:
@@ -930,10 +952,10 @@ def _swot(story, d, s, sections):
     if not swot:
         return
     quads = [
-        ("Strengths", _texts(swot.get("strengths")), SUCCESS),
-        ("Weaknesses", _texts(swot.get("weaknesses")), DANGER),
-        ("Opportunities", _texts(swot.get("opportunities")), INFO),
-        ("Threats", _texts(swot.get("threats")), WARNING_BRIGHT),
+        ("Strengths", swot.get("strengths") or [], SUCCESS),
+        ("Weaknesses", swot.get("weaknesses") or [], DANGER),
+        ("Opportunities", swot.get("opportunities") or [], INFO),
+        ("Threats", swot.get("threats") or [], WARNING_BRIGHT),
     ]
     risks = [r for r in swot.get("risks") or [] if isinstance(r, dict) and r.get("risk")]
     if not any(items for _, items, _ in quads) and not risks:
@@ -943,7 +965,7 @@ def _swot(story, d, s, sections):
     width = (CONTENT_W - gap) / 2
 
     def quad(title, items, color):
-        body = _bullets(items, s, color=color) or [Paragraph("None identified.", s["body_muted"])]
+        body = _bullets_with_provenance(items, s, color=color) or [Paragraph("None identified.", s["body_muted"])]
         return _card([_label_row(title, s, dot_color=color), Spacer(1, 6)] + body, width=width, padding=12)
 
     grid = Table([[quad(*quads[0]), quad(*quads[1])], [quad(*quads[2]), quad(*quads[3])]],
