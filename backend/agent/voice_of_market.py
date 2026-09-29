@@ -19,7 +19,7 @@ so a quote's sourceId means the same source everywhere else in the app.
 import re
 from urllib.parse import urlparse
 
-MAX_QUOTES = 12
+MAX_QUOTES = 30
 _MIN_QUOTE_CHARS = 40
 _MAX_QUOTE_CHARS = 220
 
@@ -200,9 +200,27 @@ def _extract_owner_candidates(results: list) -> list[dict]:
 
 
 def _rank_and_cap(candidates: list[dict], keyword_groups, limit: int) -> list[dict]:
-    rank = {dimension: position for position, (dimension, _) in enumerate(keyword_groups)}
-    candidates.sort(key=lambda quote: rank[quote["taggedDimension"]])
-    return candidates[:limit]
+    """Cap to `limit` while guaranteeing every dimension that has candidates
+    is represented, instead of a plain friction-first sort-then-slice - with
+    enough friction+demand candidates to fill the cap on their own, a flat
+    sort silently drops every tailwind quote even though the summary counts
+    them, which reads as a bug (a dimension with a non-zero count and no
+    quotes or filter tab to show for it).
+
+    Round-robins one candidate per dimension per pass, in keyword_groups'
+    priority order, so friction still fills first within each round but no
+    non-empty dimension is starved out entirely.
+    """
+    order = [dimension for dimension, _ in keyword_groups]
+    buckets = {dimension: [c for c in candidates if c["taggedDimension"] == dimension] for dimension in order}
+    result = []
+    while len(result) < limit and any(buckets.values()):
+        for dimension in order:
+            if buckets[dimension]:
+                result.append(buckets[dimension].pop(0))
+                if len(result) >= limit:
+                    break
+    return result
 
 
 def extract_voice_of_market(results: list, limit: int = MAX_QUOTES) -> list[dict]:

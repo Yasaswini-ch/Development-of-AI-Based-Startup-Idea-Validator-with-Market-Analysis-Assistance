@@ -86,6 +86,27 @@ class VoiceOfMarketTests(unittest.TestCase):
         self.assertEqual(len(quotes), MAX_QUOTES)
         self.assertEqual(len({q["sourceId"] for q in quotes}), MAX_QUOTES)
 
+    def test_a_dimension_with_fewer_candidates_is_not_starved_out_by_the_cap(self):
+        # Regression: friction (18) + demand (18) alone exceed MAX_QUOTES, so a
+        # plain sort-then-slice would drop every tailwind quote even though
+        # tailwind candidates exist - the summary would then report a nonzero
+        # count for a dimension with zero quotes and no filter tab to show it.
+        friction = [
+            {"url": f"https://a.example/{i}", "snippet": "It is so tedious and frustrating to chase late payments every month."}
+            for i in range(18)
+        ]
+        demand = [
+            {"url": f"https://b.example/{i}", "snippet": "I am looking for a simpler alternative to what we use today."}
+            for i in range(18)
+        ]
+        tailwind = [
+            {"url": f"https://c.example/{i}", "snippet": "The market is growing fast and adoption keeps rising every quarter."}
+            for i in range(5)
+        ]
+        quotes = extract_voice_of_market(friction + demand + tailwind)
+        dimensions_present = {q["taggedDimension"] for q in quotes}
+        self.assertIn("Structural Tailwind", dimensions_present)
+
     def test_theme_is_tagged_from_the_sentence_content(self):
         results = [
             {"url": "https://a.example/1", "snippet": "The pricing is way too expensive for what you get every month."},
