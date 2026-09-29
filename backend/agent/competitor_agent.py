@@ -701,36 +701,26 @@ def _wikidata_lookup(name: str) -> dict | None:
         return None
 
 
-def _producthunt_lookup(name: str) -> dict | None:
-    """A free (developer-token) enrichment source for software/app
-    competitors: Product Hunt's v2 GraphQL API. Requires
-    PRODUCTHUNT_API_TOKEN; returns None immediately without one, and on
-    any request/shape failure, same best-effort contract as
-    _wikidata_lookup - this can never break competitor discovery.
-
-    Searches posts for the competitor's name (`posts(query: $name)`) and
-    keeps a result only on an exact case-insensitive name match (no
-    fallback to other search hits). The variable must be both declared and
-    used in the query body - an unused `$name` is invalid GraphQL.
-    """
+def _producthunt_search(query: str, first: int) -> list[dict] | None:
+    """Product Hunt v2 GraphQL `posts(query: $name)` full-text search, most
+    voted first. Returns the post nodes, or None when there is no token or
+    the request/shape fails - best effort, never raises. The variable must
+    be both declared and used in the query body (an unused `$name` is
+    invalid GraphQL)."""
     token = os.environ.get("PRODUCTHUNT_API_TOKEN")
     if not token:
         return None
-    # PH v2 GraphQL `posts` supports a `query` argument for full-text search.
-    # The previous version fetched the top 3 all-time posts with no filter,
-    # then exact-name-matched against that tiny list — almost never a hit.
-    # Passing `query: $name` makes PH actually search for the competitor name.
     try:
         request = urllib.request.Request(
             _PRODUCTHUNT_ENDPOINT,
             data=json.dumps(
                 {
                     "query": (
-                        "query SearchProduct($name: String!) { "
-                        "posts(query: $name, first: 5, order: VOTES) { "
+                        "query SearchProduct($name: String!, $first: Int!) { "
+                        "posts(query: $name, first: $first, order: VOTES) { "
                         "edges { node { name tagline votesCount website url } } } }"
                     ),
-                    "variables": {"name": name},
+                    "variables": {"name": query, "first": first},
                 }
             ).encode(),
             method="POST",
@@ -739,22 +729,65 @@ def _producthunt_lookup(name: str) -> dict | None:
         with urllib.request.urlopen(request, timeout=5) as resp:
             body = json.loads(resp.read())
         edges = body.get("data", {}).get("posts", {}).get("edges") or []
-        nodes = [e["node"] for e in edges if e.get("node")]
-        # Exact name match only: a different product's tagline/votes on a
-        # competitor card is worse than no enrichment at all.
-        match = next((n for n in nodes if (n.get("name") or "").strip().lower() == name.strip().lower()), None)
-        if not match:
-            return None
-        return {
-            "source": "producthunt",
-            "tagline": match.get("tagline"),
-            "votesCount": match.get("votesCount"),
-            "website": match.get("website"),
-            "url": match.get("url"),
-        }
+        return [e["node"] for e in edges if e.get("node")]
     except Exception:
-        logger.warning("Product Hunt enrichment unavailable for %r", name, exc_info=True)
+        logger.warning("Product Hunt search unavailable for %r", query, exc_info=True)
         return None
+
+
+def _producthunt_lookup(name: str) -> dict | None:
+    """Enrichment for one already-named competitor: keeps a Product Hunt
+    result only on an exact case-insensitive name match (a different
+    product's tagline/votes on a competitor card is worse than none).
+    Requires PRODUCTHUNT_API_TOKEN; None on no token, no match or any
+    failure - can never break competitor discovery."""
+    nodes = _producthunt_search(name, 5)
+    match = next((n for n in nodes or [] if (n.get("name") or "").strip().lower() == name.strip().lower()), None)
+    if not match:
+        return None
+    return {
+        "source": "producthunt",
+        "tagline": match.get("tagline"),
+        "votesCount": match.get("votesCount"),
+        "website": match.get("website"),
+        "url": match.get("url"),
+    }
+
+
+_MAX_SIMILAR_PRODUCTS = 5
+
+
+def _similar_products(idea: str, exclude_names: list[str]) -> list[dict]:
+    """Products on Product Hunt that match the idea itself (a search on the
+    idea text, not on a competitor name), excluding ones already listed as
+    competitors. Shown separately from `competitors` on purpose: these are
+    Product Hunt's own search hits, not names grounded in this run's search
+    snippets, so they never feed the Opportunity Score or the comparison
+    grid. [] without a token or on any failure."""
+    query = " ".join((idea or "").split())[:100]
+    if not query:
+        return []
+    taken = {n.strip().lower() for n in exclude_names}
+    seen: set[str] = set()
+    similar = []
+    for node in _producthunt_search(query, _MAX_SIMILAR_PRODUCTS + len(taken)) or []:
+        name = (node.get("name") or "").strip()
+        key = name.lower()
+        if not name or key in taken or key in seen:
+            continue
+        seen.add(key)
+        similar.append(
+            {
+                "name": name,
+                "tagline": node.get("tagline"),
+                "votesCount": node.get("votesCount"),
+                "website": node.get("website"),
+                "url": node.get("url"),
+            }
+        )
+        if len(similar) >= _MAX_SIMILAR_PRODUCTS:
+            break
+    return similar
 
 
 def _enrich_with_apis(competitors: list[dict]) -> None:
@@ -1060,6 +1093,9 @@ def analyze_competitors(
     _enrich_with_apis(competitors)
 
     result = {"competitors": competitors, "searchResultCount": search_result_count}
+    similar = _similar_products(idea, [c["name"] for c in competitors])
+    if similar:
+        result["similarProducts"] = similar
     if not profile or not competitors:
         return result
 

@@ -327,6 +327,39 @@ function ComparisonMatrix({ rows, competitors }) {
   )
 }
 
+function SimilarProducts({ products }) {
+  if (!Array.isArray(products) || products.length === 0) return null
+  return (
+    <div className="mt-6">
+      <h3 className="mb-1 font-mono text-[11px] uppercase tracking-widest text-muted">
+        Similar products on Product Hunt
+      </h3>
+      <p className="mb-2 text-xs text-muted">
+        Found by searching Product Hunt for your idea. These are not part of the competitor analysis or the score.
+      </p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {products.map((p) => (
+          <a
+            key={p.name}
+            href={p.url || p.website}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-lg border border-orange-300/60 bg-orange-50/50 p-3 transition-colors hover:bg-orange-50 dark:bg-orange-900/10 dark:hover:bg-orange-900/20"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm font-semibold">{p.name}</span>
+              {p.votesCount ? (
+                <span className="font-mono text-[10px] text-orange-600 dark:text-orange-400">{p.votesCount}</span>
+              ) : null}
+            </div>
+            {p.tagline && <p className="mt-1 text-xs text-muted">{p.tagline}</p>}
+          </a>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function CompetitorAnalysis({ data, error }) {
   // `data === null` means the backend node failed for this request (per the API
   // contract) - distinct from a genuine "no competitors found" result.
@@ -337,7 +370,10 @@ export default function CompetitorAnalysis({ data, error }) {
   const { competitors = [] } = data
   if (competitors.length === 0) {
     return (
-      <UnavailableCard error="No competitors could be identified from the available sources." />
+      <div>
+        <UnavailableCard error="No competitors could be identified from the available sources." />
+        <SimilarProducts products={data.similarProducts} />
+      </div>
     )
   }
 
@@ -352,6 +388,8 @@ export default function CompetitorAnalysis({ data, error }) {
       <ComparisonMatrix rows={data.comparisonMatrix} competitors={competitors} />
 
       <PositioningGrid competitors={competitors} />
+
+      <SimilarProducts products={data.similarProducts} />
     </div>
   )
 }

@@ -205,6 +205,16 @@ search across all posts, so `_producthunt_lookup`'s query is a best effort and s
 be verified live once a token is available. The frontend does not render `enrichment`
 yet.
 
+**Similar products (2026-09-29):** separately from per-competitor enrichment, `_similar_products`
+searches Product Hunt for the *idea text itself* (`posts(query: $name)`, most voted first) and
+returns up to 5 products not already listed as competitors under `similarProducts`. Per-competitor
+enrichment (`_producthunt_lookup`) keeps a hit only on an exact name match; the idea search does
+not need one, since it is looking for products that fit the idea. Because these are Product Hunt's
+own hits rather than names grounded in this run's search snippets, they are shown in their own
+"Similar products on Product Hunt" section and never feed the Opportunity Score or comparison
+grid. Needs `PRODUCTHUNT_API_TOKEN`; absent or on failure the field is simply omitted. Search
+quality on a long idea sentence is unverified live.
+
 **Opportunity Score:** a related fix in `opportunity_score.py` - zero found
 competitors is no longer scored as a perfect open market; see
 [15 Opportunity Score §7](15_AFFINITY_OPPORTUNITY_SCORE_MATHEMATICAL_MODEL.md).

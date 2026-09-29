@@ -50,7 +50,7 @@ class ProductHuntLookupTests(unittest.TestCase):
         competitor_agent._producthunt_lookup("HelloFresh")
 
         body = json.loads(mock_urlopen.call_args[0][0].data)
-        self.assertEqual(body["variables"], {"name": "HelloFresh"})
+        self.assertEqual(body["variables"]["name"], "HelloFresh")
         self.assertIn("posts(query: $name", body["query"])
 
     @patch("agent.competitor_agent.urllib.request.urlopen")
@@ -211,3 +211,30 @@ class EnrichWithApisTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SimilarProductsTests(unittest.TestCase):
+    def setUp(self):
+        patcher = patch.dict("os.environ", {"PRODUCTHUNT_API_TOKEN": "test-token"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    @patch("agent.competitor_agent.urllib.request.urlopen")
+    def test_searches_on_the_idea_text_and_skips_existing_competitors(self, mock_urlopen):
+        edges = [{"node": {"name": n, "tagline": f"{n} tag", "votesCount": 10}} for n in ("Mealime", "HelloFresh", "Mealime", "Yummly")]
+        mock_urlopen.return_value = _fake_response({"data": {"posts": {"edges": edges}}})
+
+        result = competitor_agent._similar_products("AI meal planning for busy parents", ["HelloFresh"])
+
+        body = json.loads(mock_urlopen.call_args[0][0].data)
+        self.assertEqual(body["variables"]["name"], "AI meal planning for busy parents")
+        self.assertEqual([p["name"] for p in result], ["Mealime", "Yummly"])
+
+    def test_empty_without_a_token(self):
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(competitor_agent._similar_products("meal planning", []), [])
+
+    @patch("agent.competitor_agent.urllib.request.urlopen")
+    def test_empty_on_a_network_error(self, mock_urlopen):
+        mock_urlopen.side_effect = TimeoutError("boom")
+        self.assertEqual(competitor_agent._similar_products("meal planning", []), [])
