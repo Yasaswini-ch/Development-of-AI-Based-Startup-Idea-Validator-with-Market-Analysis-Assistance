@@ -171,6 +171,13 @@ class WikidataLookupTests(unittest.TestCase):
 
 
 class EnrichWithApisTests(unittest.TestCase):
+    def setUp(self):
+        # iTunes is keyless, so without this these tests hit the real
+        # network on CI and get a real match for "HelloFresh".
+        patcher = patch("agent.competitor_agent._itunes_lookup", return_value=None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def _competitor(self, name):
         return {"name": name, "offering": "x", "url": "https://x.com", "gap": "unknown"}
 
