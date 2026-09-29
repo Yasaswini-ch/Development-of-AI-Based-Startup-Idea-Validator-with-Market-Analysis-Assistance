@@ -43,18 +43,15 @@ class ProductHuntLookupTests(unittest.TestCase):
             self.assertIsNone(competitor_agent._producthunt_lookup("HelloFresh"))
 
     @patch("agent.competitor_agent.urllib.request.urlopen")
-    def test_sends_no_variables_regression_for_the_unused_dollar_name_bug(self, mock_urlopen):
-        # The bug: an earlier version declared `query($name: String!)` but
-        # never referenced $name in the query body, which the GraphQL spec
-        # requires every server to reject outright - "variables" should
-        # never be sent at all now that the query takes none.
+    def test_sends_the_name_as_a_referenced_search_variable(self, mock_urlopen):
+        # An unreferenced `$name` is rejected by GraphQL servers; the query
+        # must both declare and use it, and send the competitor's name.
         mock_urlopen.return_value = _fake_response({"data": {"posts": {"edges": []}}})
         competitor_agent._producthunt_lookup("HelloFresh")
 
-        request = mock_urlopen.call_args[0][0]
-        body = json.loads(request.data)
-        self.assertNotIn("variables", body)
-        self.assertNotIn("$name", body["query"])
+        body = json.loads(mock_urlopen.call_args[0][0].data)
+        self.assertEqual(body["variables"], {"name": "HelloFresh"})
+        self.assertIn("posts(query: $name", body["query"])
 
     @patch("agent.competitor_agent.urllib.request.urlopen")
     def test_returns_enrichment_when_a_post_name_matches(self, mock_urlopen):
@@ -91,10 +88,16 @@ class ProductHuntLookupTests(unittest.TestCase):
         self.assertIsNotNone(result)
 
     @patch("agent.competitor_agent.urllib.request.urlopen")
-    def test_returns_none_when_no_post_name_matches(self, mock_urlopen):
+    def test_falls_back_to_the_top_search_result_when_no_name_matches(self, mock_urlopen):
         mock_urlopen.return_value = _fake_response(
-            {"data": {"posts": {"edges": [{"node": {"name": "SomeOtherApp"}}]}}}
+            {"data": {"posts": {"edges": [{"node": {"name": "SomeOtherApp", "tagline": "t"}}]}}}
         )
+        result = competitor_agent._producthunt_lookup("HelloFresh")
+        self.assertEqual(result["tagline"], "t")
+
+    @patch("agent.competitor_agent.urllib.request.urlopen")
+    def test_returns_none_when_the_search_has_no_results(self, mock_urlopen):
+        mock_urlopen.return_value = _fake_response({"data": {"posts": {"edges": []}}})
         self.assertIsNone(competitor_agent._producthunt_lookup("HelloFresh"))
 
     @patch("agent.competitor_agent.urllib.request.urlopen")

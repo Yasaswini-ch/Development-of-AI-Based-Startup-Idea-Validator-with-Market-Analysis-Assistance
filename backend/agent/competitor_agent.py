@@ -708,18 +708,10 @@ def _producthunt_lookup(name: str) -> dict | None:
     any request/shape failure, same best-effort contract as
     _wikidata_lookup - this can never break competitor discovery.
 
-    Product Hunt's public API does not offer plain full-text search across
-    all posts (its `posts` query filters by url/topic/date, not free text),
-    so this fetches the top-voted posts overall and only keeps a hit whose
-    name matches - a long shot for most competitors, but the only signal
-    this endpoint exposes without a `url`/`topic` to filter by. The query
-    takes no variables: a `$name` GraphQL variable declared but never
-    referenced inside the query body is invalid per the GraphQL spec
-    itself ("All Variables Used", spec.graphql.org/draft/#sec-All-
-    Variables-Used) - every spec-compliant server rejects that as a
-    validation error, which an earlier version of this query did on every
-    single call, silently swallowed by the except below and
-    indistinguishable from "no match found."
+    Searches posts for the competitor's name (`posts(query: $name)`) and
+    prefers an exact case-insensitive name match, falling back to the top
+    search result when none matches. The variable must be both declared and
+    used in the query body - an unused `$name` is invalid GraphQL.
     """
     token = os.environ.get("PRODUCTHUNT_API_TOKEN")
     if not token:
