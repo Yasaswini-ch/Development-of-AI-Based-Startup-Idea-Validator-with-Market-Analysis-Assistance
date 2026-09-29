@@ -136,6 +136,32 @@ To make a missing database fail loudly instead of silently falling back to SQLit
 > Blueprint) well ahead of time. Recreating it starts with an empty database, so every
 > account must sign up again and admins are re-promoted through `ADMIN_EMAILS`.
 
+### Moving to Neon (free, no expiry)
+
+Neon's free Postgres (0.5 GB) does not expire, so it avoids the 30-day limit above. The app
+only reads `DATABASE_URL`, so no code change is needed.
+
+1. Create a Neon project in the same region as the backend (Oregon), leave Neon Auth off.
+2. Open **Connect**, tick **Connection pooling**, and use **Copy snippet** for the string.
+3. Copy the existing data first (from `backend/`, with both URLs in env vars, never in files):
+
+   ```
+   pip install -r requirements.txt
+   SOURCE_DATABASE_URL=<Render External Database URL>
+   DEST_DATABASE_URL=<Neon pooled URL>
+   python scripts/copy_database.py --dry-run   # row counts only
+   python scripts/copy_database.py             # copy and verify
+   ```
+
+   The script stops if a Neon table already has rows and never modifies the source.
+4. On the Render backend, set `DATABASE_URL` to the Neon string and `DB_POOL_SIZE=3`, then redeploy.
+5. Check `/health` reports `"database": "postgresql"`, then sign in and open a past validation.
+6. Keep the old Render database until step 5 passes.
+
+`render.yaml` still links `DATABASE_URL` to the Render database. Once Neon is confirmed, change
+that entry to `sync: false` (and remove the `databases:` block) so a Blueprint sync doesn't
+point the backend back at the old database.
+
 ### Admin access (`ADMIN_EMAILS`)
 
 The admin-only **Platform health** dashboard is gated by `users.is_admin`. There is no
