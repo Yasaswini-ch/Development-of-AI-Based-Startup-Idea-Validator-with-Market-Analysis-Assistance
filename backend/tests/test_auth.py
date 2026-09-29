@@ -23,7 +23,8 @@ import main
 from agent import job_store, session_store
 from agent.auth import AuthError, is_admin, login, signup
 from agent.db import get_engine, users_table
-from sqlalchemy import delete
+import bcrypt
+from sqlalchemy import delete, select
 
 
 def _clear_users():
@@ -62,6 +63,25 @@ class AuthModuleTests(unittest.TestCase):
         result = login("founder@example.com", "correct-horse-battery")
         self.assertTrue(result["token"])
         self.assertEqual(result["user"]["email"], "founder@example.com")
+
+    def test_new_hashes_use_the_configured_bcrypt_cost(self):
+        signup("founder@example.com", "correct-horse-battery")
+        with get_engine().connect() as conn:
+            stored = conn.execute(select(users_table.c.password_hash)).scalar_one()
+        self.assertTrue(stored.startswith("$2b$10$"))
+
+    def test_login_upgrades_an_older_higher_cost_hash(self):
+        signup("founder@example.com", "correct-horse-battery")
+        old_hash = bcrypt.hashpw(b"correct-horse-battery", bcrypt.gensalt(rounds=12)).decode()
+        with get_engine().begin() as conn:
+            conn.execute(users_table.update().values(password_hash=old_hash))
+
+        login("founder@example.com", "correct-horse-battery")
+
+        with get_engine().connect() as conn:
+            stored = conn.execute(select(users_table.c.password_hash)).scalar_one()
+        self.assertTrue(stored.startswith("$2b$10$"))
+        self.assertTrue(login("founder@example.com", "correct-horse-battery")["token"])
 
     def test_login_fails_with_wrong_password(self):
         signup("founder@example.com", "correct-horse-battery")

@@ -358,6 +358,31 @@ class MilestoneThreeTests(unittest.TestCase):
         self.assertEqual(final["percentage"], 0)
         self.assertEqual(final["label"], "No cited sources yet")
 
+    def test_confidence_dashboard_counts_citations_beyond_the_first_ten_sources(self):
+        # Regression: the relevance lookup only covered src-1..src-10, so a
+        # run with many sources whose claims cited later ones (market agent,
+        # deterministic fallback) showed 0% and "No cited sources yet".
+        state = {
+            "results": [{"title": f"S{i}", "url": f"https://s{i}", "score": 0.9} for i in range(1, 57)],
+            "swot": {
+                "strengths": [
+                    {"text": "Cites a late source", "sourceIds": ["src-40"]},
+                    {"text": "Cites another", "sourceIds": ["src-56", "src-40"]},
+                ],
+                "weaknesses": [],
+                "opportunities": [],
+                "threats": [],
+                "risks": [],
+            },
+            "mvp": None,
+            "gtm": None,
+            "errors": {},
+        }
+        final = confidence_dashboard_node(state)["confidence"]
+        self.assertEqual(final["totalSources"], 2)
+        self.assertEqual(final["agreeingSources"], 2)
+        self.assertEqual(final["percentage"], 100)
+
     def test_session_and_chat_history(self):
         session_id = create_session({"idea": "Idea"})
         with patch(

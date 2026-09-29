@@ -38,8 +38,21 @@ class AuthError(Exception):
     unexpected server error, which should log and 500 instead."""
 
 
+# bcrypt cost 10 is the OWASP minimum work factor. Cost 12 (bcrypt's default)
+# took several seconds per sign-in on Render's free 0.1-CPU instance; stored
+# hashes at a different cost are upgraded on the next successful login.
+_BCRYPT_ROUNDS = 10
+
+
 def _hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)).decode("utf-8")
+
+
+def _hash_cost(password_hash: str) -> int | None:
+    try:
+        return int(password_hash.split("$")[2])
+    except (IndexError, ValueError):
+        return None
 
 
 def _verify_password(password: str, password_hash: str | None) -> bool:
@@ -150,6 +163,12 @@ def login(email: str, password: str) -> dict:
     # them lets an attacker enumerate registered emails one guess at a time.
     if row is None or not _verify_password(password, row.password_hash):
         raise AuthError("Incorrect email or password.")
+
+    if _hash_cost(row.password_hash) != _BCRYPT_ROUNDS:
+        with engine.begin() as conn:
+            conn.execute(
+                users_table.update().where(users_table.c.id == row.id).values(password_hash=_hash_password(password))
+            )
 
     return {"token": _issue_token(row.id, row.email), "user": {"id": row.id, "email": row.email}}
 

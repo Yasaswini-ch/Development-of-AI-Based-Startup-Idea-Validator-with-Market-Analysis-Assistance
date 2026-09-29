@@ -13,7 +13,7 @@ from .contradiction_detector import detect_contradictions
 from .experiment_generator import generate_experiments
 from .gtm_agent import analyze_gtm
 from .llm import NeedsDeepAnalysisError
-from .market_agent import MAX_SOURCES_IN_CONTEXT, analyze_market_opportunity
+from .market_agent import analyze_market_opportunity
 from .mvp_agent import analyze_mvp
 from .revenue_agent import analyze_revenue_models
 from .opportunity_score import calculate_opportunity_score
@@ -970,19 +970,16 @@ def _collect_claims(state: PipelineState) -> list[dict]:
 
 
 def _source_relevance_by_id(results: list) -> dict[str, float]:
-    """Map each "src-N" id back to its relevance score, using the exact same
-    ordering compact_sources() used when the agents built their prompts -
-    so a sourceId a claim cites resolves to the real score of the source it
-    actually came from, not a guess.
-
-    Uses market_agent.py's MAX_SOURCES_IN_CONTEXT (10), not
-    compact_sources()'s own default limit (6), because market_agent.py
-    shows the LLM up to 10 sources and sanitizes trend/segment sourceIds
-    against that same wider window - a legitimate market citation of
-    src-7..src-10 would otherwise have no relevance score here and get
-    silently dropped from averageRelevance below.
+    """Map each canonical "src-N" id back to its relevance score. The id is
+    the source's 1-based position in the full `results` list (see
+    compact_sources and market_agent._build_context), and claims can cite
+    any position - the market agent numbers all of `results` and the
+    deterministic fallback cites by URL match - so the lookup must cover the
+    whole list, not just the first few. A shorter window silently dropped
+    every citation past it, which read as "No cited sources yet" / 0%
+    overall confidence on a run that had 56 sources and cited claims.
     """
-    sources = compact_sources(results, limit=MAX_SOURCES_IN_CONTEXT)
+    sources = compact_sources(results, limit=len(results) or 1)
     lookup = {}
     for index, source in enumerate(sources):
         score = results[index].get("score") if index < len(results) else None
