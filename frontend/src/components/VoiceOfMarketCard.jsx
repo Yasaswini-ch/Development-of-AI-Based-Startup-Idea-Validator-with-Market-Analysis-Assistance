@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { IconMessageCircle } from './icons'
 import Citation from './Citation'
 
@@ -83,12 +84,70 @@ function SignalSummary({ summary }) {
   )
 }
 
+const INITIAL_VISIBLE = 4
+
+// Cards grouped by "theme" (what the quote is about - pricing, onboarding,
+// ...) instead of one flat grid, so 8+ quotes on the same topic don't read
+// as noise. Preserves the order themes first appear in `quotes` (which is
+// already friction-first), except "General" - the catch-all bucket - is
+// always pushed last.
+function groupByTheme(quotes) {
+  const order = []
+  const groups = new Map()
+  for (const quote of quotes) {
+    const theme = quote.theme || 'General'
+    if (!groups.has(theme)) {
+      groups.set(theme, [])
+      order.push(theme)
+    }
+    groups.get(theme).push(quote)
+  }
+  order.sort((a, b) => (a === 'General') - (b === 'General'))
+  return order.map((theme) => [theme, groups.get(theme)])
+}
+
+function DimensionFilterTabs({ options, active, onSelect }) {
+  return (
+    <div className="mb-3 flex flex-wrap gap-1.5" role="tablist" aria-label="Filter by signal type">
+      {options.map((option) => (
+        <button
+          key={option}
+          type="button"
+          role="tab"
+          aria-selected={active === option}
+          onClick={() => onSelect(option)}
+          className={`rounded-full border px-2.5 py-1 font-mono text-[10.5px] uppercase tracking-wide transition-colors ${
+            active === option
+              ? 'border-accent bg-accent/10 text-accent'
+              : 'border-border text-muted hover:border-border-strong hover:text-text'
+          }`}
+        >
+          {option}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 // Renders nothing (not even an empty-state) when there are no quotes -
 // this section is a bonus on top of the personas, not a required one, so
 // an idea with thin community/review coverage just doesn't show it.
 export default function VoiceOfMarketSection({ quotes, sourceMap, summary }) {
   const list = quotes || []
+  const [filter, setFilter] = useState('All')
+  const [expanded, setExpanded] = useState(false)
   if (list.length === 0) return null
+
+  const filterOptions = ['All', ...DIMENSION_ORDER.filter((d) => list.some((q) => q.taggedDimension === d))]
+  const filtered = filter === 'All' ? list : list.filter((q) => q.taggedDimension === filter)
+  const visible = expanded ? filtered : filtered.slice(0, INITIAL_VISIBLE)
+  const hiddenCount = filtered.length - visible.length
+  const grouped = groupByTheme(visible)
+
+  function selectFilter(option) {
+    setFilter(option)
+    setExpanded(false)
+  }
 
   return (
     <div>
@@ -98,11 +157,30 @@ export default function VoiceOfMarketSection({ quotes, sourceMap, summary }) {
       </h3>
       <p className="mb-1 text-sm text-muted">What people in the sources actually said, word for word.</p>
       <SignalSummary summary={summary} />
-      <div className="grid gap-3 sm:grid-cols-2">
-        {list.map((quote, index) => (
-          <VoiceOfMarketCard key={quote.sourceId + index} quote={quote} sourceMap={sourceMap} />
-        ))}
-      </div>
+      {filterOptions.length > 2 && <DimensionFilterTabs options={filterOptions} active={filter} onSelect={selectFilter} />}
+      {grouped.map(([theme, themeQuotes]) => (
+        <div key={theme} className="mb-4 last:mb-0">
+          {grouped.length > 1 && (
+            <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-muted">
+              {theme} ({themeQuotes.length})
+            </p>
+          )}
+          <div className="grid gap-3 sm:grid-cols-2">
+            {themeQuotes.map((quote, index) => (
+              <VoiceOfMarketCard key={quote.sourceId + index} quote={quote} sourceMap={sourceMap} />
+            ))}
+          </div>
+        </div>
+      ))}
+      {(hiddenCount > 0 || (expanded && filtered.length > INITIAL_VISIBLE)) && (
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          className="mt-1 font-mono text-[11px] uppercase tracking-wide text-accent hover:text-accent-hover"
+        >
+          {hiddenCount > 0 ? `Show ${hiddenCount} more` : 'Show less'}
+        </button>
+      )}
     </div>
   )
 }

@@ -19,7 +19,7 @@ so a quote's sourceId means the same source everywhere else in the app.
 import re
 from urllib.parse import urlparse
 
-MAX_QUOTES = 4
+MAX_QUOTES = 12
 _MIN_QUOTE_CHARS = 40
 _MAX_QUOTE_CHARS = 220
 
@@ -58,6 +58,27 @@ _NEGATIVE_WORDS = (
     "complain", "churn", "expensive", "too slow", "confusing", "broken",
 )
 _POSITIVE_WORDS = ("growing", "growth", "increas", "rising", "surge", "love", "popular", "adoption")
+
+# What the quote is actually *about*, orthogonal to which dimension it was
+# tagged under - lets the UI cluster "3 quotes about pricing" separately
+# from "2 about onboarding" instead of one flat list. Checked in order, so
+# the first topic a sentence names wins; anything matching none of these
+# falls back to "General".
+_THEME_KEYWORDS = (
+    ("Pricing & Cost", ("price", "pricing", "expensive", "cost", "afford", "cheap", "subscription", "fee", "pay")),
+    ("Integrations & Compatibility", ("integrat", "api", "sync", "compatib", "plugin", "connect")),
+    ("Reliability & Support", ("support", "downtime", "bug", "crash", "reliab", "customer service", "outage")),
+    ("Onboarding & Usability", ("setup", "onboard", "learning curve", "confusing", "easy to use", "intuitive", "interface", "ui")),
+    ("Competition & Alternatives", ("alternative to", "switch from", "compared to", "instead of", "vs ", "versus")),
+)
+
+
+def _theme(sentence: str) -> str:
+    lowered = sentence.lower()
+    for theme, keywords in _THEME_KEYWORDS:
+        if any(keyword in lowered for keyword in keywords):
+            return theme
+    return "General"
 
 
 def _source_label(result: dict) -> str:
@@ -122,6 +143,7 @@ def _extract_candidates(results: list) -> list[dict]:
                     "url": str(result.get("url", "")),
                     "sentiment": _sentiment(sentence, dimension),
                     "taggedDimension": dimension,
+                    "theme": _theme(sentence),
                 }
             )
             break  # one quote per source
@@ -130,10 +152,10 @@ def _extract_candidates(results: list) -> list[dict]:
 
 def extract_voice_of_market(results: list, limit: int = MAX_QUOTES) -> list[dict]:
     """Return up to `limit` {"quote", "speakerOrSource", "sourceId", "url",
-    "sentiment", "taggedDimension"} excerpts, at most one per source so a
-    single loud page can't fill the whole section, with friction quotes
-    ranked first. Empty list (never a placeholder quote) when no snippet
-    contains a usable sentence.
+    "sentiment", "taggedDimension", "theme"} excerpts, at most one per
+    source so a single loud page can't fill the whole section, with
+    friction quotes ranked first. Empty list (never a placeholder quote)
+    when no snippet contains a usable sentence.
     """
     candidates = _extract_candidates(results)
     rank = {dimension: position for position, (dimension, _) in enumerate(_DIMENSION_KEYWORDS)}

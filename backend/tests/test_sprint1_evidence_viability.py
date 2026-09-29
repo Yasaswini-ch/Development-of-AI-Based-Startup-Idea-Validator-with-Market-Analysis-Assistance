@@ -17,7 +17,7 @@ from agent.output_guard import provenance
 from agent.viability_score import calculate_viability_index
 from agent.voice_of_market import MAX_QUOTES, extract_voice_of_market, summarize_voice_of_market
 
-_QUOTE_KEYS = {"quote", "speakerOrSource", "sourceId", "url", "sentiment", "taggedDimension"}
+_QUOTE_KEYS = {"quote", "speakerOrSource", "sourceId", "url", "sentiment", "taggedDimension", "theme"}
 _DIMENSION_NAMES = [
     "Demand Urgency",
     "Expansion Velocity",
@@ -75,10 +75,25 @@ class VoiceOfMarketTests(unittest.TestCase):
         self.assertNotIn("src-3", ids)
 
     def test_at_most_one_quote_per_source_and_capped(self):
-        many = [dict(_RESULTS[1], url=f"https://reddit.com/{i}") for i in range(10)]
+        many = [dict(_RESULTS[1], url=f"https://reddit.com/{i}") for i in range(MAX_QUOTES + 10)]
         quotes = extract_voice_of_market(many)
         self.assertEqual(len(quotes), MAX_QUOTES)
         self.assertEqual(len({q["sourceId"] for q in quotes}), MAX_QUOTES)
+
+    def test_theme_is_tagged_from_the_sentence_content(self):
+        results = [
+            {"url": "https://a.example/1", "snippet": "The pricing is way too expensive for what you get every month."},
+            {"url": "https://b.example/2", "snippet": "Integrating with our existing API was so difficult and confusing it took weeks."},
+        ]
+        quotes = {q["sourceId"]: q for q in extract_voice_of_market(results)}
+        self.assertEqual(quotes["src-1"]["theme"], "Pricing & Cost")
+        self.assertEqual(quotes["src-2"]["theme"], "Integrations & Compatibility")
+
+    def test_theme_falls_back_to_general(self):
+        first = extract_voice_of_market(_RESULTS)[0]
+        self.assertIn(first["theme"], {"General", "Pricing & Cost", "Integrations & Compatibility",
+                                        "Reliability & Support", "Onboarding & Usability",
+                                        "Competition & Alternatives"})
 
     def test_no_usable_snippets_returns_empty_list(self):
         self.assertEqual(extract_voice_of_market([]), [])
@@ -88,11 +103,12 @@ class VoiceOfMarketTests(unittest.TestCase):
 
 class VoiceOfMarketSummaryTests(unittest.TestCase):
     def test_counts_every_tagged_sentence_not_just_the_capped_quotes(self):
-        many = [dict(_RESULTS[1], url=f"https://reddit.com/{i}") for i in range(10)]
+        total = MAX_QUOTES + 10
+        many = [dict(_RESULTS[1], url=f"https://reddit.com/{i}") for i in range(total)]
         summary = summarize_voice_of_market(many)
-        self.assertEqual(summary["dimensionCounts"]["Observed Friction"], 10)
-        self.assertEqual(summary["sourcesWithSignal"], 10)
-        self.assertEqual(summary["sourcesScanned"], 10)
+        self.assertEqual(summary["dimensionCounts"]["Observed Friction"], total)
+        self.assertEqual(summary["sourcesWithSignal"], total)
+        self.assertEqual(summary["sourcesScanned"], total)
         # extract_voice_of_market caps to MAX_QUOTES, but the summary must not.
         self.assertGreater(summary["sourcesWithSignal"], len(extract_voice_of_market(many)))
 

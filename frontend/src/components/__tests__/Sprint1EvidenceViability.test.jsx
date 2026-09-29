@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import MarketOpportunity from '../MarketOpportunity'
 import ProvenanceBadge from '../ProvenanceBadge'
@@ -32,7 +33,7 @@ describe('VoiceOfMarketSection', () => {
   it('renders each quote with its attribution', () => {
     render(<VoiceOfMarketSection quotes={mockMarketOpportunity.voiceOfMarket} />)
     expect(screen.getByText(/juggling three free tools/)).toBeInTheDocument()
-    expect(screen.getByText('Reddit thread')).toBeInTheDocument()
+    expect(screen.getAllByText('Reddit thread').length).toBeGreaterThan(0)
   })
 
   it('renders nothing when there are no quotes', () => {
@@ -54,6 +55,31 @@ describe('VoiceOfMarketSection', () => {
   it('renders fine with no summary (older cached data)', () => {
     render(<VoiceOfMarketSection quotes={mockMarketOpportunity.voiceOfMarket} />)
     expect(screen.getByText(/juggling three free tools/)).toBeInTheDocument()
+  })
+
+  it('groups cards under a theme heading when more than one theme is present', () => {
+    render(<VoiceOfMarketSection quotes={mockMarketOpportunity.voiceOfMarket} />)
+    expect(screen.getByText(/Pricing & Cost/)).toBeInTheDocument()
+    expect(screen.getByText(/Integrations & Compatibility/)).toBeInTheDocument()
+  })
+
+  it('only shows the first 4 quotes until "Show more" is clicked', async () => {
+    const user = userEvent.setup()
+    render(<VoiceOfMarketSection quotes={mockMarketOpportunity.voiceOfMarket} />)
+    expect(screen.queryByText(/growing fast and adoption/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /show 1 more/i })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /show 1 more/i }))
+    expect(screen.getByText(/growing fast and adoption/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /show less/i })).toBeInTheDocument()
+  })
+
+  it('filters to just one dimension via the filter tabs', async () => {
+    const user = userEvent.setup()
+    render(<VoiceOfMarketSection quotes={mockMarketOpportunity.voiceOfMarket} />)
+    await user.click(screen.getByRole('tab', { name: 'Structural Tailwind' }))
+    expect(screen.getByText(/growing fast and adoption/)).toBeInTheDocument()
+    expect(screen.queryByText(/juggling three free tools/)).not.toBeInTheDocument()
   })
 })
 
