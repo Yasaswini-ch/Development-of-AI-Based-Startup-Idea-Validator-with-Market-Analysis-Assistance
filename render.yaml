@@ -38,10 +38,10 @@ services:
         generateValue: true
       - key: FRONTEND_ORIGIN
         value: https://startup-validator-frontend-5qcr.onrender.com
+      # Neon Postgres (pooled connection string), set by hand in the Render
+      # dashboard - see DEPLOYMENT.md "Moving to Neon".
       - key: DATABASE_URL
-        fromDatabase:
-          name: startup-validator-db
-          property: connectionString
+        sync: false
       # Google OAuth client ID (agent/google_auth.py) - sync: false since
       # this is created per-project in Google Cloud Console, not something
       # Render can generate; enter the same value here and on the frontend

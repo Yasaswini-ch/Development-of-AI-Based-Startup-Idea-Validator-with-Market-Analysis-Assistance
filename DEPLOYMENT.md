@@ -40,7 +40,7 @@ FRONTEND_ORIGIN    frontend Render URL
 PYTHON_VERSION     3.12.7
 
 # Database and accounts - see "Database (PostgreSQL on Render)" below
-DATABASE_URL           set automatically from the Blueprint database
+DATABASE_URL           Neon pooled connection string, set by hand (see "Moving to Neon")
 AUTH_SECRET_KEY        generated automatically by the Blueprint (generateValue)
 ADMIN_EMAILS           optional - comma-separated emails to promote to admin
 REQUIRE_PERSISTENT_DB  optional - set to 1 to refuse to start without Postgres
@@ -158,9 +158,10 @@ only reads `DATABASE_URL`, so no code change is needed.
 5. Check `/health` reports `"database": "postgresql"`, then sign in and open a past validation.
 6. Keep the old Render database until step 5 passes.
 
-`render.yaml` still links `DATABASE_URL` to the Render database. Once Neon is confirmed, change
-that entry to `sync: false` (and remove the `databases:` block) so a Blueprint sync doesn't
-point the backend back at the old database.
+`render.yaml` no longer links `DATABASE_URL` to the Render database (`sync: false`), so the value
+you set in the dashboard is kept. The old `startup-validator-db` is still declared under
+`databases:`; delete it in the Render dashboard once you're sure Neon has everything, and then
+remove that block too.
 
 ### Admin access (`ADMIN_EMAILS`)
 
