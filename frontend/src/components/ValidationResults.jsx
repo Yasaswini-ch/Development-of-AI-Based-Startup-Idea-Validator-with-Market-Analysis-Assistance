@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import useCountUp from '../hooks/useCountUp'
 import { IconTrendingUp, IconUsers, IconShield, IconNewspaper, IconGlobe, IconDownload, IconLink } from './icons'
 import MarketOpportunity from './MarketOpportunity'
@@ -299,6 +299,35 @@ export default function ValidationResults({
   errors,
 }) {
   const [activeTab, setActiveTab] = useState('sources')
+  // A chat answer about e.g. competitors or TAM tells the report which
+  // section it corresponds to (agent/chat_graph.py's classify_section); this
+  // queues a tab switch + scroll so the user sees the answer and the
+  // underlying report data together instead of just the chat bubble.
+  const [pendingNav, setPendingNav] = useState(null)
+  const tabsRef = useRef(null)
+
+  function navigateToSection(section) {
+    if (!section?.tab) return
+    setActiveTab(section.tab)
+    setPendingNav(section)
+  }
+
+  useEffect(() => {
+    if (!pendingNav || pendingNav.tab !== activeTab) return
+    const frame = requestAnimationFrame(() => {
+      const target = pendingNav.id ? document.getElementById(pendingNav.id) : null
+      const el = target || tabsRef.current
+      el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      if (target) {
+        target.classList.add('ring-2', 'ring-accent', 'ring-offset-2', 'ring-offset-surface')
+        setTimeout(() => {
+          target.classList.remove('ring-2', 'ring-accent', 'ring-offset-2', 'ring-offset-surface')
+        }, 2200)
+      }
+      setPendingNav(null)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [pendingNav, activeTab])
 
   const groups = []
   const order = [...RESEARCH_ANGLES]
@@ -375,7 +404,7 @@ export default function ValidationResults({
       </div>
 
       {/* Pill tab switcher */}
-      <div className="sticky top-0 z-10 max-w-full overflow-x-auto bg-surface/95 py-2 backdrop-blur-sm">
+      <div ref={tabsRef} className="sticky top-0 z-10 max-w-full overflow-x-auto bg-surface/95 py-2 backdrop-blur-sm">
         <div role="tablist" aria-label="Report sections" className="inline-flex min-w-max gap-0.5 rounded-full bg-border p-1">
           {TABS.map((t) => {
           const active = activeTab === t.key
@@ -553,7 +582,9 @@ export default function ValidationResults({
         )}
       </div>
 
-      {sessionId && <ChatAdvisor key={sessionId} sessionId={sessionId} apiUrl={apiUrl} />}
+      {sessionId && (
+        <ChatAdvisor key={sessionId} sessionId={sessionId} apiUrl={apiUrl} onNavigateSection={navigateToSection} />
+      )}
     </div>
   )
 }

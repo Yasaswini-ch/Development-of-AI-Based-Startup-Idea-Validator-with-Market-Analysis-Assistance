@@ -22,6 +22,85 @@ _MAX_REPLY_CHARS = 3000
 _MAX_MESSAGE_CHARS = 1200
 _MAX_SEARCH_QUERY_CHARS = 300
 
+# Maps a chat question to the report section that already answers it, so the
+# frontend can auto-scroll the underlying report into view alongside the
+# advisor's reply instead of leaving the answer to stand alone. Ordered most
+# specific first (e.g. "how do you compare" before the general "competitor"
+# match) since the first matching rule wins. `id` is the DOM id
+# ValidationResults.jsx assigns each section; `id: None` means "just switch
+# tabs" for sections that aren't pinned to one element (e.g. sources/customers).
+_SECTION_RULES: list[tuple[re.Pattern, dict]] = [
+    (
+        re.compile(r"how (do |does )?(i|we|you) (compare|stack up)|comparison matrix", re.IGNORECASE),
+        {"tab": "market", "id": "sec-compare", "label": "How you compare"},
+    ),
+    (
+        re.compile(r"\bcompetitor|competition|\brival", re.IGNORECASE),
+        {"tab": "market", "id": "sec-competitors", "label": "Competitive field"},
+    ),
+    (
+        re.compile(r"\btam\b|total addressable market|market size|market growth|market opportunity", re.IGNORECASE),
+        {"tab": "market", "id": "sec-market", "label": "Market signal"},
+    ),
+    (
+        re.compile(r"\bviability\b", re.IGNORECASE),
+        {"tab": "market", "id": "sec-dynamics", "label": "Viability breakdown"},
+    ),
+    (
+        re.compile(r"customer segment|\bpersona|target customer|ideal customer|voice of (the )?(market|owner)", re.IGNORECASE),
+        {"tab": "customers", "id": None, "label": "Customers"},
+    ),
+    (
+        re.compile(r"white ?space|market gap", re.IGNORECASE),
+        {"tab": "opportunity", "id": "sec-whitespace", "label": "Whitespace gaps"},
+    ),
+    (
+        re.compile(r"\bswot\b|\bstrength|\bweakness", re.IGNORECASE),
+        {"tab": "opportunity", "id": "sec-swot", "label": "Strengths & exposure"},
+    ),
+    (
+        re.compile(r"bear case|investor objection", re.IGNORECASE),
+        {"tab": "opportunity", "id": "sec-bearcase", "label": "Bear case"},
+    ),
+    (
+        re.compile(r"\bassumption", re.IGNORECASE),
+        {"tab": "opportunity", "id": "sec-assumptions", "label": "Key assumptions"},
+    ),
+    (
+        re.compile(r"\bmvp\b|minimum viable product", re.IGNORECASE),
+        {"tab": "build", "id": "sec-mvp", "label": "MVP blueprint"},
+    ),
+    (
+        re.compile(r"\brevenue|pricing model|monetiz", re.IGNORECASE),
+        {"tab": "build", "id": "sec-revenue", "label": "Revenue models"},
+    ),
+    (
+        re.compile(r"go.?to.?market|\bgtm\b|launch strategy|how should i launch", re.IGNORECASE),
+        {"tab": "build", "id": "sec-gtm", "label": "Go-to-market"},
+    ),
+    (
+        re.compile(r"\btimeline\b|build phase|delivery roadmap", re.IGNORECASE),
+        {"tab": "experiments", "id": "sec-timeline", "label": "Build timeline"},
+    ),
+    (
+        re.compile(r"\bexperiment|validation plan|how (do |should )?i (validate|test)", re.IGNORECASE),
+        {"tab": "experiments", "id": "sec-experiments", "label": "Validation plan"},
+    ),
+]
+
+
+def classify_section(message: str) -> dict | None:
+    """Best-effort match from a chat question to the report section it's about.
+
+    Returns None when the question doesn't map to any report section (e.g.
+    small talk, or a question the report simply doesn't cover) - the frontend
+    then leaves the report view untouched.
+    """
+    for pattern, section in _SECTION_RULES:
+        if pattern.search(message):
+            return section
+    return None
+
 
 class ChatRateLimitError(RuntimeError):
     pass

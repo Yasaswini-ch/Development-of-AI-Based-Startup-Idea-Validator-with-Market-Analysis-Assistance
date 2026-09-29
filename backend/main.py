@@ -47,7 +47,7 @@ from agent.auth import (
     signup as auth_signup,
 )
 from agent.google_auth import GoogleAuthError
-from agent.chat_graph import ChatRateLimitError, run_chat_turn
+from agent.chat_graph import ChatRateLimitError, classify_section, run_chat_turn
 from agent.db import cache_table, database_backend, get_engine
 from agent.email_delivery import is_valid_email, send_canonical_report_email, send_report_email
 from agent.graph import NEEDS_DEEP_ANALYSIS, pipeline
@@ -946,7 +946,11 @@ def chat(payload: ChatRequest, request: Request):
             content={"error": "The advisor could not answer right now. Please try again."},
         )
 
-    return {"reply": reply}
+    # Best-effort: ties the reply to the report section it's about so the
+    # frontend can auto-scroll the underlying report into view. A message
+    # that doesn't map to any section (small talk, etc.) just omits it.
+    section = classify_section(message)
+    return {"reply": reply, **({"section": section} if section else {})}
 
 
 # --------------------------------------------------
