@@ -709,8 +709,8 @@ def _producthunt_lookup(name: str) -> dict | None:
     _wikidata_lookup - this can never break competitor discovery.
 
     Searches posts for the competitor's name (`posts(query: $name)`) and
-    prefers an exact case-insensitive name match, falling back to the top
-    search result when none matches. The variable must be both declared and
+    keeps a result only on an exact case-insensitive name match (no
+    fallback to other search hits). The variable must be both declared and
     used in the query body - an unused `$name` is invalid GraphQL.
     """
     token = os.environ.get("PRODUCTHUNT_API_TOKEN")
@@ -740,11 +740,9 @@ def _producthunt_lookup(name: str) -> dict | None:
             body = json.loads(resp.read())
         edges = body.get("data", {}).get("posts", {}).get("edges") or []
         nodes = [e["node"] for e in edges if e.get("node")]
-        # Prefer an exact name match; fall back to the top search result.
-        match = next(
-            (n for n in nodes if n.get("name", "").lower() == name.lower()),
-            nodes[0] if nodes else None,
-        )
+        # Exact name match only: a different product's tagline/votes on a
+        # competitor card is worse than no enrichment at all.
+        match = next((n for n in nodes if (n.get("name") or "").strip().lower() == name.strip().lower()), None)
         if not match:
             return None
         return {

@@ -88,12 +88,27 @@ class ProductHuntLookupTests(unittest.TestCase):
         self.assertIsNotNone(result)
 
     @patch("agent.competitor_agent.urllib.request.urlopen")
-    def test_falls_back_to_the_top_search_result_when_no_name_matches(self, mock_urlopen):
+    def test_returns_none_when_no_post_name_matches(self, mock_urlopen):
         mock_urlopen.return_value = _fake_response(
             {"data": {"posts": {"edges": [{"node": {"name": "SomeOtherApp", "tagline": "t"}}]}}}
         )
-        result = competitor_agent._producthunt_lookup("HelloFresh")
-        self.assertEqual(result["tagline"], "t")
+        self.assertIsNone(competitor_agent._producthunt_lookup("HelloFresh"))
+
+    @patch("agent.competitor_agent.urllib.request.urlopen")
+    def test_picks_the_exact_match_over_a_higher_ranked_other_post(self, mock_urlopen):
+        mock_urlopen.return_value = _fake_response(
+            {
+                "data": {
+                    "posts": {
+                        "edges": [
+                            {"node": {"name": "SomeOtherApp", "tagline": "wrong"}},
+                            {"node": {"name": "HelloFresh", "tagline": "right"}},
+                        ]
+                    }
+                }
+            }
+        )
+        self.assertEqual(competitor_agent._producthunt_lookup("HelloFresh")["tagline"], "right")
 
     @patch("agent.competitor_agent.urllib.request.urlopen")
     def test_returns_none_when_the_search_has_no_results(self, mock_urlopen):
