@@ -72,6 +72,11 @@ export const mockMarketOpportunity = {
       taggedDimension: 'Observed Friction',
     },
   ],
+  voiceOfMarketSummary: {
+    dimensionCounts: { 'Observed Friction': 6, 'Demand Signal': 2, 'Structural Tailwind': 1 },
+    sourcesScanned: 12,
+    sourcesWithSignal: 9,
+  },
   viabilityIndex: {
     compositeScore: 68,
     dimensions: [

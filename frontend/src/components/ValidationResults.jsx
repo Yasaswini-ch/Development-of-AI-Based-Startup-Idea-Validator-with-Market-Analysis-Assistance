@@ -458,7 +458,11 @@ export default function ValidationResults({
             </div>
             {marketOpportunity?.voiceOfMarket?.length > 0 && (
               <div className="rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
-                <VoiceOfMarketSection quotes={marketOpportunity.voiceOfMarket} sourceMap={sourceMap} />
+                <VoiceOfMarketSection
+                  quotes={marketOpportunity.voiceOfMarket}
+                  sourceMap={sourceMap}
+                  summary={marketOpportunity.voiceOfMarketSummary}
+                />
               </div>
             )}
           </div>

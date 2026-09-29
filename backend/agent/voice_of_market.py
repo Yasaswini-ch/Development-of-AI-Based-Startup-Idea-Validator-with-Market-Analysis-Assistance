@@ -101,13 +101,7 @@ def _clean(sentence: str) -> str:
     return sentence.rstrip(".… ").strip()
 
 
-def extract_voice_of_market(results: list, limit: int = MAX_QUOTES) -> list[dict]:
-    """Return up to `limit` {"quote", "speakerOrSource", "sourceId", "url",
-    "sentiment", "taggedDimension"} excerpts, at most one per source so a
-    single loud page can't fill the whole section, with friction quotes
-    ranked first. Empty list (never a placeholder quote) when no snippet
-    contains a usable sentence.
-    """
+def _extract_candidates(results: list) -> list[dict]:
     candidates = []
     for index, result in enumerate(results or [], start=1):
         if not isinstance(result, dict):
@@ -131,10 +125,41 @@ def extract_voice_of_market(results: list, limit: int = MAX_QUOTES) -> list[dict
                 }
             )
             break  # one quote per source
+    return candidates
 
+
+def extract_voice_of_market(results: list, limit: int = MAX_QUOTES) -> list[dict]:
+    """Return up to `limit` {"quote", "speakerOrSource", "sourceId", "url",
+    "sentiment", "taggedDimension"} excerpts, at most one per source so a
+    single loud page can't fill the whole section, with friction quotes
+    ranked first. Empty list (never a placeholder quote) when no snippet
+    contains a usable sentence.
+    """
+    candidates = _extract_candidates(results)
     rank = {dimension: position for position, (dimension, _) in enumerate(_DIMENSION_KEYWORDS)}
     candidates.sort(key=lambda quote: rank[quote["taggedDimension"]])
     return candidates[:limit]
 
 
-__all__ = ["extract_voice_of_market", "MAX_QUOTES"]
+def summarize_voice_of_market(results: list) -> dict:
+    """Counts across *every* tagged sentence found in the sources, not just
+    the `MAX_QUOTES` shown as cards - so a founder can see "22 friction
+    mentions across 55 sources" even though only 4 quotes fit on screen.
+
+    Returns {"dimensionCounts": {dimension: count}, "sourcesScanned": int,
+    "sourcesWithSignal": int}. Every dimension key from _DIMENSION_KEYWORDS
+    is always present (zero when unseen) so the frontend never has to
+    guess at missing keys.
+    """
+    candidates = _extract_candidates(results)
+    dimension_counts = {dimension: 0 for dimension, _ in _DIMENSION_KEYWORDS}
+    for candidate in candidates:
+        dimension_counts[candidate["taggedDimension"]] += 1
+    return {
+        "dimensionCounts": dimension_counts,
+        "sourcesScanned": len([r for r in (results or []) if isinstance(r, dict)]),
+        "sourcesWithSignal": len(candidates),
+    }
+
+
+__all__ = ["extract_voice_of_market", "summarize_voice_of_market", "MAX_QUOTES"]

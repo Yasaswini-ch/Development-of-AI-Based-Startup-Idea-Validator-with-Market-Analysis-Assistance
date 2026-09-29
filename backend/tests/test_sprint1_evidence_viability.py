@@ -15,7 +15,7 @@ sys.path.insert(0, str(BACKEND_DIR))
 
 from agent.output_guard import provenance
 from agent.viability_score import calculate_viability_index
-from agent.voice_of_market import MAX_QUOTES, extract_voice_of_market
+from agent.voice_of_market import MAX_QUOTES, extract_voice_of_market, summarize_voice_of_market
 
 _QUOTE_KEYS = {"quote", "speakerOrSource", "sourceId", "url", "sentiment", "taggedDimension"}
 _DIMENSION_NAMES = [
@@ -84,6 +84,29 @@ class VoiceOfMarketTests(unittest.TestCase):
         self.assertEqual(extract_voice_of_market([]), [])
         self.assertEqual(extract_voice_of_market([{"snippet": "Nothing relevant here at all, just words."}]), [])
         self.assertEqual(extract_voice_of_market(None), [])
+
+
+class VoiceOfMarketSummaryTests(unittest.TestCase):
+    def test_counts_every_tagged_sentence_not_just_the_capped_quotes(self):
+        many = [dict(_RESULTS[1], url=f"https://reddit.com/{i}") for i in range(10)]
+        summary = summarize_voice_of_market(many)
+        self.assertEqual(summary["dimensionCounts"]["Observed Friction"], 10)
+        self.assertEqual(summary["sourcesWithSignal"], 10)
+        self.assertEqual(summary["sourcesScanned"], 10)
+        # extract_voice_of_market caps to MAX_QUOTES, but the summary must not.
+        self.assertGreater(summary["sourcesWithSignal"], len(extract_voice_of_market(many)))
+
+    def test_every_dimension_key_present_even_when_zero(self):
+        summary = summarize_voice_of_market([])
+        self.assertEqual(
+            summary["dimensionCounts"],
+            {"Observed Friction": 0, "Demand Signal": 0, "Structural Tailwind": 0},
+        )
+        self.assertEqual(summary["sourcesScanned"], 0)
+        self.assertEqual(summary["sourcesWithSignal"], 0)
+
+    def test_handles_none_and_non_dict_results(self):
+        self.assertEqual(summarize_voice_of_market(None)["sourcesScanned"], 0)
 
 
 class ProvenanceTests(unittest.TestCase):

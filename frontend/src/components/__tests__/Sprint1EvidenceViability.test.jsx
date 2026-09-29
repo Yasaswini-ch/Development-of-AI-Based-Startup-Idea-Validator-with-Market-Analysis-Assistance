@@ -39,6 +39,22 @@ describe('VoiceOfMarketSection', () => {
     const { container } = render(<VoiceOfMarketSection quotes={[]} />)
     expect(container).toBeEmptyDOMElement()
   })
+
+  it('shows the aggregate signal counts above the quote cards', () => {
+    render(
+      <VoiceOfMarketSection
+        quotes={mockMarketOpportunity.voiceOfMarket}
+        summary={mockMarketOpportunity.voiceOfMarketSummary}
+      />,
+    )
+    expect(screen.getByText(/6 observed frictions/)).toBeInTheDocument()
+    expect(screen.getByText(/found across 12 sources scanned/)).toBeInTheDocument()
+  })
+
+  it('renders fine with no summary (older cached data)', () => {
+    render(<VoiceOfMarketSection quotes={mockMarketOpportunity.voiceOfMarket} />)
+    expect(screen.getByText(/juggling three free tools/)).toBeInTheDocument()
+  })
 })
 
 describe('MarketViabilityIndex', () => {

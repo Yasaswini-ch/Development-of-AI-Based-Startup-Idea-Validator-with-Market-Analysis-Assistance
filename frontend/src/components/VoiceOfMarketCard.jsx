@@ -60,10 +60,33 @@ function VoiceOfMarketCard({ quote, sourceMap }) {
   )
 }
 
+const DIMENSION_ORDER = ['Observed Friction', 'Demand Signal', 'Structural Tailwind']
+
+// Counts span every tagged sentence found in the sources (voiceOfMarketSummary),
+// not just the handful of cards shown below, so a thin-looking grid of 2-4
+// quotes still communicates how much signal actually backs it up.
+function SignalSummary({ summary }) {
+  const counts = summary?.dimensionCounts
+  if (!counts) return null
+
+  const parts = DIMENSION_ORDER
+    .filter((dimension) => counts[dimension] > 0)
+    .map((dimension) => `${counts[dimension]} ${dimension.toLowerCase()}${counts[dimension] === 1 ? '' : 's'}`)
+
+  if (parts.length === 0) return null
+
+  return (
+    <p className="mb-4 text-xs text-muted">
+      {parts.join(' · ')}
+      {summary.sourcesScanned > 0 && ` found across ${summary.sourcesScanned} sources scanned`}
+    </p>
+  )
+}
+
 // Renders nothing (not even an empty-state) when there are no quotes -
 // this section is a bonus on top of the personas, not a required one, so
 // an idea with thin community/review coverage just doesn't show it.
-export default function VoiceOfMarketSection({ quotes, sourceMap }) {
+export default function VoiceOfMarketSection({ quotes, sourceMap, summary }) {
   const list = quotes || []
   if (list.length === 0) return null
 
@@ -73,7 +96,8 @@ export default function VoiceOfMarketSection({ quotes, sourceMap }) {
         <IconMessageCircle className="h-3.5 w-3.5 text-accent" />
         Voice of the Market
       </h3>
-      <p className="mb-4 text-sm text-muted">What people in the sources actually said, word for word.</p>
+      <p className="mb-1 text-sm text-muted">What people in the sources actually said, word for word.</p>
+      <SignalSummary summary={summary} />
       <div className="grid gap-3 sm:grid-cols-2">
         {list.map((quote, index) => (
           <VoiceOfMarketCard key={quote.sourceId + index} quote={quote} sourceMap={sourceMap} />

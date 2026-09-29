@@ -943,11 +943,22 @@ def _swot(story, d, s, sections):
 
 
 def _voice_of_market(story, d, s, sections):
-    quotes = [q for q in (d.get("marketOpportunity") or {}).get("voiceOfMarket") or []
+    market_opportunity = d.get("marketOpportunity") or {}
+    quotes = [q for q in market_opportunity.get("voiceOfMarket") or []
               if isinstance(q, dict) and q.get("quote")]
     if not quotes:
         return
     sections.add("Voice of the market")
+    summary = market_opportunity.get("voiceOfMarketSummary") or {}
+    counts = summary.get("dimensionCounts") or {}
+    parts = [f"{count} {dimension.lower()}{'' if count == 1 else 's'}"
+             for dimension, count in counts.items() if count]
+    if parts:
+        line = " · ".join(parts)
+        if summary.get("sourcesScanned"):
+            line += f" found across {summary['sourcesScanned']} sources scanned"
+        story.append(Paragraph(_e(line), s["label"]))
+        story.append(Spacer(1, 6))
     for quote in quotes[:3]:
         source = quote.get("speakerOrSource") or quote.get("url") or "source"
         meta = f"— {_e(source)}"
