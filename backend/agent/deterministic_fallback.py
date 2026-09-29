@@ -184,13 +184,23 @@ def deterministic_swot(
 
     named_competitors = (competitors or {}).get("competitors") or []
     if named_competitors:
-        threats = [
-            _claim(
-                f"Established competitor {c.get('name', 'unnamed')} already offers {c.get('offering') or 'a similar product'}.",
-                _source_id_for_url(c.get("url", ""), results),
+        threats = []
+        seen_offerings: set[str] = set()
+        for c in named_competitors[:4]:
+            name = c.get("name", "unnamed")
+            offering = (c.get("offering") or "").strip()
+            # A competitor found in a list article carries that article's
+            # snippet as its offering, so several competitors share one
+            # sentence that is not about any of them. Only quote it when it
+            # names this competitor and no earlier threat already used it.
+            usable = bool(offering) and name.lower() in offering.lower() and offering not in seen_offerings
+            seen_offerings.add(offering)
+            text = (
+                f"Established competitor {name} already offers: {offering[:160]}"
+                if usable
+                else f"Competitor {name} appears in the sources and may already serve this need."
             )
-            for c in named_competitors[:4]
-        ]
+            threats.append(_claim(text, _source_id_for_url(c.get("url", ""), results)))
     else:
         threats = [_claim("No named competitors were identified in the available sources, so competitive threat level is unclear.")]
 

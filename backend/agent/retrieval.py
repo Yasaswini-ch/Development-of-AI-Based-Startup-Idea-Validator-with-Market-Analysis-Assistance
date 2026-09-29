@@ -247,6 +247,36 @@ def _distinctive_nouns(text: str, max_words: int = 3) -> list[str]:
     return candidates[:max_words]
 
 
+_DOMAIN_STOPWORDS = {
+    "about", "after", "again", "another", "around", "because", "before", "being", "between", "built", "can",
+    "could", "every", "exact", "first", "gives", "have", "help", "helps", "instant", "into", "like", "lets",
+    "make", "makes", "need", "needs", "other", "people", "regularly", "short", "should", "simple", "some",
+    "still", "than", "that", "their", "there", "these", "they", "things", "through", "under", "users", "very",
+    "want", "wants", "where", "which", "while", "with", "without", "would", "across", "always", "also",
+}
+
+
+def _domain_terms(idea: str, target_customer: str, problem: str, max_words: int = 3) -> list[str]:
+    """The words that recur across the idea, the target customer and the
+    problem - what the idea is actually *about*. _distinctive_nouns ranks by
+    length within the idea alone, which for a long pitch picked
+    "pronunciation situations" (a passing detail) over "hospitals patients
+    language" and sent every competitor search to English-pronunciation
+    apps. A word repeated across all three fields is a far better domain
+    signal than a long word used once.
+    """
+    excluded = _FILLER_WORDS | _GENERIC_PRODUCT_NOUNS | _DOMAIN_STOPWORDS
+    fields = [set(re.findall(r"[a-z]{5,}", text.lower())) - excluded for text in (idea, target_customer, problem)]
+    counts: dict[str, int] = {}
+    for text in (idea, target_customer, problem):
+        for word in re.findall(r"[a-z]{5,}", text.lower()):
+            if word not in excluded:
+                counts[word] = counts.get(word, 0) + 1
+    spread = {word: sum(word in field for field in fields) for word in counts}
+    ranked = sorted(counts, key=lambda w: (-spread[w], -counts[w], -len(w), w))
+    return [w for w in ranked if spread[w] >= 2][:max_words]
+
+
 def build_search_angles(idea: str, target_customer: str, problem: str) -> list[tuple[str, list[str]]]:
     """Turn one idea into a few distinct research angles instead of a single
     query, so results cover market sizing, competitors, and demand rather
@@ -277,12 +307,21 @@ def build_search_angles(idea: str, target_customer: str, problem: str) -> list[t
     customer = _key_phrase(target_customer, max_words=3)
     problem_subject = _key_phrase(problem, max_words=3)
 
+    domain = " ".join(_domain_terms(idea, target_customer, problem))
+    competitor_queries = [
+        f"{subject} competitors alternatives",
+        f"{subject_fallback} alternatives",
+        f"{subject_fallback} competitors",
+    ]
+    if domain:
+        # Unbranded, domain-first queries go ahead of the brand-prefixed ones:
+        # a brand-new product's own name matches nothing useful, and
+        # competitor discovery can only name companies these results contain.
+        competitor_queries = [f"{domain} alternatives", f"{domain} competitors", *competitor_queries]
+
     angles = [
         ("Market size & trends", [f"{subject} market size", f"{subject_fallback} market"]),
-        (
-            "Competitors",
-            [f"{subject} competitors alternatives", f"{subject_fallback} alternatives", f"{subject_fallback} competitors"],
-        ),
+        ("Competitors", competitor_queries),
         ("Industry news", [f"{subject} industry news", f"{subject_fallback} news"]),
     ]
     if customer:
