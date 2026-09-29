@@ -44,6 +44,21 @@ _DEGRADED_NOTE = (
 )
 
 
+def _trim_to_word(text: str, max_chars: int) -> str:
+    """Truncate at the last whole word within max_chars instead of slicing
+    mid-word. Plain `text[:n]` cut fields like a 160-char customer-segment
+    description into visibly broken fragments ("...recipes, and othe",
+    "...pass on, the c") wherever the idea's own wording ran past the
+    limit - confirmed live in a report that used this pattern in three
+    places (segments, assumptions, MVP feature names).
+    """
+    text = text.strip()
+    if len(text) <= max_chars:
+        return text
+    cut = text[:max_chars].rsplit(" ", 1)[0].rstrip(",.;:")
+    return cut or text[:max_chars]
+
+
 def _dedupe_preserve_order(items: list[str]) -> list[str]:
     seen = set()
     out = []
@@ -98,7 +113,7 @@ def _market_trends(results: list) -> list[dict]:
 def _market_segments(target_customer: str, problem: str, idea: str) -> list[dict]:
     target_customer = (target_customer or "").strip()
     problem = (problem or "").strip()
-    segment_name = target_customer[:80] if target_customer else f"Early adopters of {_compact_subject(idea, max_words=6)}"
+    segment_name = _trim_to_word(target_customer, 80) if target_customer else f"Early adopters of {_compact_subject(idea, max_words=6)}"
     return [
         {
             "segment": segment_name or "General early adopters",
@@ -261,7 +276,7 @@ def deterministic_mvp(idea: str, problem: str, swot: dict | None, market_opportu
         opp_source_ids = opp.get("sourceIds", []) if isinstance(opp, dict) else []
         features.append(
             {
-                "feature": f"Address: {opp_text[:80]}",
+                "feature": f"Address: {_trim_to_word(opp_text, 80)}",
                 "rationale": (
                     "Derived directly from an identified market opportunity or "
                     "evidence gap; AI-prioritized rationale is temporarily unavailable."
@@ -373,7 +388,7 @@ def deterministic_assumptions(
 
     assumptions = [
         {
-            "assumption": f"{customer[:120]} feel {pain[:160]} strongly enough to pay for a solution.",
+            "assumption": f"{_trim_to_word(customer, 120)} feel {_trim_to_word(pain, 160)} strongly enough to pay for a solution.",
             "category": "demand",
             "uncertainty": "high",
             "howToValidate": "Run 10 problem interviews and a landing page with a waitlist or pre-order; look for at least 20% sign-up.",
@@ -401,7 +416,7 @@ def deterministic_assumptions(
         },
         {
             "assumption": (
-                f"The core MVP feature ({first_feature[:80]}) can be built and delivered reliably by a small team."
+                f"The core MVP feature ({_trim_to_word(first_feature, 80)}) can be built and delivered reliably by a small team."
                 if first_feature
                 else "A usable MVP can be built and delivered reliably by a small team."
             ),
