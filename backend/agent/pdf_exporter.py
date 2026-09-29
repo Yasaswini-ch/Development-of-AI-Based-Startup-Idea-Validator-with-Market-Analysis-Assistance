@@ -942,15 +942,8 @@ def _swot(story, d, s, sections):
         story.append(_data_table(rows, [180, 58, 62, CONTENT_W - 300], s))
 
 
-def _voice_of_market(story, d, s, sections):
-    market_opportunity = d.get("marketOpportunity") or {}
-    quotes = [q for q in market_opportunity.get("voiceOfMarket") or []
-              if isinstance(q, dict) and q.get("quote")]
-    if not quotes:
-        return
-    sections.add("Voice of the market")
-    summary = market_opportunity.get("voiceOfMarketSummary") or {}
-    counts = summary.get("dimensionCounts") or {}
+def _render_quote_block(story, s, quotes, summary):
+    counts = (summary or {}).get("dimensionCounts") or {}
     parts = [f"{count} {dimension.lower()}{'' if count == 1 else 's'}"
              for dimension, count in counts.items() if count]
     if parts:
@@ -974,6 +967,25 @@ def _voice_of_market(story, d, s, sections):
         ]))
         story.append(KeepTogether(block))
         story.append(Spacer(1, 8))
+
+
+def _voice_of_market(story, d, s, sections):
+    market_opportunity = d.get("marketOpportunity") or {}
+    quotes = [q for q in market_opportunity.get("voiceOfMarket") or []
+              if isinstance(q, dict) and q.get("quote")]
+    owner_quotes = [q for q in market_opportunity.get("voiceOfOwner") or []
+                    if isinstance(q, dict) and q.get("quote")]
+    if not quotes and not owner_quotes:
+        return
+    sections.add("Voice of the market")
+    if quotes:
+        story.append(Paragraph("Voice of the customer", s["h3"]))
+        story.append(Spacer(1, 4))
+        _render_quote_block(story, s, quotes, market_opportunity.get("voiceOfMarketSummary"))
+    if owner_quotes:
+        story.append(Paragraph("Voice of the owner", s["h3"]))
+        story.append(Spacer(1, 4))
+        _render_quote_block(story, s, owner_quotes, market_opportunity.get("voiceOfOwnerSummary"))
 
 
 def _viability(story, d, s, sections):

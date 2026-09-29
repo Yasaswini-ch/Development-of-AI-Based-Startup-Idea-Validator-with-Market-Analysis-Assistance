@@ -24,7 +24,12 @@ from .delivery_roadmap import build_delivery_roadmap
 from .strategic_wedge import build_strategic_wedges
 from .verdict import build_verdict
 from .viability_score import calculate_market_viability, calculate_viability_index
-from .voice_of_market import extract_voice_of_market, summarize_voice_of_market
+from .voice_of_market import (
+    extract_voice_of_market,
+    extract_voice_of_owner,
+    summarize_voice_of_market,
+    summarize_voice_of_owner,
+)
 from .white_space import analyze_white_space
 
 logger = logging.getLogger(__name__)
@@ -385,6 +390,8 @@ def market_opportunity_node(state: PipelineState) -> PipelineState:
                 **market_opportunity,
                 "voiceOfMarket": extract_voice_of_market(results),
                 "voiceOfMarketSummary": summarize_voice_of_market(results),
+                "voiceOfOwner": extract_voice_of_owner(results),
+                "voiceOfOwnerSummary": summarize_voice_of_owner(results),
             }
 
         logger.info("[market_opportunity] COMPLETE")

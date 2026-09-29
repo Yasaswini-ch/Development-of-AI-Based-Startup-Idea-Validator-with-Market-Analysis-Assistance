@@ -456,12 +456,14 @@ export default function ValidationResults({
                 </p>
               )}
             </div>
-            {marketOpportunity?.voiceOfMarket?.length > 0 && (
+            {(marketOpportunity?.voiceOfMarket?.length > 0 || marketOpportunity?.voiceOfOwner?.length > 0) && (
               <div className="rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
                 <VoiceOfMarketSection
                   quotes={marketOpportunity.voiceOfMarket}
-                  sourceMap={sourceMap}
                   summary={marketOpportunity.voiceOfMarketSummary}
+                  ownerQuotes={marketOpportunity.voiceOfOwner}
+                  ownerSummary={marketOpportunity.voiceOfOwnerSummary}
+                  sourceMap={sourceMap}
                 />
               </div>
             )}

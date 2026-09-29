@@ -114,6 +114,31 @@ export const mockMarketOpportunity = {
     sourcesScanned: 12,
     sourcesWithSignal: 9,
   },
+  voiceOfOwner: [
+    {
+      quote: 'As a small SaaS founder, it has been hard to hire good engineers who can also do support.',
+      speakerOrSource: 'Hacker News discussion',
+      sourceId: 'src-2',
+      url: 'https://news.ycombinator.com/item?id=owner-example',
+      sentiment: 'negative_towards_incumbent',
+      taggedDimension: 'Operational Friction',
+      theme: 'General',
+    },
+    {
+      quote: 'We scaled our tipping platform to $40k MRR within a year of launch.',
+      speakerOrSource: 'indiehackers.com',
+      sourceId: 'src-4',
+      url: 'https://indiehackers.com/post/example',
+      sentiment: 'positive_market_signal',
+      taggedDimension: 'Growth & Traction',
+      theme: 'General',
+    },
+  ],
+  voiceOfOwnerSummary: {
+    dimensionCounts: { 'Operational Friction': 3, 'Growth & Traction': 2, 'Strategic Signal': 1 },
+    sourcesScanned: 12,
+    sourcesWithSignal: 6,
+  },
   viabilityIndex: {
     compositeScore: 68,
     dimensions: [

@@ -3,12 +3,15 @@ import { IconMessageCircle } from './icons'
 import Citation from './Citation'
 
 // Pillar 1: Direct Voice-of-Market Excerpts (AFFINITY 5-pillar spec §4.1A).
-// Renders the verbatim quotes backend/agent/voice_of_market.py extracts
-// from real search snippets, in the Customers tab next to the personas they
-// describe. The quote is the hero; what kind of signal it is (friction,
-// demand, tailwind) is spelled out as a text label rather than only a
-// border colour, and each quote carries the same src-N citation marker as
-// every other claim in the report.
+// Renders the verbatim quotes backend/agent/voice_of_market.py extracts from
+// real search snippets, in the Customers tab. Two independent voices are
+// shown: Voice of the Customer (people using/buying a product like this)
+// and Voice of the Owner (people running/scaling a business like this) -
+// different, equally useful kinds of evidence, so they get separate cards
+// and separate dimension vocabularies rather than being merged into one
+// generic list. Every quote is the hero; what kind of signal it is is
+// spelled out as a text label, and each quote carries the same src-N
+// citation marker as every other claim in the report.
 
 function hostnameOf(url) {
   try {
@@ -18,13 +21,19 @@ function hostnameOf(url) {
   }
 }
 
+const CUSTOMER_DIMENSION_ORDER = ['Observed Friction', 'Demand Signal', 'Structural Tailwind']
+const OWNER_DIMENSION_ORDER = ['Operational Friction', 'Growth & Traction', 'Strategic Signal']
+
 const DIMENSION_STYLE = {
   'Observed Friction': 'text-danger',
   'Demand Signal': 'text-info',
   'Structural Tailwind': 'text-success',
+  'Operational Friction': 'text-danger',
+  'Growth & Traction': 'text-success',
+  'Strategic Signal': 'text-info',
 }
 
-function VoiceOfMarketCard({ quote, sourceMap }) {
+function VoiceCard({ quote, sourceMap }) {
   const host = hostnameOf(quote.url)
   // speakerOrSource is either a community name ("Reddit thread") or just
   // the hostname again - only show it when it adds something.
@@ -61,16 +70,14 @@ function VoiceOfMarketCard({ quote, sourceMap }) {
   )
 }
 
-const DIMENSION_ORDER = ['Observed Friction', 'Demand Signal', 'Structural Tailwind']
-
-// Counts span every tagged sentence found in the sources (voiceOfMarketSummary),
-// not just the handful of cards shown below, so a thin-looking grid of 2-4
-// quotes still communicates how much signal actually backs it up.
-function SignalSummary({ summary }) {
+// Counts span every tagged sentence found in the sources (the *Summary
+// prop), not just the handful of cards shown below, so a thin-looking grid
+// of a few quotes still communicates how much signal actually backs it up.
+function SignalSummary({ summary, dimensionOrder }) {
   const counts = summary?.dimensionCounts
   if (!counts) return null
 
-  const parts = DIMENSION_ORDER
+  const parts = dimensionOrder
     .filter((dimension) => counts[dimension] > 0)
     .map((dimension) => `${counts[dimension]} ${dimension.toLowerCase()}${counts[dimension] === 1 ? '' : 's'}`)
 
@@ -84,12 +91,10 @@ function SignalSummary({ summary }) {
   )
 }
 
-const INITIAL_VISIBLE = 4
-
 // Cards grouped by "theme" (what the quote is about - pricing, onboarding,
-// ...) instead of one flat grid, so 8+ quotes on the same topic don't read
-// as noise. Preserves the order themes first appear in `quotes` (which is
-// already friction-first), except "General" - the catch-all bucket - is
+// ...) instead of one flat grid, so a long list on the same topic doesn't
+// read as noise. Preserves the order themes first appear in `quotes` (which
+// is already friction-first), except "General" - the catch-all bucket - is
 // always pushed last.
 function groupByTheme(quotes) {
   const order = []
@@ -129,35 +134,27 @@ function DimensionFilterTabs({ options, active, onSelect }) {
   )
 }
 
-// Renders nothing (not even an empty-state) when there are no quotes -
-// this section is a bonus on top of the personas, not a required one, so
-// an idea with thin community/review coverage just doesn't show it.
-export default function VoiceOfMarketSection({ quotes, sourceMap, summary }) {
+// One voice block: every matching quote is shown (nothing hidden behind a
+// "show more" toggle) - the filter tabs narrow which quotes are visible,
+// they never reduce how much is on the page to start with.
+function VoiceBlock({ heading, description, quotes, sourceMap, summary, dimensionOrder }) {
   const list = quotes || []
   const [filter, setFilter] = useState('All')
-  const [expanded, setExpanded] = useState(false)
   if (list.length === 0) return null
 
-  const filterOptions = ['All', ...DIMENSION_ORDER.filter((d) => list.some((q) => q.taggedDimension === d))]
+  const filterOptions = ['All', ...dimensionOrder.filter((d) => list.some((q) => q.taggedDimension === d))]
   const filtered = filter === 'All' ? list : list.filter((q) => q.taggedDimension === filter)
-  const visible = expanded ? filtered : filtered.slice(0, INITIAL_VISIBLE)
-  const hiddenCount = filtered.length - visible.length
-  const grouped = groupByTheme(visible)
-
-  function selectFilter(option) {
-    setFilter(option)
-    setExpanded(false)
-  }
+  const grouped = groupByTheme(filtered)
 
   return (
     <div>
       <h3 className="mb-1 flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-widest text-muted">
         <IconMessageCircle className="h-3.5 w-3.5 text-accent" />
-        Voice of the Market
+        {heading}
       </h3>
-      <p className="mb-1 text-sm text-muted">What people in the sources actually said, word for word.</p>
-      <SignalSummary summary={summary} />
-      {filterOptions.length > 2 && <DimensionFilterTabs options={filterOptions} active={filter} onSelect={selectFilter} />}
+      <p className="mb-1 text-sm text-muted">{description}</p>
+      <SignalSummary summary={summary} dimensionOrder={dimensionOrder} />
+      {filterOptions.length > 2 && <DimensionFilterTabs options={filterOptions} active={filter} onSelect={setFilter} />}
       {grouped.map(([theme, themeQuotes]) => (
         <div key={theme} className="mb-4 last:mb-0">
           {grouped.length > 1 && (
@@ -167,20 +164,53 @@ export default function VoiceOfMarketSection({ quotes, sourceMap, summary }) {
           )}
           <div className="grid gap-3 sm:grid-cols-2">
             {themeQuotes.map((quote, index) => (
-              <VoiceOfMarketCard key={quote.sourceId + index} quote={quote} sourceMap={sourceMap} />
+              <VoiceCard key={quote.sourceId + index} quote={quote} sourceMap={sourceMap} />
             ))}
           </div>
         </div>
       ))}
-      {(hiddenCount > 0 || (expanded && filtered.length > INITIAL_VISIBLE)) && (
-        <button
-          type="button"
-          onClick={() => setExpanded((e) => !e)}
-          className="mt-1 font-mono text-[11px] uppercase tracking-wide text-accent hover:text-accent-hover"
-        >
-          {hiddenCount > 0 ? `Show ${hiddenCount} more` : 'Show less'}
-        </button>
-      )}
+    </div>
+  )
+}
+
+export function VoiceOfCustomerSection({ quotes, sourceMap, summary }) {
+  return (
+    <VoiceBlock
+      heading="Voice of the Customer"
+      description="What people using or buying a product like this actually said, word for word."
+      quotes={quotes}
+      sourceMap={sourceMap}
+      summary={summary}
+      dimensionOrder={CUSTOMER_DIMENSION_ORDER}
+    />
+  )
+}
+
+export function VoiceOfOwnerSection({ quotes, sourceMap, summary }) {
+  return (
+    <VoiceBlock
+      heading="Voice of the Owner"
+      description="What people running or scaling a business like this actually said, word for word."
+      quotes={quotes}
+      sourceMap={sourceMap}
+      summary={summary}
+      dimensionOrder={OWNER_DIMENSION_ORDER}
+    />
+  )
+}
+
+// Renders nothing (not even an empty-state) when there is no data at all -
+// this section is a bonus on top of the personas, not a required one, so
+// an idea with thin community/review coverage just doesn't show it.
+export default function VoiceOfMarketSection({ quotes, sourceMap, summary, ownerQuotes, ownerSummary }) {
+  const hasCustomer = (quotes || []).length > 0
+  const hasOwner = (ownerQuotes || []).length > 0
+  if (!hasCustomer && !hasOwner) return null
+
+  return (
+    <div className="space-y-8">
+      <VoiceOfCustomerSection quotes={quotes} sourceMap={sourceMap} summary={summary} />
+      <VoiceOfOwnerSection quotes={ownerQuotes} sourceMap={sourceMap} summary={ownerSummary} />
     </div>
   )
 }

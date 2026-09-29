@@ -15,7 +15,13 @@ sys.path.insert(0, str(BACKEND_DIR))
 
 from agent.output_guard import provenance
 from agent.viability_score import calculate_viability_index
-from agent.voice_of_market import MAX_QUOTES, extract_voice_of_market, summarize_voice_of_market
+from agent.voice_of_market import (
+    MAX_QUOTES,
+    extract_voice_of_market,
+    extract_voice_of_owner,
+    summarize_voice_of_market,
+    summarize_voice_of_owner,
+)
 
 _QUOTE_KEYS = {"quote", "speakerOrSource", "sourceId", "url", "sentiment", "taggedDimension", "theme"}
 _DIMENSION_NAMES = [
@@ -99,6 +105,75 @@ class VoiceOfMarketTests(unittest.TestCase):
         self.assertEqual(extract_voice_of_market([]), [])
         self.assertEqual(extract_voice_of_market([{"snippet": "Nothing relevant here at all, just words."}]), [])
         self.assertEqual(extract_voice_of_market(None), [])
+
+
+_OWNER_RESULTS = [
+    {
+        "url": "https://a.example/hiring",
+        "snippet": "As a small SaaS founder, it's been hard to hire good engineers who can also do support.",
+    },
+    {
+        "url": "https://b.example/growth",
+        "snippet": "We scaled our invoicing startup to $40k MRR within a year of launch.",
+    },
+    {
+        "url": "https://c.example/pivot",
+        "snippet": "We pivoted our billing product twice before finding a market that would actually pay.",
+    },
+    {
+        "url": "https://d.example/customer",
+        "snippet": "I hate how tedious it is to chase multi-client payouts every single month for my freelance work.",
+    },
+]
+
+
+class VoiceOfOwnerTests(unittest.TestCase):
+    def test_quotes_match_the_contract_shape(self):
+        quotes = extract_voice_of_owner(_OWNER_RESULTS)
+        self.assertTrue(quotes)
+        for quote in quotes:
+            self.assertEqual(set(quote), _QUOTE_KEYS)
+
+    def test_operational_friction_ranks_first_and_is_negative(self):
+        first = extract_voice_of_owner(_OWNER_RESULTS)[0]
+        self.assertEqual(first["taggedDimension"], "Operational Friction")
+        self.assertEqual(first["sentiment"], "negative_towards_incumbent")
+
+    def test_growth_quote_is_positive(self):
+        quotes = {q["sourceId"]: q for q in extract_voice_of_owner(_OWNER_RESULTS)}
+        self.assertEqual(quotes["src-2"]["taggedDimension"], "Growth & Traction")
+        self.assertEqual(quotes["src-2"]["sentiment"], "positive_market_signal")
+
+    def test_customer_side_sentence_is_not_picked_up_as_owner_voice(self):
+        ids = {q["sourceId"] for q in extract_voice_of_owner(_OWNER_RESULTS)}
+        self.assertNotIn("src-4", ids)
+
+    def test_owner_and_customer_extraction_are_independent(self):
+        # The customer-side extractor should not surface the owner-only quotes either.
+        ids = {q["sourceId"] for q in extract_voice_of_market(_OWNER_RESULTS)}
+        self.assertIn("src-4", ids)
+        self.assertNotIn("src-2", ids)
+
+    def test_no_usable_snippets_returns_empty_list(self):
+        self.assertEqual(extract_voice_of_owner([]), [])
+        self.assertEqual(extract_voice_of_owner(None), [])
+
+
+class VoiceOfOwnerSummaryTests(unittest.TestCase):
+    def test_counts_every_owner_dimension(self):
+        summary = summarize_voice_of_owner(_OWNER_RESULTS)
+        self.assertEqual(
+            set(summary["dimensionCounts"]),
+            {"Operational Friction", "Growth & Traction", "Strategic Signal"},
+        )
+        self.assertGreaterEqual(summary["sourcesWithSignal"], 3)
+
+    def test_every_dimension_key_present_even_when_zero(self):
+        summary = summarize_voice_of_owner([])
+        self.assertEqual(
+            summary["dimensionCounts"],
+            {"Operational Friction": 0, "Growth & Traction": 0, "Strategic Signal": 0},
+        )
 
 
 class VoiceOfMarketSummaryTests(unittest.TestCase):
