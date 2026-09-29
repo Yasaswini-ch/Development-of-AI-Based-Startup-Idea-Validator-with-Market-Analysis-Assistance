@@ -227,6 +227,55 @@ class PdfLayoutTests(unittest.TestCase):
         self.assertNotIn("GO-TO-MARKET STRATEGY", texts)
         self.assertNotIn("REVENUE MODEL OPTIONS", texts)
 
+    def test_newly_covered_sections_render_their_data(self):
+        # Regression: assumptions, experiments, action plan, contradictions,
+        # mvp features, white-space opportunities and cited sources were
+        # all real pipeline outputs the PDF simply never read.
+        data = {
+            "idea": "x",
+            "mvp": {"features": [{"feature": "AI time tracking", "rationale": "Removes the #1 chore.",
+                                   "impact": "high", "effort": "medium"}],
+                    "niceToHave": [{"feature": "Mobile app", "rationale": "Nice but not core."}]},
+            "whiteSpace": {"competitionNote": "3 named competitors were identified.",
+                           "opportunities": [{"title": "Serve solo freelancers", "why": "Manual admin eats hours.",
+                                              "fit": "Wants to get paid faster."}]},
+            "assumptions": {"assumptions": [{"assumption": "Freelancers will pay $19/mo", "category": "demand",
+                                              "uncertainty": "high", "howToValidate": "Run a landing page test.",
+                                              "riskIfWrong": "CAC never pays back.", "timeToValidate": "2 weeks"}]},
+            "experiments": [{"hypothesis": "Freelancers feel this pain strongly enough to pay.",
+                              "method": "Landing page smoke test.", "successMetric": "20% signup rate.",
+                              "duration": "14 days", "budget": "low"}],
+            "contradictions": [{"type": "marketGrowthVsWeakDemand",
+                                 "summary": "Market described as growing, but demand evidence reads weak."}],
+            "actionPlan": {"next7Days": {"title": "Test the highest-risk assumptions",
+                                          "items": [{"text": "Validate the payment-integration risk."}]},
+                           "next30Days": {"title": "Build the smallest useful MVP", "items": []},
+                           "next90Days": {"title": "Execute GTM channels", "items": []}},
+            "sources": [{"sourceId": "src-1", "title": "Freelancer invoicing market report",
+                         "url": "https://example.com/report", "angle": "Market size & trends"}],
+            "results": [{}] * 20,
+        }
+        texts = _texts(build_story(data, "29 Sep 2026"))
+        joined = "\n".join(texts)
+        for expected in (
+            "MVP FEATURE PLAN", "AI time tracking", "Mobile app",
+            "MARKET WHITE SPACE", "Serve solo freelancers", "Wants to get paid faster.",
+            "KEY ASSUMPTIONS TO VALIDATE", "Freelancers will pay $19/mo", "Run a landing page test.",
+            "VALIDATION EXPERIMENTS", "Landing page smoke test.",
+            "TENSION FLAGS", "Market described as growing, but demand evidence reads weak.",
+            "90-DAY ACTION PLAN", "Validate the payment-integration risk.",
+            "CITED SOURCES", "Freelancer invoicing market report",
+        ):
+            self.assertIn(expected, joined)
+        # 20 results retrieved, only 1 cited - the remainder note should show.
+        self.assertIn("20 sources were retrieved in total", joined)
+
+    def test_newly_covered_sections_skipped_without_data(self):
+        texts = _texts(build_story({"idea": "x"}, "29 Sep 2026"))
+        for absent in ("MVP FEATURE PLAN", "MARKET WHITE SPACE", "KEY ASSUMPTIONS TO VALIDATE",
+                       "VALIDATION EXPERIMENTS", "TENSION FLAGS", "90-DAY ACTION PLAN", "CITED SOURCES"):
+            self.assertNotIn(absent, texts)
+
 
 if __name__ == "__main__":
     unittest.main()
