@@ -15,6 +15,7 @@ exporter falls back to ReportLab's built-in Helvetica/Times/Courier.
 import io
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 from xml.sax.saxutils import escape
@@ -117,6 +118,29 @@ def _hex(color) -> str:
 
 def _e(value) -> str:
     return escape(str(value if value is not None else ""))
+
+
+# market_agent.py has no structured "cagr" field - the model is instructed
+# (market_analysis_task.md) to fold a CAGR into the free-prose marketSize
+# sentence when a source states one, rather than invent a separate figure.
+# marketOpportunity.get("cagr") is therefore always absent today; pull the
+# percentage back out of that prose instead of printing a permanent N/A. A
+# forward-looking "cagr" key (if a future pass ever adds one) still wins.
+_CAGR_RE = re.compile(
+    r"(\d{1,3}(?:\.\d+)?%)\s*(?:CAGR|compound annual growth rate)"
+    r"|(?:CAGR|compound annual growth rate)\s*(?:of|:)?\s*(\d{1,3}(?:\.\d+)?%)",
+    re.IGNORECASE,
+)
+
+
+def _extract_cagr(market_opp: dict, market_size_text: str) -> str:
+    structured = market_opp.get("cagr")
+    if structured:
+        return str(structured)
+    match = _CAGR_RE.search(market_size_text or "")
+    if not match:
+        return "N/A"
+    return f"{match.group(1) or match.group(2)} CAGR"
 
 
 def _styles() -> Dict[str, ParagraphStyle]:
@@ -803,7 +827,7 @@ def _market(story, d, s, sections):
     opp_score = market_opp.get("opportunityScore", (d.get("opportunityScore") or {}).get("score"))
     # Older reports can still carry raw "[src-N]" markers in marketSize.
     size = extract_inline_citations(market_opp.get("marketSize") or "Emerging sector")[0]
-    facts = [("Estimated TAM / SAM", size), ("CAGR", market_opp.get("cagr") or "N/A")]
+    facts = [("Estimated TAM / SAM", size), ("CAGR", _extract_cagr(market_opp, size))]
     # Without a verdict score the opportunity score is already the headline
     # number above; with one, it's a labelled secondary metric here.
     if isinstance(verdict.get("score"), (int, float)) and opp_score not in (None, "N/A", 0):
@@ -821,36 +845,47 @@ def _market(story, d, s, sections):
         story.append(_data_table(rows, [160, CONTENT_W - 160], s))
 
 
+_CLASSIFICATION_SHORT = {"direct": "Direct rival", "indirect": "Indirect rival", "unknown": "Unclear"}
+_CLASSIFICATION_COLOR = {"direct": DANGER, "indirect": WARNING, "unknown": MUTED_STRONG}
+
+
 def _competitors(story, d, s, sections):
     data = d.get("competitors") or {}
     comp_list = [c for c in data.get("competitors") or [] if isinstance(c, dict)]
     if not comp_list:
         return
     sections.add("Competitor landscape & positioning")
-    # Profiled competitors (competitor_agent._profile_with_llm) carry a
-    # stated pricing note and weaknesses; NER-only ones fall back to the
-    # rough price bucket and feature breadth.
-    if data.get("profiled"):
-        rows = [["Competitor", "Type", "Pricing", "Key weakness"]]
-        for c in comp_list[:5]:
-            weaknesses = c.get("weaknesses") or []
-            rows.append([
-                Paragraph(_e(c.get("name")), s["cell_bold"]),
-                Paragraph(_e(c.get("classification") or "unknown"), s["cell"]),
-                Paragraph(_e(c.get("pricing") or c.get("estimatedPrice") or "unknown"), s["cell"]),
-                Paragraph(_e(weaknesses[0] if weaknesses else "unknown"), s["cell"]),
-            ])
-        widths = [120, 70, 130, CONTENT_W - 320]
-    else:
-        rows = [["Competitor", "Pricing tier", "Feature breadth"]]
-        for c in comp_list[:5]:
-            rows.append([
-                Paragraph(_e(c.get("name")), s["cell_bold"]),
-                Paragraph(_e(c.get("priceBucket") or c.get("estimatedPrice") or "unknown"), s["cell"]),
-                Paragraph(_e(c.get("featureBreadth") or "unknown"), s["cell"]),
-            ])
-        widths = [CONTENT_W - 300, 150, 150]
-    story.append(_data_table(rows, widths, s))
+    # Classification (direct/indirect rival) comes from the LLM discovery
+    # pass (competitor_agent._discover_with_llm) and is "unknown" for a
+    # name NER found on its own - shown either way, as "Unclear", rather
+    # than dropping the whole column whenever any competitor lacks it.
+    def classification_cell(c):
+        key = c.get("classification") or "unknown"
+        return Paragraph(_e(_CLASSIFICATION_SHORT.get(key, "Unclear")),
+                         ParagraphStyle("Class", parent=s["cell_bold"], textColor=_CLASSIFICATION_COLOR.get(key, MUTED_STRONG)))
+
+    rows = [["Competitor", "Type", "Pricing", "Feature breadth"]]
+    for c in comp_list[:8]:
+        rows.append([
+            Paragraph(_e(c.get("name")), s["cell_bold"]),
+            classification_cell(c),
+            Paragraph(_e(c.get("pricing") or c.get("estimatedPrice") or c.get("priceBucket") or "unknown"), s["cell"]),
+            Paragraph(_e(c.get("featureBreadth") or "unknown"), s["cell"]),
+        ])
+    story.append(_data_table(rows, [CONTENT_W - 340, 90, 130, 120], s))
+
+    # Direct rivals carry a stated weakness once profiled - surface it as
+    # the "so what" a bare classification label doesn't give.
+    direct_weaknesses = [(c.get("name"), c["weaknesses"][0]) for c in comp_list[:8]
+                          if c.get("classification") == "direct" and c.get("weaknesses")]
+    if direct_weaknesses:
+        story.append(Spacer(1, 6))
+        story.append(Paragraph("Key weaknesses of direct rivals", s["label"]))
+        story.append(Spacer(1, 3))
+        indented = ParagraphStyle("WeaknessBullet", parent=s["bullet"], leftIndent=10)
+        for name, weakness in direct_weaknesses:
+            dot = f'<bullet><font color="{_hex(DANGER)}" size="6">●</font></bullet>'
+            story.append(Paragraph(f"{dot}<b>{_e(name)}:</b> {_e(weakness)}", indented))
 
     # Positioning snapshot - same price x breadth grid as CompetitorAnalysis.jsx.
     price_rows = [("high", "High price"), ("mid", "Mid price"), ("low", "Low price")]
@@ -1021,6 +1056,29 @@ def _viability(story, d, s, sections):
     story.append(_data_table(rows, [112, 82, 70, CONTENT_W - 264], s))
 
 
+def _white_space(story, d, s, sections):
+    white_space = d.get("whiteSpace") or {}
+    opportunities = [o for o in white_space.get("opportunities") or [] if isinstance(o, dict)]
+    if not opportunities and not white_space.get("competitionNote"):
+        return
+    sections.add("Market white space")
+    if white_space.get("competitionNote"):
+        story.append(_card([Paragraph("COMPETITIVE DENSITY", s["label"]), Spacer(1, 4),
+                            Paragraph(_e(white_space["competitionNote"]), s["body"])]))
+        story.append(Spacer(1, 8))
+    for gap in opportunities:
+        content = [Paragraph(_e(gap.get("title") or "Opportunity"), s["h3"])]
+        if gap.get("why"):
+            content += [Spacer(1, 6), Paragraph("WHY IT'S OPEN", s["label"]), Spacer(1, 2),
+                        Paragraph(_e(gap["why"]), s["body"])]
+        if gap.get("fit"):
+            content += [Spacer(1, 6), Paragraph(
+                f'<font name="{_FONTS["mono_bold"]}" size="7" color="{_hex(INFO)}">CUSTOMER FIT&nbsp;&nbsp;</font>{_e(gap["fit"])}',
+                s["body_muted"])]
+        story.append(KeepTogether(_card(content, padding=14)))
+        story.append(Spacer(1, 8))
+
+
 def _wedges(story, d, s, sections):
     blueprints = [b for b in (d.get("whiteSpace") or {}).get("blueprints") or [] if isinstance(b, dict)]
     if not blueprints:
@@ -1049,6 +1107,38 @@ def _wedges(story, d, s, sections):
                 s["body_muted"])]
         story.append(KeepTogether(_card(content, padding=14)))
         story.append(Spacer(1, 8))
+
+
+_LEVEL_COLOR = {"high": DANGER, "medium": WARNING, "low": SUCCESS, "unknown": MUTED_STRONG}
+
+
+def _mvp_features(story, d, s, sections):
+    mvp = d.get("mvp") or {}
+    features = [f for f in mvp.get("features") or [] if isinstance(f, dict) and f.get("feature")]
+    if not features:
+        return
+    sections.add("MVP feature plan")
+
+    def level(value):
+        value = str(value or "unknown")
+        return Paragraph(_e(value.capitalize()),
+                         ParagraphStyle("Level", parent=s["cell_bold"], textColor=_LEVEL_COLOR.get(value, MUTED_STRONG)))
+
+    rows = [["Feature", "Impact", "Effort", "Rationale"]]
+    for f in features:
+        rows.append([Paragraph(_e(f.get("feature")), s["cell_bold"]), level(f.get("impact")), level(f.get("effort")),
+                     Paragraph(_e(f.get("rationale")), s["cell"])])
+    story.append(_data_table(rows, [140, 60, 60, CONTENT_W - 260], s))
+
+    for key, label, color in (("niceToHave", "Nice to have", INFO), ("deferred", "Deferred", MUTED_STRONG)):
+        extra = [e for e in mvp.get(key) or [] if isinstance(e, dict) and e.get("feature")]
+        if not extra:
+            continue
+        story.append(Spacer(1, 8))
+        story.append(Paragraph(label, s["h3"]))
+        story.append(Spacer(1, 4))
+        for item in extra:
+            story.append(Paragraph(f"<b>{_e(item['feature'])}</b> — {_e(item.get('rationale') or '')}", s["body_muted"]))
 
 
 def _roadmap(story, d, s, sections):
@@ -1109,6 +1199,195 @@ def _economics(story, d, s, sections):
         story.append(_data_table(rows, [CONTENT_W - 260, 130, 130], s))
 
 
+_FIT_COLOR = {"high": SUCCESS, "medium": ACCENT, "low": MUTED_STRONG}
+
+
+def _gtm_strategy(story, d, s, sections):
+    gtm = d.get("gtm") or {}
+    positioning = gtm.get("positioning")
+    channels = [c for c in gtm.get("channels") or [] if isinstance(c, dict) and c.get("text")]
+    early_approach = gtm.get("earlyCustomerApproach")
+    if not positioning and not channels and not early_approach:
+        return
+    sections.add("Go-to-market strategy")
+    if positioning:
+        story.append(_card([Paragraph("POSITIONING", s["label"]), Spacer(1, 4),
+                            Paragraph(_e(extract_inline_citations(positioning)[0]), s["body"])]))
+        story.append(Spacer(1, 8))
+    if channels:
+        story.append(Paragraph("Acquisition channels", s["h3"]))
+        story.append(Spacer(1, 6))
+        for channel in channels:
+            fit = channel.get("fitScore")
+            badge = _pill(f"{fit} fit", _FIT_COLOR.get(fit, MUTED_STRONG), s) if fit else ""
+            text = extract_inline_citations(channel["text"])[0]
+            tactics = [t for t in channel.get("tactics") or [] if str(t or "").strip()]
+            content = [Table([[Paragraph(_e(text), s["cell_bold"]), badge]],
+                             colWidths=[CONTENT_W - 28 - (badge.wrap(CONTENT_W, 20)[0] if badge else 0),
+                                        badge.wrap(CONTENT_W, 20)[0] if badge else 0],
+                             style=[("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                                    ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0),
+                                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0)])]
+            if tactics:
+                content += [Spacer(1, 5)] + _bullets(tactics, s, color=INFO)
+            story.append(KeepTogether(_card(content, padding=12)))
+            story.append(Spacer(1, 8))
+    if early_approach:
+        story.append(_card([Paragraph("EARLY CUSTOMER APPROACH", s["label"]), Spacer(1, 4),
+                            Paragraph(_e(extract_inline_citations(early_approach)[0]), s["body"])]))
+
+
+def _revenue_models(story, d, s, sections):
+    models = [m for m in (d.get("revenueModels") or {}).get("models") or [] if isinstance(m, dict) and m.get("name")]
+    if not models:
+        return
+    sections.add("Revenue model options")
+    for model in models:
+        fit = model.get("fit")
+        badge = _pill(f"{fit} fit", _FIT_COLOR.get(fit, MUTED_STRONG), s) if fit else ""
+        title = [Paragraph(_e(model["name"]), s["h3"])]
+        if model.get("pricingRange"):
+            title += [Spacer(1, 2), Paragraph(_e(model["pricingRange"]), s["label"])]
+        bw = badge.wrap(CONTENT_W, 20)[0] if badge else 0
+        top = Table([[title, badge]], colWidths=[CONTENT_W - 28 - bw, bw],
+                    style=[("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                           ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0),
+                           ("BOTTOMPADDING", (0, 0), (-1, -1), 0)])
+        content = [top]
+        if model.get("rationale"):
+            content += [Spacer(1, 6), Paragraph(_e(model["rationale"]), s["body"])]
+        companies = [c for c in model.get("exampleCompanies") or [] if str(c or "").strip()]
+        if companies:
+            content += [Spacer(1, 6), Paragraph(
+                f'<font name="{_FONTS["mono_bold"]}" size="7" color="{_hex(MUTED)}">USED BY&nbsp;&nbsp;</font>{_e(", ".join(companies))}',
+                s["body_muted"])]
+        if model.get("tradeoffs"):
+            content += [Spacer(1, 6), Paragraph(
+                f'<font name="{_FONTS["mono_bold"]}" size="7" color="{_hex(WARNING)}">TRADEOFF&nbsp;&nbsp;</font>{_e(model["tradeoffs"])}',
+                s["body_muted"])]
+        story.append(KeepTogether(_card(content, padding=14)))
+        story.append(Spacer(1, 8))
+
+
+def _contradictions(story, d, s, sections):
+    items = [c for c in d.get("contradictions") or [] if isinstance(c, dict) and c.get("summary")]
+    if not items:
+        return
+    sections.add("Tension flags")
+    story.append(Paragraph(
+        "Places where two parts of this analysis point in different directions - worth resolving before betting on either.",
+        s["body_muted"]))
+    story.append(Spacer(1, 8))
+    for item in items:
+        content = [Paragraph(_e(item["summary"]), s["body"])]
+        story.append(KeepTogether(_card(content, border=WARNING_BRIGHT, border_width=1, padding=12)))
+        story.append(Spacer(1, 6))
+
+
+def _assumptions(story, d, s, sections):
+    items = [a for a in (d.get("assumptions") or {}).get("assumptions") or []
+             if isinstance(a, dict) and a.get("assumption")]
+    if not items:
+        return
+    sections.add("Key assumptions to validate")
+
+    def level(value):
+        value = str(value or "unknown")
+        return Paragraph(_e(value.capitalize()),
+                         ParagraphStyle("Unc", parent=s["cell_bold"], textColor=_LEVEL_COLOR.get(value, MUTED_STRONG)))
+
+    for item in items:
+        head = Table([[Paragraph(_e(item["assumption"]), s["h3"]), level(item.get("uncertainty"))]],
+                     colWidths=[CONTENT_W - 28 - 70, 70],
+                     style=[("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                            ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0),
+                            ("BOTTOMPADDING", (0, 0), (-1, -1), 0), ("ALIGN", (1, 0), (1, 0), "RIGHT")])
+        content = [head]
+        if item.get("category"):
+            content += [Spacer(1, 3), Paragraph(_e(str(item["category"]).capitalize()) + " risk", s["label"])]
+        if item.get("howToValidate"):
+            content += [Spacer(1, 6), Paragraph(
+                f'<font name="{_FONTS["mono_bold"]}" size="7" color="{_hex(INFO)}">HOW TO VALIDATE&nbsp;&nbsp;</font>{_e(item["howToValidate"])}',
+                s["body"])]
+        if item.get("riskIfWrong"):
+            content += [Spacer(1, 6), Paragraph(
+                f'<font name="{_FONTS["mono_bold"]}" size="7" color="{_hex(DANGER)}">RISK IF WRONG&nbsp;&nbsp;</font>{_e(item["riskIfWrong"])}',
+                s["body_muted"])]
+        if item.get("timeToValidate"):
+            content += [Spacer(1, 4), Paragraph(
+                f'<font name="{_FONTS["mono_bold"]}" size="7" color="{_hex(MUTED)}">TIME TO VALIDATE&nbsp;&nbsp;</font>{_e(item["timeToValidate"])}',
+                s["body_muted"])]
+        story.append(KeepTogether(_card(content, padding=14)))
+        story.append(Spacer(1, 8))
+
+
+def _experiments(story, d, s, sections):
+    items = [e for e in d.get("experiments") or [] if isinstance(e, dict) and e.get("hypothesis")]
+    if not items:
+        return
+    sections.add("Validation experiments", estimate=True)
+    rows = [["Hypothesis", "Method", "Success metric", "Time / budget"]]
+    for e in items:
+        time_budget = " / ".join(filter(None, [e.get("duration"), e.get("budget")])) or "—"
+        rows.append([
+            Paragraph(_e(e.get("hypothesis")), s["cell"]),
+            Paragraph(_e(e.get("method")), s["cell"]),
+            Paragraph(_e(e.get("successMetric")), s["cell"]),
+            Paragraph(_e(time_budget), s["cell"]),
+        ])
+    w = (CONTENT_W - 100) / 3
+    story.append(_data_table(rows, [w, w, w, 100], s))
+
+
+def _action_plan(story, d, s, sections):
+    plan = d.get("actionPlan") or {}
+    windows = [plan.get(key) for key in ("next7Days", "next30Days", "next90Days")]
+    windows = [w for w in windows if isinstance(w, dict) and (w.get("items") or w.get("title"))]
+    if not windows:
+        return
+    sections.add("90-day action plan")
+    gap = 8
+    width = (CONTENT_W - gap * 2) / 3
+    cells = []
+    for window in windows:
+        items = [i.get("text") for i in window.get("items") or [] if isinstance(i, dict) and i.get("text")]
+        content = [Paragraph(_e(window.get("title") or "Plan"), s["h3"]), Spacer(1, 6)]
+        content += _bullets(items, s, color=ACCENT) if items else [Paragraph("No action items yet.", s["body_muted"])]
+        cells.append(_card(content, width=width, padding=12))
+    while len(cells) < 3:
+        cells.append("")
+    row = Table([cells], colWidths=[width + gap, width + gap, width])
+    row.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-2, -1), gap), ("RIGHTPADDING", (-1, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story.append(row)
+
+
+def _sources(story, d, s, sections):
+    items = [c for c in d.get("sources") or [] if isinstance(c, dict) and (c.get("title") or c.get("url"))]
+    if not items:
+        return
+    sections.add("Cited sources")
+    rows = [["#", "Source", "Angle"]]
+    for c in items:
+        title = c.get("title") or c.get("url") or "Untitled source"
+        label = f"{_e(title)}<br/><font color=\"{_hex(MUTED)}\" size=\"7\">{_e(c['url'])}</font>" \
+            if c.get("url") and c.get("url") != title else _e(title)
+        rows.append([
+            Paragraph(_e(c.get("sourceId") or ""), s["label"]),
+            Paragraph(label, s["cell"]),
+            Paragraph(_e(c.get("angle") or "—"), s["cell"]),
+        ])
+    story.append(_data_table(rows, [36, CONTENT_W - 156, 120], s))
+    total = len(d.get("results") or [])
+    if total > len(items):
+        story.append(Spacer(1, 4))
+        story.append(Paragraph(f"{total} sources were retrieved in total; the {len(items)} most load-bearing are cited above.",
+                               s["body_muted"]))
+
+
 def build_story(dossier_data: Dict[str, Any], generated: str) -> list:
     """The report's flowables in reading order: idea context, verdict,
     summary + KPI strip, evidence confidence, then the numbered analysis sections (each skipped
@@ -1126,11 +1405,20 @@ def build_story(dossier_data: Dict[str, Any], generated: str) -> list:
     _market(story, d, s, sections)
     _competitors(story, d, s, sections)
     _swot(story, d, s, sections)
+    _contradictions(story, d, s, sections)
     _voice_of_market(story, d, s, sections)
     _viability(story, d, s, sections)
+    _white_space(story, d, s, sections)
     _wedges(story, d, s, sections)
+    _mvp_features(story, d, s, sections)
     _roadmap(story, d, s, sections)
+    _assumptions(story, d, s, sections)
+    _experiments(story, d, s, sections)
     _economics(story, d, s, sections)
+    _gtm_strategy(story, d, s, sections)
+    _revenue_models(story, d, s, sections)
+    _action_plan(story, d, s, sections)
+    _sources(story, d, s, sections)
     return story
 
 
