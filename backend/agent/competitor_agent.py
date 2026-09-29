@@ -211,7 +211,19 @@ def _clean_entity_name(name: str) -> str:
 
 def _is_generic_phrase(name: str) -> bool:
     words = [w.strip(",.") for w in name.lower().split()]
-    return any(w in _GENERIC_WORDS for w in words)
+    if any(w in _GENERIC_WORDS for w in words):
+        return True
+    # "Development & IT", "Design & Creative" - a marketplace's own category
+    # nav (Freelancer.com, Toptal, Upwork all list these) reads to spaCy's
+    # ORG tagger exactly like a two-word brand joined by "&", and the two
+    # words on either side are whatever the site's category taxonomy calls
+    # its skill categories - too open-ended to denylist word by word the
+    # way _GENERIC_WORDS does. Confirmed live: both category labels above
+    # surfaced as "competitors" for a freelancer-invoicing idea. A real
+    # brand containing "&" (AT&T, Proctor & Gamble) is rare enough in this
+    # context that the false-negative cost is worth it.
+    return "&" in name
+
 
 
 def _is_duplicated_merge(name: str) -> bool:
@@ -871,7 +883,7 @@ def _ground_and_clean_competitors(raw: list, sources: dict[str, dict]) -> list[d
         if not isinstance(item, dict):
             continue
         name = _short_text(item.get("name"), 80)
-        if not name or name.lower() in seen_lower:
+        if not name or name.lower() in seen_lower or _is_generic_phrase(name):
             continue
         source_ids = item.get("sourceIds")
         if not isinstance(source_ids, list):

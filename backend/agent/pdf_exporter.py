@@ -120,6 +120,23 @@ def _e(value) -> str:
     return escape(str(value if value is not None else ""))
 
 
+def _single_line(value, max_chars: int) -> str:
+    """Escape and cap to one short line. Some PDF viewers reconstruct
+    copy/paste reading order from glyph y-position rather than draw order,
+    and a cell that wraps to two lines sits at a different y than its
+    single-line neighbours in the same row - across a whole table that
+    misaligns which row's text each column's values get grouped with.
+    Capping any cell that could realistically run long (a free-text
+    pricing note, a long name) keeps every row a uniform one line, so nothing
+    in that table can drift into the next row after enough wrapped rows
+    accumulate. Multi-line body text elsewhere (cards, bullets) doesn't
+    need this - the artifact only shows up in dense multi-column tables."""
+    text = str(value if value is not None else "")
+    if len(text) > max_chars:
+        text = text[: max_chars - 1].rstrip() + "…"
+    return _e(text)
+
+
 # market_agent.py has no structured "cagr" field - the model is instructed
 # (market_analysis_task.md) to fold a CAGR into the free-prose marketSize
 # sentence when a source states one, rather than invent a separate figure.
@@ -866,11 +883,12 @@ def _competitors(story, d, s, sections):
 
     rows = [["Competitor", "Type", "Pricing", "Feature breadth"]]
     for c in comp_list[:8]:
+        pricing = c.get("pricing") or c.get("estimatedPrice") or c.get("priceBucket") or "unknown"
         rows.append([
-            Paragraph(_e(c.get("name")), s["cell_bold"]),
+            Paragraph(_single_line(c.get("name"), 26), s["cell_bold"]),
             classification_cell(c),
-            Paragraph(_e(c.get("pricing") or c.get("estimatedPrice") or c.get("priceBucket") or "unknown"), s["cell"]),
-            Paragraph(_e(c.get("featureBreadth") or "unknown"), s["cell"]),
+            Paragraph(_single_line(pricing, 22), s["cell"]),
+            Paragraph(_single_line(c.get("featureBreadth") or "unknown", 16), s["cell"]),
         ])
     story.append(_data_table(rows, [CONTENT_W - 340, 90, 130, 120], s))
 

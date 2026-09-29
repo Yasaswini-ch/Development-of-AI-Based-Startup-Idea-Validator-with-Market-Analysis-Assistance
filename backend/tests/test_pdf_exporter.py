@@ -202,6 +202,36 @@ class PdfLayoutTests(unittest.TestCase):
         self.assertIn("Unclear", texts)
         self.assertTrue(any("Fees erode thin margins." in text for text in texts))
 
+    def test_competitor_table_cells_are_capped_to_one_short_line(self):
+        # Regression: a free-text "pricing" note or long name wrapping to
+        # multiple lines in a table cell puts that cell's continuation
+        # line at a different y-position than its single-line row
+        # neighbours - several PDF viewers reconstruct copy/paste order
+        # from glyph position, not draw order, so a wrapped row can scramble
+        # which values later rows' text gets grouped with (confirmed from
+        # a user's pasted copy: values interleaved across unrelated rows).
+        # Every field here is long enough to wrap at the table's real
+        # column widths if the exporter didn't cap it to one line first.
+        data = {"idea": "x", "competitors": {"competitors": [
+            {"name": "A Very Long Competitor Name That Would Definitely Wrap", "classification": "direct",
+             "pricing": "Enterprise pricing available on request, billed annually with a long-term contract",
+             "featureBreadth": "narrow"},
+        ]}}
+        story = build_story(data, "29 Sep 2026")
+        cell_paragraphs = [p for f in story if isinstance(f, Table) for row in f._cellvalues for cell in row
+                           for p in (cell if isinstance(cell, (list, tuple)) else [cell]) if isinstance(p, Paragraph)]
+        name_cell = next(p for p in cell_paragraphs if "Very Long Competitor" in p.getPlainText())
+        pricing_cell = next(p for p in cell_paragraphs if "Enterprise pricing" in p.getPlainText())
+        # The competitor table's real column widths (pdf_exporter._competitors),
+        # minus each cell's 8pt+8pt padding - the usable text width the cap
+        # has to fit inside.
+        name_width = (pdf_exporter.CONTENT_W - 340) - 16
+        pricing_width = 130 - 16
+        for p, width in ((name_cell, name_width), (pricing_cell, pricing_width)):
+            self.assertTrue(p.getPlainText().endswith("…"))
+            p.wrap(width, 100)
+            self.assertEqual(len(p.blPara.lines), 1)
+
     def test_gtm_strategy_section_renders_positioning_channels_and_approach(self):
         gtm = {"positioning": "The affordable alternative.",
                "channels": [{"text": "Freelancer subreddits", "fitScore": "high", "tactics": ["Post weekly"]}],

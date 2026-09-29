@@ -24,6 +24,17 @@ def _source(text, url="https://example.com"):
     return {"text": text, "result": {"url": url, "snippet": text}}
 
 
+class IsGenericPhraseTests(unittest.TestCase):
+    def test_rejects_ampersand_joined_category_labels(self):
+        self.assertTrue(competitor_agent._is_generic_phrase("Development & IT"))
+        self.assertTrue(competitor_agent._is_generic_phrase("Design & Creative"))
+
+    def test_keeps_real_brand_names(self):
+        self.assertFalse(competitor_agent._is_generic_phrase("HelloFresh"))
+        self.assertFalse(competitor_agent._is_generic_phrase("Freelancer.com"))
+        self.assertFalse(competitor_agent._is_generic_phrase("QuickBooks Online"))
+
+
 class ValidDiscoveryShapeTests(unittest.TestCase):
     def test_accepts_empty_competitors_list(self):
         # Discovery is allowed to genuinely say "none found" - unlike the
@@ -85,6 +96,21 @@ class GroundAndCleanCompetitorsTests(unittest.TestCase):
         raw = [{"name": "HelloFresh", "sourceIds": ["r1"]}]
         cleaned = competitor_agent._ground_and_clean_competitors(raw, sources)
         self.assertEqual(cleaned[0]["gap"], competitor_agent._GAP_DISCLOSURE)
+
+    def test_drops_a_marketplace_category_label_masquerading_as_a_name(self):
+        # Confirmed live: Freelancer.com/Toptal's own site nav ("Development
+        # & IT", "Design & Creative") got extracted as if they were
+        # competitor brands, since the discovery LLM only checks that a
+        # name literally appears in its cited source's text - which a nav
+        # label does, just as much as a real company name would.
+        sources = {"r1": _source("Browse categories: Development & IT, Design & Creative, and more on Freelancer.com.")}
+        raw = [
+            {"name": "Development & IT", "sourceIds": ["r1"]},
+            {"name": "Design & Creative", "sourceIds": ["r1"]},
+            {"name": "Freelancer.com", "sourceIds": ["r1"]},
+        ]
+        cleaned = competitor_agent._ground_and_clean_competitors(raw, sources)
+        self.assertEqual([c["name"] for c in cleaned], ["Freelancer.com"])
 
     def test_price_not_misattributed_across_a_whole_multi_competitor_source(self):
         # Regression: a single shared source naming several competitors used
