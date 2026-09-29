@@ -15,6 +15,7 @@ exporter falls back to ReportLab's built-in Helvetica/Times/Courier.
 import io
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 from xml.sax.saxutils import escape
@@ -117,6 +118,29 @@ def _hex(color) -> str:
 
 def _e(value) -> str:
     return escape(str(value if value is not None else ""))
+
+
+# market_agent.py has no structured "cagr" field - the model is instructed
+# (market_analysis_task.md) to fold a CAGR into the free-prose marketSize
+# sentence when a source states one, rather than invent a separate figure.
+# marketOpportunity.get("cagr") is therefore always absent today; pull the
+# percentage back out of that prose instead of printing a permanent N/A. A
+# forward-looking "cagr" key (if a future pass ever adds one) still wins.
+_CAGR_RE = re.compile(
+    r"(\d{1,3}(?:\.\d+)?%)\s*(?:CAGR|compound annual growth rate)"
+    r"|(?:CAGR|compound annual growth rate)\s*(?:of|:)?\s*(\d{1,3}(?:\.\d+)?%)",
+    re.IGNORECASE,
+)
+
+
+def _extract_cagr(market_opp: dict, market_size_text: str) -> str:
+    structured = market_opp.get("cagr")
+    if structured:
+        return str(structured)
+    match = _CAGR_RE.search(market_size_text or "")
+    if not match:
+        return "N/A"
+    return f"{match.group(1) or match.group(2)} CAGR"
 
 
 def _styles() -> Dict[str, ParagraphStyle]:
@@ -803,7 +827,7 @@ def _market(story, d, s, sections):
     opp_score = market_opp.get("opportunityScore", (d.get("opportunityScore") or {}).get("score"))
     # Older reports can still carry raw "[src-N]" markers in marketSize.
     size = extract_inline_citations(market_opp.get("marketSize") or "Emerging sector")[0]
-    facts = [("Estimated TAM / SAM", size), ("CAGR", market_opp.get("cagr") or "N/A")]
+    facts = [("Estimated TAM / SAM", size), ("CAGR", _extract_cagr(market_opp, size))]
     # Without a verdict score the opportunity score is already the headline
     # number above; with one, it's a labelled secondary metric here.
     if isinstance(verdict.get("score"), (int, float)) and opp_score not in (None, "N/A", 0):
@@ -821,36 +845,47 @@ def _market(story, d, s, sections):
         story.append(_data_table(rows, [160, CONTENT_W - 160], s))
 
 
+_CLASSIFICATION_SHORT = {"direct": "Direct rival", "indirect": "Indirect rival", "unknown": "Unclear"}
+_CLASSIFICATION_COLOR = {"direct": DANGER, "indirect": WARNING, "unknown": MUTED_STRONG}
+
+
 def _competitors(story, d, s, sections):
     data = d.get("competitors") or {}
     comp_list = [c for c in data.get("competitors") or [] if isinstance(c, dict)]
     if not comp_list:
         return
     sections.add("Competitor landscape & positioning")
-    # Profiled competitors (competitor_agent._profile_with_llm) carry a
-    # stated pricing note and weaknesses; NER-only ones fall back to the
-    # rough price bucket and feature breadth.
-    if data.get("profiled"):
-        rows = [["Competitor", "Type", "Pricing", "Key weakness"]]
-        for c in comp_list[:5]:
-            weaknesses = c.get("weaknesses") or []
-            rows.append([
-                Paragraph(_e(c.get("name")), s["cell_bold"]),
-                Paragraph(_e(c.get("classification") or "unknown"), s["cell"]),
-                Paragraph(_e(c.get("pricing") or c.get("estimatedPrice") or "unknown"), s["cell"]),
-                Paragraph(_e(weaknesses[0] if weaknesses else "unknown"), s["cell"]),
-            ])
-        widths = [120, 70, 130, CONTENT_W - 320]
-    else:
-        rows = [["Competitor", "Pricing tier", "Feature breadth"]]
-        for c in comp_list[:5]:
-            rows.append([
-                Paragraph(_e(c.get("name")), s["cell_bold"]),
-                Paragraph(_e(c.get("priceBucket") or c.get("estimatedPrice") or "unknown"), s["cell"]),
-                Paragraph(_e(c.get("featureBreadth") or "unknown"), s["cell"]),
-            ])
-        widths = [CONTENT_W - 300, 150, 150]
-    story.append(_data_table(rows, widths, s))
+    # Classification (direct/indirect rival) comes from the LLM discovery
+    # pass (competitor_agent._discover_with_llm) and is "unknown" for a
+    # name NER found on its own - shown either way, as "Unclear", rather
+    # than dropping the whole column whenever any competitor lacks it.
+    def classification_cell(c):
+        key = c.get("classification") or "unknown"
+        return Paragraph(_e(_CLASSIFICATION_SHORT.get(key, "Unclear")),
+                         ParagraphStyle("Class", parent=s["cell_bold"], textColor=_CLASSIFICATION_COLOR.get(key, MUTED_STRONG)))
+
+    rows = [["Competitor", "Type", "Pricing", "Feature breadth"]]
+    for c in comp_list[:8]:
+        rows.append([
+            Paragraph(_e(c.get("name")), s["cell_bold"]),
+            classification_cell(c),
+            Paragraph(_e(c.get("pricing") or c.get("estimatedPrice") or c.get("priceBucket") or "unknown"), s["cell"]),
+            Paragraph(_e(c.get("featureBreadth") or "unknown"), s["cell"]),
+        ])
+    story.append(_data_table(rows, [CONTENT_W - 340, 90, 130, 120], s))
+
+    # Direct rivals carry a stated weakness once profiled - surface it as
+    # the "so what" a bare classification label doesn't give.
+    direct_weaknesses = [(c.get("name"), c["weaknesses"][0]) for c in comp_list[:8]
+                          if c.get("classification") == "direct" and c.get("weaknesses")]
+    if direct_weaknesses:
+        story.append(Spacer(1, 6))
+        story.append(Paragraph("Key weaknesses of direct rivals", s["label"]))
+        story.append(Spacer(1, 3))
+        indented = ParagraphStyle("WeaknessBullet", parent=s["bullet"], leftIndent=10)
+        for name, weakness in direct_weaknesses:
+            dot = f'<bullet><font color="{_hex(DANGER)}" size="6">●</font></bullet>'
+            story.append(Paragraph(f"{dot}<b>{_e(name)}:</b> {_e(weakness)}", indented))
 
     # Positioning snapshot - same price x breadth grid as CompetitorAnalysis.jsx.
     price_rows = [("high", "High price"), ("mid", "Mid price"), ("low", "Low price")]
@@ -1097,6 +1132,76 @@ def _economics(story, d, s, sections):
         story.append(_data_table(rows, [CONTENT_W - 260, 130, 130], s))
 
 
+_FIT_COLOR = {"high": SUCCESS, "medium": ACCENT, "low": MUTED_STRONG}
+
+
+def _gtm_strategy(story, d, s, sections):
+    gtm = d.get("gtm") or {}
+    positioning = gtm.get("positioning")
+    channels = [c for c in gtm.get("channels") or [] if isinstance(c, dict) and c.get("text")]
+    early_approach = gtm.get("earlyCustomerApproach")
+    if not positioning and not channels and not early_approach:
+        return
+    sections.add("Go-to-market strategy")
+    if positioning:
+        story.append(_card([Paragraph("POSITIONING", s["label"]), Spacer(1, 4),
+                            Paragraph(_e(extract_inline_citations(positioning)[0]), s["body"])]))
+        story.append(Spacer(1, 8))
+    if channels:
+        story.append(Paragraph("Acquisition channels", s["h3"]))
+        story.append(Spacer(1, 6))
+        for channel in channels:
+            fit = channel.get("fitScore")
+            badge = _pill(f"{fit} fit", _FIT_COLOR.get(fit, MUTED_STRONG), s) if fit else ""
+            text = extract_inline_citations(channel["text"])[0]
+            tactics = [t for t in channel.get("tactics") or [] if str(t or "").strip()]
+            content = [Table([[Paragraph(_e(text), s["cell_bold"]), badge]],
+                             colWidths=[CONTENT_W - 28 - (badge.wrap(CONTENT_W, 20)[0] if badge else 0),
+                                        badge.wrap(CONTENT_W, 20)[0] if badge else 0],
+                             style=[("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                                    ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0),
+                                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0)])]
+            if tactics:
+                content += [Spacer(1, 5)] + _bullets(tactics, s, color=INFO)
+            story.append(KeepTogether(_card(content, padding=12)))
+            story.append(Spacer(1, 8))
+    if early_approach:
+        story.append(_card([Paragraph("EARLY CUSTOMER APPROACH", s["label"]), Spacer(1, 4),
+                            Paragraph(_e(extract_inline_citations(early_approach)[0]), s["body"])]))
+
+
+def _revenue_models(story, d, s, sections):
+    models = [m for m in (d.get("revenueModels") or {}).get("models") or [] if isinstance(m, dict) and m.get("name")]
+    if not models:
+        return
+    sections.add("Revenue model options")
+    for model in models:
+        fit = model.get("fit")
+        badge = _pill(f"{fit} fit", _FIT_COLOR.get(fit, MUTED_STRONG), s) if fit else ""
+        title = [Paragraph(_e(model["name"]), s["h3"])]
+        if model.get("pricingRange"):
+            title += [Spacer(1, 2), Paragraph(_e(model["pricingRange"]), s["label"])]
+        bw = badge.wrap(CONTENT_W, 20)[0] if badge else 0
+        top = Table([[title, badge]], colWidths=[CONTENT_W - 28 - bw, bw],
+                    style=[("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                           ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0),
+                           ("BOTTOMPADDING", (0, 0), (-1, -1), 0)])
+        content = [top]
+        if model.get("rationale"):
+            content += [Spacer(1, 6), Paragraph(_e(model["rationale"]), s["body"])]
+        companies = [c for c in model.get("exampleCompanies") or [] if str(c or "").strip()]
+        if companies:
+            content += [Spacer(1, 6), Paragraph(
+                f'<font name="{_FONTS["mono_bold"]}" size="7" color="{_hex(MUTED)}">USED BY&nbsp;&nbsp;</font>{_e(", ".join(companies))}',
+                s["body_muted"])]
+        if model.get("tradeoffs"):
+            content += [Spacer(1, 6), Paragraph(
+                f'<font name="{_FONTS["mono_bold"]}" size="7" color="{_hex(WARNING)}">TRADEOFF&nbsp;&nbsp;</font>{_e(model["tradeoffs"])}',
+                s["body_muted"])]
+        story.append(KeepTogether(_card(content, padding=14)))
+        story.append(Spacer(1, 8))
+
+
 def build_story(dossier_data: Dict[str, Any], generated: str) -> list:
     """The report's flowables in reading order: idea context, verdict,
     summary + KPI strip, evidence confidence, then the numbered analysis sections (each skipped
@@ -1119,6 +1224,8 @@ def build_story(dossier_data: Dict[str, Any], generated: str) -> list:
     _wedges(story, d, s, sections)
     _roadmap(story, d, s, sections)
     _economics(story, d, s, sections)
+    _gtm_strategy(story, d, s, sections)
+    _revenue_models(story, d, s, sections)
     return story
 
 

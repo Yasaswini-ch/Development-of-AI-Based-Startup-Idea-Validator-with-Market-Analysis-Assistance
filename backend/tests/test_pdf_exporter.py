@@ -170,6 +170,63 @@ class PdfLayoutTests(unittest.TestCase):
         self.assertLessEqual(len(pdf_exporter._concept_title(idea)), 90)
         self.assertIn(idea, _texts(build_story({"idea": idea}, "26 Sep 2026")))
 
+    def test_cagr_is_parsed_from_market_size_prose_when_no_structured_field(self):
+        # market_agent.py has never produced a structured "cagr" field - the
+        # model states it (when a source has one) inside marketSize's prose.
+        market_opp = {"marketSize": "Market projected $446 million in 2025 with 5.3% CAGR to 2033."}
+        texts = _texts(build_story({"idea": "x", "marketOpportunity": market_opp}, "29 Sep 2026"))
+        self.assertIn("5.3% CAGR", texts)
+        self.assertNotIn("N/A", texts)
+
+    def test_cagr_falls_back_to_na_when_not_stated(self):
+        texts = _texts(build_story({"idea": "x", "marketOpportunity": {"marketSize": "Emerging, no figures cited."}}, "29 Sep 2026"))
+        self.assertIn("N/A", texts)
+
+    def test_cagr_prefers_a_structured_field_if_ever_present(self):
+        market_opp = {"marketSize": "Text says 9% CAGR.", "cagr": "12% (structured)"}
+        texts = _texts(build_story({"idea": "x", "marketOpportunity": market_opp}, "29 Sep 2026"))
+        self.assertIn("12% (structured)", texts)
+
+    def test_competitor_classification_always_shown_even_when_not_llm_profiled(self):
+        # Regression: the table used to hide the Type column entirely
+        # whenever competitors["profiled"] was False (LLM discovery
+        # failed/skipped), even for NER-only rows that do carry a
+        # classification. Every row should now show Direct/Indirect/Unclear.
+        data = {"idea": "x", "competitors": {"profiled": False, "competitors": [
+            {"name": "PayPal", "classification": "direct", "estimatedPrice": "mid", "featureBreadth": "narrow",
+             "weaknesses": ["Fees erode thin margins."]},
+            {"name": "Finboo", "classification": "unknown", "estimatedPrice": "unknown", "featureBreadth": "narrow"},
+        ]}}
+        texts = _texts(build_story(data, "29 Sep 2026"))
+        self.assertIn("Direct rival", texts)
+        self.assertIn("Unclear", texts)
+        self.assertTrue(any("Fees erode thin margins." in text for text in texts))
+
+    def test_gtm_strategy_section_renders_positioning_channels_and_approach(self):
+        gtm = {"positioning": "The affordable alternative.",
+               "channels": [{"text": "Freelancer subreddits", "fitScore": "high", "tactics": ["Post weekly"]}],
+               "earlyCustomerApproach": "White-glove onboarding for the first 20 users."}
+        texts = _texts(build_story({"idea": "x", "gtm": gtm}, "29 Sep 2026"))
+        for expected in ("GO-TO-MARKET STRATEGY", "The affordable alternative.", "Freelancer subreddits",
+                         "Post weekly", "White-glove onboarding for the first 20 users."):
+            self.assertIn(expected, texts)
+
+    def test_revenue_models_section_renders_each_model(self):
+        revenue_models = {"models": [
+            {"name": "Subscription (SaaS)", "fit": "high", "rationale": "Recurring billing fits the use case.",
+             "tradeoffs": "Freemium cannibalizes conversion.", "pricingRange": "$0-$60/mo", "exampleCompanies": ["FreshBooks"]},
+        ]}
+        texts = _texts(build_story({"idea": "x", "revenueModels": revenue_models}, "29 Sep 2026"))
+        joined = "\n".join(texts)
+        for expected in ("REVENUE MODEL OPTIONS", "Subscription (SaaS)", "Recurring billing fits the use case.",
+                         "Freemium cannibalizes conversion.", "FreshBooks"):
+            self.assertIn(expected, joined)
+
+    def test_gtm_and_revenue_sections_skipped_without_data(self):
+        texts = _texts(build_story({"idea": "x"}, "29 Sep 2026"))
+        self.assertNotIn("GO-TO-MARKET STRATEGY", texts)
+        self.assertNotIn("REVENUE MODEL OPTIONS", texts)
+
 
 if __name__ == "__main__":
     unittest.main()
