@@ -692,7 +692,10 @@ def _run_pipeline_and_build_response(payload: ValidateRequest, cache_key: str, a
         "mode": state.get("mode", "deep"),
     }
 
-    if not any(response["errors"].values()):
+    # A degraded (deterministic-fallback) section is a model-outage result,
+    # not the real answer - caching it would keep serving that weak report
+    # for the whole TTL even after the models recover.
+    if not _response_is_partial(response):
         _set_cached(cache_key, response)
         logger.info("Validation result cached")
 
