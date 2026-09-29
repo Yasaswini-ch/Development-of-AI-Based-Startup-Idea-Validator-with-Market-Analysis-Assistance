@@ -54,6 +54,13 @@ _EXCLUDED_DOMAINS = {
     "competitors.app",
     "alternativeto.net",
     "saashub.com",
+    # Same generic-directory template as the three above - confirmed live
+    # (Sept 2026, freelance-invoicing-idea test run): a TrustRadius
+    # "<product> Alternatives & Competitors" page fed the literal page-title
+    # fragment "Alternatives & Competitors" into Competitor Discovery's NER
+    # step as a false "competitor" name, for a product ("Dynafios APP")
+    # that isn't even in the same category as the idea being validated.
+    "trustradius.com",
 }
 
 

@@ -264,12 +264,44 @@ def _free_fallback(query: str, max_results: int) -> list[dict]:
 
 
 def fetch_results(query: str, max_results: int = 5) -> list[dict]:
-    """Tavily first (real relevance score); fall back to the free chain if
-    Tavily isn't configured or returns nothing.
+    """Blends Tavily with DuckDuckGo instead of only reaching for DDG when
+    Tavily fails or is unset - combining two independently-ranked providers
+    reduces how much one dominant page can flood a single query's results.
+    Confirmed live: a freelancer-invoicing "Competitors" search had Tavily
+    return several results all from one listicle site's own product/review
+    pages, feeding Competitor Discovery's NER pass an outsized share of
+    that one page's text (author bylines included). A single provider
+    being individually high-quality doesn't prevent this.
+
+    Wikipedia/Hacker News (_free_fallback) stay reserved for when neither
+    Tavily nor DuckDuckGo returns anything - a different kind of source
+    (encyclopedic / tech-discussion), not worth the latency on every call.
     """
-    results = _from_tavily(query, max_results)
+    tavily_results = _from_tavily(query, max_results)
 
-    if not results:
-        results = _free_fallback(query, max_results)
+    ddg_raw = _from_duckduckgo(query, max_results)
+    ddg_results = [
+        {
+            "title": html.unescape(r["title"]),
+            "snippet": html.unescape(r["snippet"]),
+            "url": r["url"],
+            "score": _relevance_score(query, r["title"], r["snippet"]),
+            "publishedAt": r.get("publishedAt"),
+        }
+        for r in ddg_raw
+        if r["url"]
+    ]
+    ddg_results = [r for r in ddg_results if r["score"] >= 0.3]
 
-    return [{**r, "query": query} for r in results]
+    combined = tavily_results + ddg_results
+    if not combined:
+        combined = _free_fallback(query, max_results)
+    elif tavily_results and ddg_results:
+        by_url: dict[str, dict] = {}
+        for r in combined:
+            existing = by_url.get(r["url"])
+            if existing is None or r["score"] > existing["score"]:
+                by_url[r["url"]] = r
+        combined = sorted(by_url.values(), key=lambda r: r["score"], reverse=True)[:max_results]
+
+    return [{**r, "query": query} for r in combined]

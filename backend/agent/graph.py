@@ -734,7 +734,7 @@ def mvp_node(state: PipelineState) -> PipelineState:
         _record_node_failure("mvp", exc)
         return {
             "mvp": None,
-            "errors": {"mvp": _friendly_error_message(exc)},
+            "errors": {**state.get("errors", {}), "mvp": _friendly_error_message(exc)},
         }
 
     # Pillar 5B: stage-gated delivery roadmap, deterministic and built from
@@ -778,7 +778,7 @@ def gtm_node(state: PipelineState) -> PipelineState:
         _record_node_failure("gtm", exc)
         return {
             "gtm": None,
-            "errors": {"gtm": _friendly_error_message(exc)},
+            "errors": {**state.get("errors", {}), "gtm": _friendly_error_message(exc)},
         }
 
     # Pillar 5A: unit economics + pricing tiers, deterministic (see

@@ -149,6 +149,23 @@ _GENERIC_WORDS = {
     # is being validated. Same rationale as "newsweek" above; confirmed
     # live ("TechCrunch" surfaced as a "competitor" for a journaling app).
     "techcrunch", "forbes", "reuters", "bloomberg", "cnn", "bbc",
+    # Confirmed live (Sept 2026, water-bottle-idea test run): same
+    # publisher-citing-a-product pattern as the outlets above, this time a
+    # tech-news site the earlier denylist pass didn't happen to cover.
+    "nocamels",
+}
+
+# Role/title words that, immediately before a capitalized span, signal
+# "this is a person's name from a bio/attribution line" rather than a
+# company - e.g. "CEO: Cyril Xinyi HAN" on a "Top 10 Super Apps" listicle.
+# Confirmed live (Sept 2026, fintech-bill-negotiation-idea test run): that
+# exact "CEO: <name>" line got NER-tagged ORG and surfaced as a
+# "competitor." Distinct from _GENERIC_WORDS (which catches mislabeled
+# generic text) - this catches a correctly-parsed real name that's simply
+# not a company at all.
+_PERSON_ATTRIBUTION_WORDS = {
+    "ceo", "founder", "co-founder", "cofounder", "president", "director",
+    "cto", "coo", "cfo", "chairman", "chairwoman",
 }
 
 _INTERNAL_CAP = re.compile(r"[a-z][A-Z]")  # e.g. "HelloFresh", "QuickBooks"
@@ -239,6 +256,23 @@ def _is_duplicated_merge(name: str) -> bool:
     return any(a.lower() == b.lower() for a, b in zip(segments, segments[1:]))
 
 
+# Byline/author-credit chrome that scrapes with zero whitespace between a
+# name and the word right after it - "Aasif KhanWritten byAasif Khan...",
+# "Abhinav GirdharLast updated onSeptember 2" - confirmed live (Sept 2026,
+# a "10 Best Apps" listicle). These fuse into a camelCase-looking span
+# ("KhanWritten", "GirdharLast") that passes as a real two-part brand name
+# on a single mention, exactly like "HelloFresh" is trusted to - the
+# byline text isn't malformed HTML, the site's own markup just renders
+# "Written by", "Reviewed by", "Last updated on" immediately adjacent to
+# the name with no separating space at all.
+_BYLINE_CHROME_WORDS = {"written", "reviewed", "updated", "edited", "published", "posted", "last"}
+
+
+def _is_byline_merge(name: str) -> bool:
+    segments = _CAMEL_SPLIT.findall(name)
+    return bool(segments) and segments[-1].lower() in _BYLINE_CHROME_WORDS
+
+
 def _normalize_snippet_text(title: str, snippet: str) -> str:
     """Give each line of a scraped snippet its own sentence boundary
     instead of squashing embedded newlines into a single space.
@@ -262,6 +296,35 @@ def _normalize_snippet_text(title: str, snippet: str) -> str:
 def _has_product_context(sentence: str) -> bool:
     words = {w.strip(",.!?():;$") for w in sentence.lower().split()}
     return bool(words & _PRODUCT_CONTEXT_WORDS) or "$" in sentence
+
+
+def _is_person_attribution(doc, ent) -> bool:
+    """True when a role/title word (see _PERSON_ATTRIBUTION_WORDS) sits in
+    the short span of text right before this entity - "CEO: Cyril Xinyi
+    HAN", "Founder, Jane Smith". A short character window (not just "the
+    previous word") because a colon, comma, or extra whitespace commonly
+    sits between the role word and the name itself.
+    """
+    start = max(0, ent.start_char - 25)
+    preceding_words = {w.strip(":,.()") for w in doc.text[start:ent.start_char].lower().split()}
+    return bool(preceding_words & _PERSON_ATTRIBUTION_WORDS)
+
+
+_REVIEW_DATE_PATTERN = re.compile(r"^\s*\.?\s*\d{1,2}/\d{1,2}/\d{2,4}\b")
+
+
+def _is_review_byline(doc, ent) -> bool:
+    """True when the entity is immediately followed by a date in
+    M/D/YYYY-style form - "Dakota MarTin. 09/10/2026. Works great!" - the
+    exact shape a scraped customer-review section produces (reviewer name,
+    review date, review text run together with no real separator).
+    Confirmed live (Sept 2026, water-bottle-idea test run): this got
+    NER-tagged ORG and surfaced as a "competitor" despite having no role
+    word nearby for _is_person_attribution to catch - a distinct pattern,
+    not a variant of the same one.
+    """
+    following = doc.text[ent.end_char : ent.end_char + 15]
+    return bool(_REVIEW_DATE_PATTERN.match(following))
 
 
 def _local_context(doc, ent) -> str:
@@ -377,7 +440,9 @@ def _extract_entities(results: list) -> dict[str, dict]:
             words = name.split()
             if len(words) > 3 or len(name) < 3 or _is_generic_phrase(name):
                 continue
-            if _is_duplicated_merge(name):
+            if _is_person_attribution(doc, ent) or _is_review_byline(doc, ent):
+                continue
+            if _is_duplicated_merge(name) or _is_byline_merge(name):
                 continue
             entry = mentions.setdefault(
                 name,
@@ -671,6 +736,62 @@ _MAX_ENRICHED = 4
 _WIKIDATA_SEARCH_URL = "https://www.wikidata.org/w/api.php"
 _WIKIDATA_FOUNDING_YEAR = re.compile(r"\b(1[89]\d{2}|20[0-4]\d)\b")
 _PRODUCTHUNT_ENDPOINT = "https://api.producthunt.com/v2/api/graphql"
+_ITUNES_SEARCH_URL = "https://itunes.apple.com/search"
+# Wikimedia's User-Agent policy (meta.wikimedia.org/wiki/User-Agent_policy)
+# rejects requests with no identifying User-Agent - see _wikidata_lookup.
+_WIKIMEDIA_USER_AGENT = "AffinityStartupValidator/1.0 (contact: infyteamnova@gmail.com)"
+
+
+def _itunes_lookup(name: str) -> dict | None:
+    """A free, keyless enrichment source for consumer-app competitors:
+    Apple's public iTunes Search API. Unlike Wikidata (which only covers
+    well-known/established companies) or Product Hunt (which needs a
+    developer token and only indexes what's been submitted there), this
+    covers any app actually published to the App Store - including small,
+    recent competitors that are exactly the ones a new idea is most likely
+    to be up against.
+
+    Returns rating count and price, which double as a live-vs-abandoned
+    signal: an app with a real rating count is demonstrably installed and
+    used, not just a listed name. Best-effort like the other lookups here -
+    returns None on any failure or no match, never raises.
+
+    Confirmed live: for a name with no real match, iTunes' own search still
+    returns *something* (its ranking always returns its closest fuzzy hits,
+    never an empty list for a plausible-looking query) - e.g. a nonsense
+    name returned an unrelated Arabic-language app as the top hit. Requiring
+    the candidate's own name to actually be contained in the queried name's
+    match - same "don't trust a loose match" rule _wikidata_lookup already
+    applies - closes this without losing real matches: a genuine app's
+    trackName is virtually always a superset of the name it's known by
+    (e.g. "Rocket Money - Bills & Budgets" contains "Rocket Money").
+    """
+    try:
+        url = f"{_ITUNES_SEARCH_URL}?{urllib.parse.urlencode({'term': name, 'entity': 'software', 'limit': 5})}"
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            body = json.loads(resp.read())
+        results = body.get("results") or []
+        needle = name.strip().lower()
+        match = next(
+            (
+                r for r in results
+                if needle and needle in r.get("trackName", "").strip().lower()
+            ),
+            None,
+        )
+        if not match:
+            return None
+        return {
+            "source": "itunes",
+            "trackName": match.get("trackName"),
+            "price": match.get("formattedPrice") or ("Free" if match.get("price") == 0 else None),
+            "averageRating": match.get("averageUserRating"),
+            "ratingCount": match.get("userRatingCount"),
+            "url": match.get("trackViewUrl"),
+        }
+    except Exception:
+        logger.warning("iTunes enrichment unavailable for %r", name, exc_info=True)
+        return None
 
 
 def _wikidata_lookup(name: str) -> dict | None:
@@ -684,13 +805,22 @@ def _wikidata_lookup(name: str) -> dict | None:
     Best-effort like _refine_with_gemini: returns None on any failure
     (network error, no match, unexpected shape), never raises, so a
     Wikidata outage never affects competitor discovery itself.
+
+    Requires a descriptive User-Agent header - confirmed live: every call
+    was failing with HTTP 403 because urllib's default "Python-urllib/3.x"
+    User-Agent is exactly what Wikimedia's User-Agent policy
+    (meta.wikimedia.org/wiki/User-Agent_policy) blocks to keep out
+    unidentified bot traffic.
     """
     try:
         search_url = (
             f"{_WIKIDATA_SEARCH_URL}?action=wbsearchentities&search="
             f"{urllib.parse.quote(name)}&language=en&type=item&limit=1&format=json"
         )
-        with urllib.request.urlopen(search_url, timeout=5) as resp:
+        request = urllib.request.Request(
+            search_url, headers={"User-Agent": _WIKIMEDIA_USER_AGENT}
+        )
+        with urllib.request.urlopen(request, timeout=5) as resp:
             hits = json.loads(resp.read()).get("search") or []
         if not hits:
             return None
@@ -813,10 +943,16 @@ def _enrich_with_apis(competitors: list[dict]) -> None:
     no enrichment for that run, exactly like the Gemini refinement pass.
     Bounded to the top few competitors (not all _MAX_COMPETITORS) to keep
     external call volume small regardless of how many are found.
+
+    Order matters: Product Hunt needs a token most deployments won't have
+    configured, so iTunes (keyless, and covers small/recent apps neither
+    Product Hunt nor Wikidata's "notable enough for an encyclopedia" bar
+    reaches) is tried before falling back to Wikidata's broader,
+    non-software-specific company coverage.
     """
     for competitor in competitors[:_MAX_ENRICHED]:
         name = competitor["name"]
-        enrichment = _producthunt_lookup(name) or _wikidata_lookup(name)
+        enrichment = _producthunt_lookup(name) or _itunes_lookup(name) or _wikidata_lookup(name)
         if enrichment:
             competitor["enrichment"] = enrichment
 
@@ -970,7 +1106,15 @@ def _discover_with_llm(
             role="Competitive Intelligence Analyst",
             goal="Find every real competitor named in the given search results and profile each one strictly from its own text.",
             backstory=load_prompt("competitor_discovery_system"),
-            llm=get_llm(max_tokens=1100, model=model),
+            # 950, not 1100: qwen/qwen3.8-27b (the primary/first model tried)
+            # enforces a hard 1000 output-tokens/minute ceiling - confirmed
+            # live, "Request too large... Requested 1100... exceed the
+            # enforced limit" fails on every single call regardless of
+            # remaining quota, not a transient rate limit. 950 leaves
+            # headroom under that ceiling; the fallback models have far
+            # higher per-minute budgets so this doesn't meaningfully
+            # constrain them.
+            llm=get_llm(max_tokens=950, model=model),
             verbose=False,
         )
         task = Task(
@@ -1007,6 +1151,35 @@ def _discover_with_llm(
         "competitors": grounded,
         "comparisonMatrix": _clean_matrix(data.get("comparisonMatrix"), names) if names else [],
     }
+
+
+_MIN_OVERLAP_FOR_DIRECT = 2
+
+
+def _classify_competitor(idea_keywords: set[str], competitor_text: str) -> str:
+    """Deterministic direct/indirect classification from keyword overlap
+    between the idea's own distinctive nouns (see _distinctive_nouns) and a
+    competitor's known text (offering + local source context) - the NER
+    path's substitute for the LLM discovery prompt's classification field,
+    which NER-found competitors previously got hardcoded to "unknown" for
+    regardless of how closely they actually matched.
+
+    Deliberately conservative and not a semantic judgment the way an LLM's
+    "direct" is (same customer, same problem, reasoned from context): this
+    only measures textual overlap, so "direct" requires overlap on 2+
+    distinctive terms, "indirect" only 1, and "unknown" - not "indirect" -
+    when there's zero idea-specific signal, to avoid implying a rivalry
+    the text gives no actual reason to believe.
+    """
+    if not idea_keywords:
+        return "unknown"
+    text_lower = competitor_text.lower()
+    matched = sum(1 for kw in idea_keywords if kw.lower() in text_lower)
+    if matched >= _MIN_OVERLAP_FOR_DIRECT:
+        return "direct"
+    if matched == 1:
+        return "indirect"
+    return "unknown"
 
 
 def analyze_competitors(
@@ -1073,6 +1246,19 @@ def analyze_competitors(
     ]
     refinements = _refine_with_gemini(idea, refinable) if refinable else {}
 
+    # Wide net (8, not the usual 3) since this only needs to catch overlap,
+    # not produce a short display phrase - see _classify_competitor. Lazy
+    # import to avoid a circular import: retrieval.py itself does
+    # `from .competitor_agent import _nlp` at its own module level, so
+    # importing retrieval.py from here at module load time would resolve
+    # before this module's own `_nlp` is defined, silently leaving
+    # retrieval.py's `_nlp` (and therefore _distinctive_nouns) permanently
+    # None - confirmed live: every classification came back "unknown"
+    # because of exactly this until the import was made lazy.
+    from .retrieval import _distinctive_nouns
+
+    idea_keywords = set(_distinctive_nouns(f"{idea} {problem}", max_words=8))
+
     competitors = []
     for c in discovered_competitors:
         refined = refinements.get(c["name"], {})
@@ -1098,7 +1284,7 @@ def analyze_competitors(
                 "gap": _GAP_DISCLOSURE,
                 "estimatedPrice": price,
                 "featureBreadth": breadth,
-                "classification": "unknown",
+                "classification": _classify_competitor(idea_keywords, f"{offering} {info['local_text']}"),
             }
         )
 
