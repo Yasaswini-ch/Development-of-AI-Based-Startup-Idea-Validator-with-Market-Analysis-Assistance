@@ -1097,11 +1097,22 @@ def _confidence_dashboard(state: PipelineState) -> dict:
     agreeing_cited = sum(1 for score in cited_scores if score >= 0.5)
     total_cited = len(cited_scores)
 
+    coverage_pct = _pct(claims_with_source, total_claims)
+    cross_pct = _pct(corroborated, total_unique_cited)
+    relevance_pct = round(average_relevance * 100) if average_relevance is not None else 0
+    # Headline = weighted blend of the four numbers shown under it. The old
+    # headline (share of cited sources scoring >= 0.5) was a cliff: sources
+    # at 0.45 counted as zero, so a report with 44% source coverage could
+    # read 0% overall. 0 stays 0 only when nothing is cited at all.
+    overall_pct = (
+        round(0.4 * coverage_pct + 0.2 * cross_pct + 0.2 * coverage_pct + 0.2 * relevance_pct) if total_cited else 0
+    )
+
     return {
         "agreeingSources": agreeing_cited,
         "totalSources": total_cited,
-        "percentage": _pct(agreeing_cited, total_cited),
-        "label": f"{agreeing_cited}/{total_cited} sources agree" if total_cited else "No cited sources yet",
+        "percentage": overall_pct,
+        "label": f"{total_cited} cited sources, {agreeing_cited} strongly relevant" if total_cited else "No cited sources yet",
         "sourceCoverage": {
             "claimsWithSource": claims_with_source,
             "totalClaims": total_claims,
