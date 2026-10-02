@@ -264,7 +264,7 @@
 - **Method lesson:** live search varies run to run, so one good or bad run proves little; fixes were checked across several ideas.
 - **Defects found only by live testing:** fallback chain stopping early, confidence diluted by the raw search pool, TAM/SAM/SOM computed but not shown, admin access lost on redeploy, junk competitor names, a positioning grid that never rendered, and revenue models silently empty when quota ran out. Each has a regression test.
 - **Partial failure:** a failed section returns an inline error card; the rest of the report still renders.
-- **Suites:** over 500 backend and over 100 frontend tests. Two backend tests are environment-dependent and fail when real keys are present.
+- **Suites:** over 500 backend and over 100 frontend tests. The backend suite runs keyless through `scripts/run_tests.py`; run plainly it loaded real keys and spent free-tier quota.
 - **Informal user test (5 people):** 2 got the report on screen; 3 were asked for an email and each received the full report by email in roughly 4 to 5 minutes. This is what the free-tier quota fallback looks like to a real user. It is five people informally observed, not a measured benchmark.
 - Details: [milestone2-verification.md](milestone2-verification.md), [milestone4-verification.md](milestone4-verification.md).
 

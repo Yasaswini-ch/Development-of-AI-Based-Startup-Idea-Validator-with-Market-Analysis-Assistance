@@ -300,7 +300,7 @@ invalid input, `429` for rate limits and `502` when every search provider is una
 
 ```bash
 # Backend: unit, contract, async and concurrency tests
-cd backend && python -m unittest discover -s tests
+cd backend && python scripts/run_tests.py   # keyless; plain `python -m unittest discover -s tests` also works but loads .env
 
 # Frontend: component tests, lint and production build
 cd frontend && npm test && npm run lint && npm run build

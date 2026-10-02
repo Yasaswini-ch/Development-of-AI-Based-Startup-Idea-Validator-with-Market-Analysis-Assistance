@@ -366,14 +366,16 @@ Work that was asked for or planned and is not finished:
   sleeps when idle, and a free database that auto-suspends. See [scaling-options.md](scaling-options.md).
 - **Progressive rendering** (showing sections as each finishes) was deliberately deferred.
 - **Full list** of limits and future work: [known-limitations-and-future-work.md](known-limitations-and-future-work.md).
-- **Environment-dependent tests.** Two backend tests fail when real API keys are present in
-  `.env`, because they assume a keyless setup. They also fail on earlier commits.
+- **Tests and the free quota.** Run the backend suite with `python scripts/run_tests.py`. A plain
+  `unittest discover` loads the real keys from `.env` (both `main.py` and `litellm` do), which made
+  about 90 real LLM calls per run and failed two tests that assume no keys. Through the runner the
+  suite is keyless, makes no quota-spending calls, and passes.
 
 ## 14. Testing and verification
 
 ### 14.1 Automated and live verification
 
-- **Backend:** roughly 520 unit and integration tests (`python -m unittest discover -s tests`).
+- **Backend:** about 540 unit and integration tests (`python scripts/run_tests.py`).
 - **Frontend:** about 100 Vitest tests covering the report tabs, landing page, competitor
   cards, count-up animation, chat routing and the new components.
 - **Live verification:** the app was run end to end against real searches and models across

@@ -76,7 +76,7 @@ All verification runs were executed against the live application (FastAPI backen
 Run the real suite from `backend/`:
 
 ```bash
-python -m unittest discover -s tests
+python scripts/run_tests.py   # keyless: avoids loading real API keys from .env
 ```
 
 As of this writing: **51 tests passing** across `test_milestone2.py`,

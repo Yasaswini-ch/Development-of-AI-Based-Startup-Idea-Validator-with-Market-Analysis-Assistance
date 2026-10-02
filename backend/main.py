@@ -27,7 +27,12 @@ from dotenv import load_dotenv
 # and every call failed with Groq's own "Invalid API Key" response,
 # indistinguishable from a genuinely bad key. The same key, loaded
 # explicitly from this exact path in isolation, worked immediately.
-load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+# AFFINITY_SKIP_DOTENV=1 (set by scripts/run_tests.py) skips loading .env so the
+# test suite never picks up real API keys: tests that reach an LLM step with
+# keys present make real Groq/Gemini calls and spend the free quota the app
+# needs. Never set it in a deployment.
+if os.environ.get("AFFINITY_SKIP_DOTENV") != "1":
+    load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware

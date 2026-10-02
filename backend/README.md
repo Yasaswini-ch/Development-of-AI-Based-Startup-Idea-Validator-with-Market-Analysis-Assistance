@@ -91,8 +91,11 @@ Notes:
   `SENDGRID_API_KEY` and `SENDGRID_FROM_EMAIL` (report email), `GOOGLE_OAUTH_CLIENT_ID`
   (Google sign-in), `ADMIN_EMAILS` (admin access), `DATABASE_URL` (Postgres; SQLite is the
   local default). See `.env.example` and [`DEPLOYMENT.md`](../DEPLOYMENT.md).
-- Run the tests with `python -m unittest discover -s tests`. Two tests assume a keyless
-  environment and fail when real keys are present in `.env`.
+- Run the tests with `python scripts/run_tests.py` (about 40 seconds, all passing). It runs the suite
+  without API keys: `main.py` and `litellm` both load `backend/.env` on import, so a plain
+  `python -m unittest discover -s tests` puts your real Groq and Gemini keys into the tests, and any
+  test that reaches an LLM step then spends the free quota (about 90 real calls per run were measured).
+  CI has no keys, so its plain command is already safe.
 
 ## Files
 
