@@ -3,6 +3,8 @@ import useTypewriter from '../hooks/useTypewriter'
 import GoogleSignInButton from './GoogleSignInButton'
 import useAuthRequest from '../hooks/useAuthRequest'
 import { DECISION_STYLES } from './VerdictCard'
+import { FormArtifact, ResearchArtifact, VerdictArtifact, ChatArtifact } from './HowItWorksArtifacts'
+import AgentsGrid from './AgentsGrid'
 import {
   IconLightbulb,
   IconGlobe,
@@ -60,6 +62,9 @@ const EXAMPLE_IDEAS = [
 // shown when it's selected: `flow` is what actually runs, in order, and
 // `tags` are the real tools behind it. Keep these in sync with the pipeline
 // in backend/agent/graph.py - they are claims about the product.
+// One illustrative preview per step, in the same order as STEPS.
+const STEP_ARTIFACTS = [FormArtifact, ResearchArtifact, VerdictArtifact, ChatArtifact]
+
 const STEPS = [
   {
     Icon: IconLightbulb,
@@ -167,6 +172,7 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
   const google = useAuthRequest(apiUrl, onAuthenticated)
   const [activeStep, setActiveStep] = useState(0)
   const step = STEPS[activeStep]
+  const StepArtifact = STEP_ARTIFACTS[activeStep]
 
   // Arrow keys move between steps, as with any tab list.
   function handleStepKeyDown(e) {
@@ -362,7 +368,8 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
             </div>
 
             <div>
-              <p className="font-mono text-[11px] uppercase tracking-widest text-muted">Under the hood</p>
+              <StepArtifact />
+              <p className="mt-5 font-mono text-[11px] uppercase tracking-widest text-muted">Under the hood</p>
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {step.tags.map((tag) => (
                   <span
@@ -419,6 +426,8 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
             ))}
           </div>
         </section>
+
+        <AgentsGrid />
 
         <div
           className="fade-in-up mt-14 flex flex-col items-center gap-2"
