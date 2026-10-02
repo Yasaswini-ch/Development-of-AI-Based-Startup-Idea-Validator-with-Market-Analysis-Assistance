@@ -9,9 +9,10 @@ import { extractInlineCitations } from '../lib/sources'
 // tab (CustomerPersonas.jsx / VoiceOfMarketCard.jsx) - this tab is about
 // the market itself: size, trends, and the dynamics breakdown.
 
-// A TAM/SAM/SOM tier is either null (the sources don't support that
-// specific figure - see market_agent.py) or a {"text", "sourceIds"} claim,
-// same per-claim shape as trends/segments. Only rendered when at least one
+// A TAM/SAM/SOM tier is either null (nothing to show - see market_agent.py)
+// or a {"text", "sourceIds"} claim, same per-claim shape as trends/segments.
+// SAM and SOM may instead be an estimate ({"estimated": true, "assumptions"}),
+// shown with an Estimate badge and no citation. Only rendered when at least one
 // tier is present, so an idea with no sourced market-sizing breakdown
 // doesn't show three empty slots.
 function MarketSizeTiers({ tam, sam, som, sourceMap }) {
@@ -25,16 +26,37 @@ function MarketSizeTiers({ tam, sam, som, sourceMap }) {
 
   return (
     <div className="mt-4 grid gap-3 sm:grid-cols-3">
-      {tiers.map((tier) => (
-        <div key={tier.label} className="rounded-xl border border-border-strong bg-surface p-4">
-          <p className="font-mono text-[10px] uppercase tracking-widest text-accent">{tier.label}</p>
-          <p className="mt-0.5 font-mono text-[10.5px] uppercase tracking-wide text-muted">{tier.hint}</p>
-          <p className="mt-2 text-sm leading-relaxed text-text">
-            {tier.data.text}
-            {sourceMap && <Citation sourceIds={tier.data.sourceIds} sourceMap={sourceMap} />}
-          </p>
-        </div>
-      ))}
+      {tiers.map((tier) => {
+        // An estimate is the model's own working from the TAM, not a figure
+        // any source states - drawn differently and always shown with the
+        // assumption behind it so it can't be mistaken for a sourced number.
+        const estimated = tier.data.estimated === true
+        return (
+          <div
+            key={tier.label}
+            className={`rounded-xl bg-surface p-4 ${estimated ? 'border border-dashed border-border-strong' : 'border border-border-strong'}`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <p className="font-mono text-[10px] uppercase tracking-widest text-accent">{tier.label}</p>
+              {estimated && (
+                <span className="rounded-full border border-border-strong px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wide text-muted-strong">
+                  Estimate
+                </span>
+              )}
+            </div>
+            <p className="mt-0.5 font-mono text-[10.5px] uppercase tracking-wide text-muted">{tier.hint}</p>
+            <p className="mt-2 text-sm leading-relaxed text-text">
+              {tier.data.text}
+              {!estimated && sourceMap && <Citation sourceIds={tier.data.sourceIds} sourceMap={sourceMap} />}
+            </p>
+            {estimated && (
+              <p className="mt-2 text-xs leading-relaxed text-muted">
+                Not from a source. {tier.data.assumptions}
+              </p>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }

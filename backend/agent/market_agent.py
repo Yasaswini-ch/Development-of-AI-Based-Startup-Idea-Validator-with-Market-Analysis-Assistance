@@ -147,12 +147,48 @@ def _is_valid_tier(value) -> bool:
     """
     if value is None:
         return True
-    return (
+    if not (
         isinstance(value, dict)
         and isinstance(value.get("text"), str)
         and bool(value["text"].strip())
         and valid_source_ids(value.get("sourceIds", []))
-    )
+    ):
+        return False
+    # An estimated tier (SAM/SOM only - see _clean_tier) is allowed so long
+    # as it states the assumption behind the number.
+    if value.get("estimated") is True:
+        assumptions = value.get("assumptions")
+        return isinstance(assumptions, str) and bool(assumptions.strip())
+    return True
+
+
+_MAX_ASSUMPTION_CHARS = 220
+
+
+def _clean_tier(name: str, value, valid_ids: set, tam_present: bool):
+    """Normalise one tier. A sourced tier keeps its citations. An estimated
+    tier (the model's own working from the TAM, no source states it) is kept
+    only for SAM/SOM and only when a sourced-or-present TAM exists to work
+    from; it carries no citations (it must never look grounded) and always
+    keeps its stated assumption so the UI can show how the number was reached.
+    TAM itself is never allowed to be an estimate.
+    """
+    if not isinstance(value, dict):
+        return None
+    if value.get("estimated") is True:
+        assumptions = (value.get("assumptions") or "").strip()
+        if name == "tam" or not tam_present or not assumptions:
+            return None
+        return {
+            "text": value["text"].strip(),
+            "sourceIds": [],
+            "estimated": True,
+            "assumptions": assumptions[:_MAX_ASSUMPTION_CHARS],
+        }
+    return {
+        "text": value["text"].strip(),
+        "sourceIds": sanitize_source_ids(value.get("sourceIds"), valid_ids),
+    }
 
 
 def _is_valid_segment(item) -> bool:
@@ -225,15 +261,9 @@ def analyze_market_opportunity(
             [*(data.get("marketSizeSourceIds") if valid_source_ids(data.get("marketSizeSourceIds")) else []), *inline_ids],
             valid_ids,
         )
-        for tier in ("tam", "sam", "som"):
-            value = data.get(tier)
-            if isinstance(value, dict):
-                data[tier] = {
-                    "text": value["text"].strip(),
-                    "sourceIds": sanitize_source_ids(value.get("sourceIds"), valid_ids),
-                }
-            else:
-                data[tier] = None
+        data["tam"] = _clean_tier("tam", data.get("tam"), valid_ids, tam_present=True)
+        for tier in ("sam", "som"):
+            data[tier] = _clean_tier(tier, data.get(tier), valid_ids, tam_present=data["tam"] is not None)
         data["trends"] = [
             {"text": item["text"].strip(), "sourceIds": sanitize_source_ids(item.get("sourceIds"), valid_ids)}
             for item in data["trends"][:_MAX_TRENDS]
