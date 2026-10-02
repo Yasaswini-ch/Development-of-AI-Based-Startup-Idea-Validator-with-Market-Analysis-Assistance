@@ -1439,6 +1439,48 @@ def _action_plan(story, d, s, sections):
     story.append(row)
 
 
+def _sprint_and_script(story, d, s, sections):
+    plan = d.get("actionPlan") or {}
+    sprint = plan.get("sprint") if isinstance(plan.get("sprint"), dict) else None
+    script = plan.get("interviewScript") if isinstance(plan.get("interviewScript"), dict) else None
+    if sprint and sprint.get("weeks"):
+        sections.add("4-week validation sprint")
+        for week in sprint["weeks"]:
+            tasks = [t for t in week.get("tasks") or [] if isinstance(t, dict) and t.get("task")]
+            if not tasks:
+                continue
+            content = [Paragraph(f"WEEK {_e(week.get('week'))} - {_e(week.get('title') or '')}", s["label"]), Spacer(1, 4)]
+            for t in tasks:
+                content += [Paragraph(_e(t["task"]), s["body"]),
+                            Paragraph(f'<font color="{_hex(SUCCESS)}">Pass:</font> {_e(t.get("confirmsIf") or "")}', s["body_muted"]),
+                            Paragraph(f'<font color="{_hex(DANGER)}">Fail:</font> {_e(t.get("killsIf") or "")}', s["body_muted"]),
+                            Spacer(1, 4)]
+            story.append(KeepTogether(_card(content, padding=12)))
+            story.append(Spacer(1, 6))
+        if sprint.get("note"):
+            story.append(Paragraph(_e(sprint["note"]), s["body_muted"]))
+    if script and script.get("probes"):
+        sections.add("Customer interview script")
+        story.append(Spacer(1, 8))
+        story.append(Paragraph("Customer interview script", s["h3"]))
+        story.append(Spacer(1, 4))
+        if script.get("audience"):
+            story.append(Paragraph(f"Talk to: {_e(script['audience'])}", s["body_muted"]))
+        story += _bullets([str(r) for r in script.get("rules") or []], s, color=INFO)
+        story.append(Paragraph("Opening", s["label"]))
+        story += _bullets([str(q) for q in script.get("opening") or []], s, color=ACCENT)
+        story.append(Paragraph("Probes", s["label"]))
+        for p in script["probes"]:
+            content = [Paragraph(f"Tests: {_e(p.get('assumption') or '')}", s["body_muted"]),
+                       Paragraph(_e(p.get("ask") or ""), s["cell_bold"]),
+                       Paragraph(f'<font color="{_hex(SUCCESS)}">Listen for:</font> {_e(p.get("listenFor") or "")}', s["body_muted"]),
+                       Paragraph(f'<font color="{_hex(DANGER)}">Red flag:</font> {_e(p.get("redFlag") or "")}', s["body_muted"])]
+            story.append(KeepTogether(_card(content, padding=10)))
+            story.append(Spacer(1, 4))
+        story.append(Paragraph("Closing", s["label"]))
+        story += _bullets([str(q) for q in script.get("closing") or []], s, color=ACCENT)
+
+
 def _sources(story, d, s, sections):
     items = [c for c in d.get("sources") or [] if isinstance(c, dict) and (c.get("title") or c.get("url"))]
     if not items:
@@ -1879,6 +1921,7 @@ def build_story(dossier_data: Dict[str, Any], generated: str) -> list:
     _gtm_strategy(story, d, s, sections)
     _revenue_models(story, d, s, sections)
     _action_plan(story, d, s, sections)
+    _sprint_and_script(story, d, s, sections)
     _sources(story, d, s, sections)
     _evidence_log(story, d, s, sections)
     return story
