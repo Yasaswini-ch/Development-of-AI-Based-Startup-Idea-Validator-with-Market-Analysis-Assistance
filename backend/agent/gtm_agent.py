@@ -20,6 +20,52 @@ logger = logging.getLogger(__name__)
 
 _MAX_CHANNELS = 4
 _FIT_SCORES = {"high", "medium", "low"}
+_MAX_KPIS = 5
+
+
+def _clean_acquisition(value) -> dict | None:
+    """Optional CAC estimate. Kept only when it has a usable numeric range; it is
+    an estimate by construction, so nothing here is verified against sources."""
+    if not isinstance(value, dict):
+        return None
+    out = {}
+    method = value.get("primaryMethod")
+    if isinstance(method, str) and method.strip():
+        out["primaryMethod"] = method.strip()
+    cac = value.get("estimatedCac")
+    if isinstance(cac, dict):
+        try:
+            low, high = float(cac.get("low")), float(cac.get("high"))
+        except (TypeError, ValueError):
+            low = high = None
+        if low is not None and 0 <= low <= high and high < 1_000_000:
+            basis = cac.get("basis")
+            out["estimatedCac"] = {
+                "low": round(low, 2),
+                "high": round(high, 2),
+                "currency": "USD",
+                "basis": basis.strip() if isinstance(basis, str) else "",
+            }
+    return out or None
+
+
+def _clean_kpis(value) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    rows = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        name, target = item.get("name"), item.get("target")
+        if not (isinstance(name, str) and name.strip() and isinstance(target, (str, int, float)) and str(target).strip()):
+            continue
+        timeframe = item.get("timeframe")
+        rows.append({
+            "name": name.strip(),
+            "target": str(target).strip(),
+            "timeframe": timeframe.strip() if isinstance(timeframe, str) else "",
+        })
+    return rows[:_MAX_KPIS]
 
 
 def _valid_channel_list(value) -> bool:
@@ -59,11 +105,13 @@ def _build_crew(idea: str, target_customer: str, context: str, model: str) -> Cr
         role="Go-to-Market Strategy Analyst",
         goal="Create a focused positioning and early acquisition plan grounded in validated customer and competitor evidence.",
         backstory=load_prompt("gtm_system"),
+        # Now 850: the CAC estimate and 4-5 KPI targets add roughly 250 tokens
+        # on top of the 600 the channels and tactics needed.
         # Bumped to 600 (was 450) to accommodate per-channel tactics[] array
         # added in the GTM prompt update. 450 is the confirmed safe floor for
         # JSON completeness; 600 leaves headroom for 2-3 tactics per channel
         # without risk of truncation.
-        llm=get_llm(max_tokens=600, model=model),
+        llm=get_llm(max_tokens=850, model=model),
         max_execution_time=AGENT_MAX_EXECUTION_SECONDS,
         max_iter=AGENT_MAX_ITER,
         verbose=False,
@@ -121,6 +169,12 @@ def analyze_gtm(
         data["earlyCustomerApproachSourceIds"] = sanitize_source_ids(
             data.get("earlyCustomerApproachSourceIds"), valid_ids
         )
+        acquisition = _clean_acquisition(data.pop("acquisition", None))
+        kpis = _clean_kpis(data.pop("kpis", None))
+        if acquisition:
+            data["acquisition"] = acquisition
+        if kpis:
+            data["kpis"] = kpis
         data["channels"] = [
             {
                 "text": item["text"].strip(),
