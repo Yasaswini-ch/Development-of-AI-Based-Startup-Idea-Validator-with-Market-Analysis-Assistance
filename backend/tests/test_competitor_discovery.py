@@ -330,3 +330,33 @@ class BuildFallbackMatrixTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ClassifyCompetitorTests(unittest.TestCase):
+    """Fallback-path direct/indirect labelling. It used to call every
+    competitor "direct" because it matched generic/customer words and the
+    whole shared listicle snippet; these pin the stricter behaviour."""
+
+    KEYWORDS = {"freelancers", "invoicing", "invoices", "payments", "tracking", "clients", "hours", "time"}
+    CUSTOMER = "Freelancers and independent contractors"
+
+    def _label(self, text):
+        return competitor_agent._classify_competitor(self.KEYWORDS, text, exclude_terms=self.CUSTOMER)
+
+    def test_two_distinct_job_topics_is_direct(self):
+        self.assertEqual(self._label("Clockify offers time tracking and sends invoices."), "direct")
+
+    def test_one_job_topic_is_indirect(self):
+        self.assertEqual(self._label("PayPal lets anyone accept payments online."), "indirect")
+
+    def test_only_generic_or_customer_words_is_unknown(self):
+        # "freelancers", "clients", "hours", "time" are all ignored, so a
+        # page that merely talks about the audience is not a rival.
+        self.assertEqual(self._label("Great for freelancers who bill clients by the hour, saving time."), "unknown")
+
+    def test_word_variants_count_once(self):
+        # invoice/invoices/invoicing are one topic, so this is one match, not three.
+        self.assertEqual(self._label("Send an invoice, then another invoice, then invoicing reports."), "indirect")
+
+    def test_no_keywords_is_unknown(self):
+        self.assertEqual(competitor_agent._classify_competitor(set(), "anything at all"), "unknown")

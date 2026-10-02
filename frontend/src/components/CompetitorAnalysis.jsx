@@ -377,13 +377,42 @@ export default function CompetitorAnalysis({ data, error }) {
     )
   }
 
+  // Group by how directly each rival competes. Only split into headed groups
+  // when at least one competitor actually has a direct/indirect label - if
+  // every label is "unknown" a lone "Other mentions" heading would just be noise.
+  const groups = [
+    { key: 'direct', title: 'Direct rivals', items: competitors.filter((c) => c.classification === 'direct') },
+    { key: 'indirect', title: 'Indirect alternatives', items: competitors.filter((c) => c.classification === 'indirect') },
+    {
+      key: 'other',
+      title: 'Other mentions',
+      items: competitors.filter((c) => c.classification !== 'direct' && c.classification !== 'indirect'),
+    },
+  ].filter((g) => g.items.length > 0)
+  const hasLabels = competitors.some((c) => c.classification === 'direct' || c.classification === 'indirect')
+
   return (
     <div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {competitors.map((c, i) => (
-          <CompetitorCard key={i} competitor={c} />
-        ))}
-      </div>
+      {hasLabels ? (
+        groups.map((g) => (
+          <div key={g.key} className="mb-5">
+            <h3 className="mb-2 font-mono text-[11px] uppercase tracking-widest text-muted">
+              {g.title} ({g.items.length})
+            </h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {g.items.map((c, i) => (
+                <CompetitorCard key={`${g.key}-${i}`} competitor={c} />
+              ))}
+            </div>
+          </div>
+        ))
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {competitors.map((c, i) => (
+            <CompetitorCard key={i} competitor={c} />
+          ))}
+        </div>
+      )}
 
       <ComparisonMatrix rows={data.comparisonMatrix} competitors={competitors} />
 

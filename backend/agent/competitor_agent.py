@@ -1170,28 +1170,57 @@ def _discover_with_llm(
 _MIN_OVERLAP_FOR_DIRECT = 2
 
 
-def _classify_competitor(idea_keywords: set[str], competitor_text: str) -> str:
-    """Deterministic direct/indirect classification from keyword overlap
-    between the idea's own distinctive nouns (see _distinctive_nouns) and a
-    competitor's known text (offering + local source context) - the NER
-    path's substitute for the LLM discovery prompt's classification field,
-    which NER-found competitors previously got hardcoded to "unknown" for
-    regardless of how closely they actually matched.
+# Words that appear on almost any page about almost any idea, so matching
+# them says nothing about whether a competitor does the same *job* - found
+# live: "time", "hours", "clients" made every competitor of a freelancer
+# invoicing idea look direct.
+_GENERIC_TOPIC_STEMS = {
+    "time", "hour", "client", "customer", "user", "people", "business",
+    "work", "day", "way", "need", "tool", "app", "platform", "service",
+}
 
-    Deliberately conservative and not a semantic judgment the way an LLM's
-    "direct" is (same customer, same problem, reasoned from context): this
-    only measures textual overlap, so "direct" requires overlap on 2+
-    distinctive terms, "indirect" only 1, and "unknown" - not "indirect" -
-    when there's zero idea-specific signal, to avoid implying a rivalry
-    the text gives no actual reason to believe.
+
+def _stem(word: str) -> str:
+    """Crude suffix strip so "invoice"/"invoices"/"invoicing" count as one
+    topic instead of three separate matches."""
+    w = word.lower()
+    for suffix in ("ing", "ed", "es", "s"):
+        if w.endswith(suffix) and len(w) - len(suffix) >= 4:
+            return w[: -len(suffix)]
+    return w
+
+
+def _stems(text: str) -> set[str]:
+    return {_stem(w) for w in re.findall(r"[A-Za-z]{3,}", text)}
+
+
+def _classify_competitor(
+    idea_keywords: set[str], competitor_text: str, exclude_terms: str = ""
+) -> str:
+    """Deterministic direct/indirect label from how many distinct *job*
+    topics of the idea (e.g. invoicing, payments, tracking) a competitor's
+    own text covers - the fallback path's substitute for the LLM's
+    classification, which it otherwise lacks.
+
+    "direct" needs 2+ distinct topics, "indirect" exactly 1, "unknown" none.
+    Three things keep it from calling everything direct, which is what it
+    did before: variants collapse to one stem, the customer's own words
+    (`exclude_terms`, e.g. "freelancers") and generic words are ignored
+    because every page about the audience contains them, and callers should
+    pass only the competitor's own sentence(s), not the whole shared
+    listicle snippet it was found in.
+
+    Still textual overlap, not the reasoning an LLM does ("same customer,
+    same problem") - treat it as a rough signal.
     """
-    if not idea_keywords:
+    ignore = _GENERIC_TOPIC_STEMS | _stems(exclude_terms)
+    topic_stems = {s for s in (_stem(k) for k in idea_keywords) if s not in ignore}
+    if not topic_stems:
         return "unknown"
-    text_lower = competitor_text.lower()
-    matched = sum(1 for kw in idea_keywords if kw.lower() in text_lower)
-    if matched >= _MIN_OVERLAP_FOR_DIRECT:
+    matched = len(topic_stems & _stems(competitor_text))
+    if matched >= min(_MIN_OVERLAP_FOR_DIRECT, len(topic_stems)):
         return "direct"
-    if matched == 1:
+    if matched >= 1:
         return "indirect"
     return "unknown"
 
@@ -1298,7 +1327,9 @@ def analyze_competitors(
                 "gap": _GAP_DISCLOSURE,
                 "estimatedPrice": price,
                 "featureBreadth": breadth,
-                "classification": _classify_competitor(idea_keywords, f"{offering} {info['local_text']}"),
+                "classification": _classify_competitor(
+                    idea_keywords, info["local_text"], exclude_terms=target_customer
+                ),
             }
         )
 
