@@ -180,9 +180,11 @@ function AngleGroup({ angle, items }) {
 
 const TABS = [
   { key: 'sources', label: 'Evidence' },
-  { key: 'market', label: 'Market & Rivals' },
+  { key: 'market', label: 'Market' },
+  { key: 'competitors', label: 'Competitors' },
   { key: 'customers', label: 'Customers' },
-  { key: 'opportunity', label: 'Gaps & Exposure' },
+  { key: 'gaps', label: 'Gaps' },
+  { key: 'risks', label: 'Risks' },
   { key: 'build', label: 'Build & Ship' },
   { key: 'experiments', label: 'Roadmap' },
 ]
@@ -195,9 +197,9 @@ function tabBadge(key, { results, competitorCount, marketOpportunity, whiteSpace
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
   const counts = {
     sources: [results.length, 'source'],
-    market: [competitorCount, 'competitor'],
+    competitors: [competitorCount, 'competitor'],
     customers: [marketOpportunity?.segments?.length ?? 0, 'customer segment'],
-    opportunity: [whiteSpace?.opportunities?.length ?? 0, 'market gap'],
+    gaps: [whiteSpace?.opportunities?.length ?? 0, 'market gap'],
   }
   if (!counts[key]) return null
   const [count, word] = counts[key]
@@ -457,13 +459,20 @@ export default function ValidationResults({
             <SectionNav sections={[
               { id: 'sec-market', label: 'Market signal' },
               ...(marketOpportunity?.viabilityIndex?.dimensions?.length > 0 ? [{ id: 'sec-dynamics', label: 'Viability breakdown' }] : []),
-              { id: 'sec-competitors', label: 'Competitive field' },
-              ...(competitors?.comparisonMatrix?.length > 0 ? [{ id: 'sec-compare', label: 'How you compare' }] : []),
             ]} />
             <div id="sec-market" className="scroll-mt-16 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
               <SectionDivider label="Market signal" />
               <MarketOpportunity data={marketOpportunity} error={errors?.marketOpportunity} sourceMap={sourceMap} />
             </div>
+          </div>
+        )}
+
+        {activeTab === 'competitors' && (
+          <div className="space-y-8">
+            <SectionNav sections={[
+              { id: 'sec-competitors', label: 'Competitive field' },
+              ...(competitors?.comparisonMatrix?.length > 0 ? [{ id: 'sec-compare', label: 'How you compare' }] : []),
+            ]} />
             <div id="sec-competitors" className="scroll-mt-16 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
               <SectionDivider label="Competitive field" />
               <CompetitorAnalysis data={competitors} error={errors?.competitors} />
@@ -499,18 +508,22 @@ export default function ValidationResults({
           </div>
         )}
 
-        {activeTab === 'opportunity' && (
+        {activeTab === 'gaps' && (
           <div className="space-y-8">
-            <SectionNav sections={[
-              { id: 'sec-whitespace', label: 'Whitespace gaps' },
-              { id: 'sec-swot', label: 'Strengths & exposure' },
-              { id: 'sec-bearcase', label: 'Bear case' },
-              { id: 'sec-assumptions', label: 'Key assumptions' },
-            ]} />
             <div id="sec-whitespace" className="scroll-mt-16 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
               <SectionDivider label="Whitespace gaps" />
               <WhiteSpaceAnalysis data={whiteSpace} />
             </div>
+          </div>
+        )}
+
+        {activeTab === 'risks' && (
+          <div className="space-y-8">
+            <SectionNav sections={[
+              { id: 'sec-swot', label: 'Strengths & exposure' },
+              { id: 'sec-bearcase', label: 'Bear case' },
+              { id: 'sec-assumptions', label: 'Key assumptions' },
+            ]} />
             <div id="sec-swot" className="scroll-mt-16 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
               <SectionDivider label="Strengths & exposure" />
               <SwotAnalysis data={swot} error={errors?.swot} sourceMap={sourceMap} />

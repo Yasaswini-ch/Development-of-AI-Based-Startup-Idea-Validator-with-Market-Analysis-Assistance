@@ -5,6 +5,8 @@ import useAuthRequest from '../hooks/useAuthRequest'
 import { DECISION_STYLES } from './VerdictCard'
 import { FormArtifact, ResearchArtifact, VerdictArtifact, ChatArtifact } from './HowItWorksArtifacts'
 import AgentsGrid from './AgentsGrid'
+import TechStack from './TechStack'
+import ComparisonTable from './ComparisonTable'
 import {
   IconLightbulb,
   IconGlobe,
@@ -428,6 +430,10 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
         </section>
 
         <AgentsGrid />
+
+        <TechStack />
+
+        <ComparisonTable />
 
         <div
           className="fade-in-up mt-14 flex flex-col items-center gap-2"

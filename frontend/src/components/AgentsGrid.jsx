@@ -43,7 +43,7 @@ export default function AgentsGrid() {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {shown.map(({ name, kind, Icon, body }) => (
+        {shown.map(({ name, kind, Icon, body, tools }) => (
           <div
             key={name}
             className="rounded-2xl border border-border bg-panel p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/50"
@@ -64,6 +64,15 @@ export default function AgentsGrid() {
             </div>
             <h3 className="mt-3 font-serif text-base font-semibold text-text">{name}</h3>
             <p className="mt-1 text-sm leading-relaxed text-muted">{body}</p>
+            {tools?.length > 0 && (
+              <ul aria-label={`${name} tools`} className="mt-3 flex flex-wrap gap-1.5">
+                {tools.map((t) => (
+                  <li key={t} className="rounded border border-border-strong bg-surface px-1.5 py-0.5 font-mono text-[10px] text-muted-strong">
+                    {t}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         ))}
       </div>

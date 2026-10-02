@@ -32,11 +32,11 @@ _MAX_SEARCH_QUERY_CHARS = 300
 _SECTION_RULES: list[tuple[re.Pattern, dict]] = [
     (
         re.compile(r"how (do |does )?(i|we|you) (compare|stack up)|comparison matrix", re.IGNORECASE),
-        {"tab": "market", "id": "sec-compare", "label": "How you compare"},
+        {"tab": "competitors", "id": "sec-compare", "label": "How you compare"},
     ),
     (
         re.compile(r"\bcompetitor|competition|\brival", re.IGNORECASE),
-        {"tab": "market", "id": "sec-competitors", "label": "Competitive field"},
+        {"tab": "competitors", "id": "sec-competitors", "label": "Competitive field"},
     ),
     (
         re.compile(r"\btam\b|total addressable market|market size|market growth|market opportunity", re.IGNORECASE),
@@ -52,19 +52,19 @@ _SECTION_RULES: list[tuple[re.Pattern, dict]] = [
     ),
     (
         re.compile(r"white ?space|market gap", re.IGNORECASE),
-        {"tab": "opportunity", "id": "sec-whitespace", "label": "Whitespace gaps"},
+        {"tab": "gaps", "id": "sec-whitespace", "label": "Whitespace gaps"},
     ),
     (
         re.compile(r"\bswot\b|\bstrength|\bweakness", re.IGNORECASE),
-        {"tab": "opportunity", "id": "sec-swot", "label": "Strengths & exposure"},
+        {"tab": "risks", "id": "sec-swot", "label": "Strengths & exposure"},
     ),
     (
         re.compile(r"bear case|investor objection", re.IGNORECASE),
-        {"tab": "opportunity", "id": "sec-bearcase", "label": "Bear case"},
+        {"tab": "risks", "id": "sec-bearcase", "label": "Bear case"},
     ),
     (
         re.compile(r"\bassumption", re.IGNORECASE),
-        {"tab": "opportunity", "id": "sec-assumptions", "label": "Key assumptions"},
+        {"tab": "risks", "id": "sec-assumptions", "label": "Key assumptions"},
     ),
     (
         re.compile(r"\bmvp\b|minimum viable product", re.IGNORECASE),

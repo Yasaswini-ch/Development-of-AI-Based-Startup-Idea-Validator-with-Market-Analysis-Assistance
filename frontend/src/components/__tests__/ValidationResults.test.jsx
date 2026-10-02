@@ -53,7 +53,7 @@ describe('ValidationResults', () => {
     const user = userEvent.setup()
     renderResults()
 
-    await user.click(screen.getByRole('tab', { name: /market & rivals/i }))
+    await user.click(screen.getByRole('tab', { name: /^market/i }))
 
     // The first market trend cites src-1, so its claim renders a citation marker.
     expect(screen.getByText(mockValidation.marketOpportunity.trends[0].text)).toBeInTheDocument()

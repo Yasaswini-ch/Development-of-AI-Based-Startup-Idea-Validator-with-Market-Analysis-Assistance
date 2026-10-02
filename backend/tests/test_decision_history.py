@@ -160,7 +160,7 @@ class ClassifySectionTests(unittest.TestCase):
 
     def test_competitor_question_maps_to_competitors_section(self):
         section = classify_section("Who are my main competitors?")
-        self.assertEqual(section, {"tab": "market", "id": "sec-competitors", "label": "Competitive field"})
+        self.assertEqual(section, {"tab": "competitors", "id": "sec-competitors", "label": "Competitive field"})
 
     def test_tam_question_maps_to_market_section(self):
         section = classify_section("What's the TAM for this idea?")
