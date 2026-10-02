@@ -619,7 +619,23 @@ def _refine_with_gemini(idea: str, entries: list[dict]) -> dict[str, dict]:
 
 _CLASSIFICATIONS = {"direct", "indirect", "unknown"}
 _MAX_LIST_ITEMS = 5
-_LISTING_CHARS_FULL = 2500
+_LISTING_CHARS_FULL = 1800
+# The discovery prompt must fit one account's 8,000 tokens a minute together with
+# the answer (a request counts prompt + max_tokens). Listing every competitor-angle
+# source at 1,500 characters grew past that once the angle returned about 25 sources
+# and three of them carried full page text: a measured run needed roughly 10,000
+# prompt tokens, so every Groq model refused it and competitors came back unprofiled.
+# So the listing takes the best sources only, with a hard total size.
+_LISTING_MAX_SOURCES = 14
+_LISTING_CHARS_NORMAL = 1000
+_LISTING_TOTAL_CHARS = 10000  # about 2,500 tokens; with CrewAI's wrapper and the instructions the prompt is about 4,000
+# One request counts prompt + max_tokens against an account's 8,000 tokens a minute,
+# so the answer has to fit in about 3,000 tokens next to a prompt of about 4,500.
+# Profiling 20 rivals and an 8-row matrix across all of them needed 3,500+ and was
+# cut off mid-list on every model, which fails the shape check. The model profiles
+# the closest 10; further names found by NER still appear (unprofiled) and the
+# comparison table is topped up from real data (see _pad_matrix).
+_MAX_LLM_PROFILES = 10
 _MAX_MATRIX_ROWS = 8
 
 
@@ -1186,7 +1202,10 @@ def _discover_with_llm(
 
     sources: dict[str, dict] = {}
     listing_lines = []
-    for i, r in enumerate(competitor_results, start=1):
+    listing_chars = 0
+    for i, r in enumerate(competitor_results[:_LISTING_MAX_SOURCES], start=1):
+        if listing_chars >= _LISTING_TOTAL_CHARS:
+            break
         source_id = f"r{i}"
         full_text = r.get("fullText")
         text = _normalize_snippet_text(r.get("title", ""), full_text or r.get("snippet", ""))
@@ -1197,7 +1216,10 @@ def _discover_with_llm(
         # the same reason (its own comment: names mentioned deeper in
         # articles were getting truncated out at 200-300 chars).
         # A source with full page text (Tavily Extract) gets a bigger window.
-        listing_lines.append(f"{source_id}: {text[:_LISTING_CHARS_FULL if full_text else 1500]}")
+        line = f"{source_id}: {text[:_LISTING_CHARS_FULL if full_text else _LISTING_CHARS_NORMAL]}"
+        line = line[: max(200, _LISTING_TOTAL_CHARS - listing_chars)]
+        listing_lines.append(line)
+        listing_chars += len(line) + 1
     listing = "\n".join(listing_lines)
 
     def build_crew(model: str):
@@ -1213,7 +1235,7 @@ def _discover_with_llm(
             # headroom under that ceiling; the fallback models have far
             # higher per-minute budgets so this doesn't meaningfully
             # constrain them.
-            llm=get_llm(max_tokens=950, model=model),
+            llm=get_llm(max_tokens=1000, model=model),  # x3 on 120b, x2.5 on 20b: prompt + this must stay under 8,000
             max_execution_time=AGENT_MAX_EXECUTION_SECONDS,
             max_iter=AGENT_MAX_ITER,
             verbose=False,
@@ -1226,7 +1248,7 @@ def _discover_with_llm(
                 problem=problem or "not specified",
                 listing=listing,
                 ner_hints=", ".join(ner_hint_names) or "none",
-                max_competitors=_MAX_COMPETITORS,
+                max_competitors=_MAX_LLM_PROFILES,
             ),
             expected_output=load_prompt("competitor_discovery_output"),
             agent=analyst,

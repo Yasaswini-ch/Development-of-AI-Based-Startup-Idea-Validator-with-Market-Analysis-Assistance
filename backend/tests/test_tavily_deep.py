@@ -14,7 +14,7 @@ sys.path.insert(0, str(BACKEND_DIR))
 from fastapi.testclient import TestClient
 
 import main
-from agent import retrieval, tools
+from agent import competitor_agent, retrieval, tools
 
 
 def _tavily_response(*urls):
@@ -198,6 +198,45 @@ class AppStoreLayerTests(unittest.TestCase):
                 "An app that helps freelancers track time and send invoices", "Small agencies", "Slow billing"
             )
         self.assertEqual(len([r for r in results if r.get("provider") == "app_store"]), 5)
+
+
+
+class DiscoveryListingSizeTests(unittest.TestCase):
+    """The competitor LLM prompt must stay small enough for one account's 8,000
+    tokens a minute; an oversized listing was refused by every Groq model."""
+
+    def _results(self, n, full=0):
+        out = []
+        for i in range(n):
+            r = {"title": f"Best invoicing tools {i}", "snippet": "word " * 400, "url": f"https://e.com/{i}", "angle": "Competitors", "score": 0.9 - i / 100}
+            if i < full:
+                r["fullText"] = "page " * 700
+            out.append(r)
+        return out
+
+    def _listing_sent(self, results):
+        sent = {}
+
+        def fake_kickoff(build_crew, primary=None, allow_local=False, validate=None):
+            sent["crew"] = build_crew("groq/openai/gpt-oss-20b")
+            raise RuntimeError("stop after building the prompt")
+
+        from unittest.mock import patch
+
+        with patch("agent.llm.kickoff_with_fallback", fake_kickoff):
+            competitor_agent._discover_with_llm("An invoicing app", "Freelancers", "Late payments", results, [], allow_local=False)
+        return sent["crew"].tasks[0].description
+
+    def test_a_large_source_set_stays_under_the_size_budget(self):
+        prompt = self._listing_sent(self._results(30, full=3))
+        self.assertLess(len(prompt), 10000 + 6000)  # listing budget plus the fixed instructions
+        self.assertIn("r1:", prompt)
+        self.assertNotIn("r15:", prompt)  # capped at the best 14
+
+    def test_full_text_sources_get_a_bigger_window_than_snippets(self):
+        prompt = self._listing_sent(self._results(5, full=1))
+        lines = {l.split(":")[0]: l for l in prompt.splitlines() if l[:1] == "r" and l[1:2].isdigit()}
+        self.assertGreater(len(lines["r1"]), len(lines["r2"]))
 
 
 class ResponseTests(unittest.TestCase):
