@@ -10,5 +10,8 @@ export default defineConfig({
     setupFiles: './src/setupTests.js',
     globals: true,
     pool: 'threads',
+    // The App-level tests type into the full page; with many parallel jsdom workers
+    // they exceeded the 5s default and failed only under load, never on their own.
+    testTimeout: 20000,
   },
 })
