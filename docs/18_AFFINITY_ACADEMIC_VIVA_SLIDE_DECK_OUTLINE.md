@@ -180,6 +180,7 @@
 - **Defects found only by live testing:** fallback chain stopping early, confidence diluted by the raw search pool, TAM/SAM/SOM computed but not shown, admin access lost on redeploy, junk competitor names, a positioning grid that never rendered, and revenue models silently empty when quota ran out. Each has a regression test.
 - **Partial failure:** a failed section returns an inline error card; the rest of the report still renders.
 - **Suites:** about 520 backend and about 100 frontend tests; two backend tests are environment-dependent and fail when real keys are present.
+- **Informal user test (5 people):** 2 got the report on screen; 3 were asked for an email and each received the full report by email in roughly 4 to 5 minutes. This is what the free-tier quota fallback looks like to a real user. It is five people informally observed, not a measured benchmark.
 - Details: [milestone2-verification.md](milestone2-verification.md), [milestone4-verification.md](milestone4-verification.md).
 
 ---
@@ -196,6 +197,8 @@
 - **Not built yet:** charts in the PDF export; a calibration of the score weights against labelled ideas; a measured competitor-recall figure; a written scaling plan beyond free tiers; progressive rendering of sections as they finish; a saved real example report on the landing page.
 - **Operational:** sessions expire after 7 days; Render's free Postgres expires after 30 days; a free host sleeps when idle and the free database auto-suspends, which slows the first sign-in; no password reset or email verification yet.
 - **Technical:** the local-model fallback needs real GPU hardware; rival classification under-labels on thin text.
+- **Accuracy:** results vary run to run because retrieval uses live search; agents read trimmed snippets (about 1,500 characters), not whole pages; "Grounded" means a claim cites a source that was accepted, not that the source is true; scores are reasoned, not calibrated; tested on seven industries, so niche or non-English markets are unproven.
+- **Quota exposure:** on free tiers, heavy use pushes runs onto the slower email path (3 of 5 testers saw it).
 - Full list: [known-limitations-and-future-work.md](known-limitations-and-future-work.md), [scaling-options.md](scaling-options.md).
 
 ---

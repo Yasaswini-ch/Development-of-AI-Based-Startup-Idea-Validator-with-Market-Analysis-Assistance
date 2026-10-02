@@ -7,7 +7,7 @@ chapters (`01` to `23`) go deeper on each part; this file is the map and the sum
 
 > **How to read this.** Where a statement is a measurement from an earlier milestone it is
 > marked *(re-measure)*. Where something is not built, it is listed in
-> [section 13](#13-what-is-not-done-yet) rather than implied. Nothing in this document
+> [section 13](#13-limitations-and-what-is-not-done-yet) rather than implied. Nothing in this document
 > describes a feature the code does not have.
 
 ---
@@ -25,7 +25,7 @@ chapters (`01` to `23`) go deeper on each part; this file is the map and the sum
 10. [Tools and services used](#10-tools-and-services-used)
 11. [How it differs from asking a chatbot](#11-how-it-differs-from-asking-a-chatbot)
 12. [Accounts, data and security](#12-accounts-data-and-security)
-13. [What is not done yet](#13-what-is-not-done-yet)
+13. [Limitations and what is not done yet](#13-limitations-and-what-is-not-done-yet)
 14. [Testing and verification](#14-testing-and-verification)
 15. [Team and milestones](#15-team-and-milestones)
 16. [Running it locally and deploying](#16-running-it-locally-and-deploying)
@@ -283,9 +283,66 @@ The comparison deliberately avoids claims about other products that were not ver
 
 See [security-privacy-ethics.md](security-privacy-ethics.md).
 
-## 13. What is not done yet
+## 13. Limitations and what is not done yet
 
-Stated plainly so nobody has to discover it:
+Stated plainly so nobody has to discover it. Section 13.1 is the set of known limits of how
+the system behaves; 13.2 is work that was asked for or planned and is not finished.
+
+### 13.1 Limitations
+
+**Reliability and speed**
+
+- **Dependence on free tiers.** The pipeline relies on free Groq and Gemini quotas. Under
+  load or after heavy use the cloud models are exhausted, and a run then takes the slower
+  email path instead of returning on screen (see the user test in section 14.2, where this
+  happened to three of five testers). Free tiers can also change or disappear without notice.
+- **Answer quality depends on which model answered.** A section produced by a fallback model,
+  or by the rule-based fallback, is thinner than one from the first-choice model. Fallback
+  output is labelled as degraded, but it is still weaker.
+- **The email path is slow by design.** A run that goes to the local or retried path takes
+  minutes, and the founder must wait for an email rather than see the result.
+- **Cold starts.** The free web host sleeps when idle and the free database auto-suspends, so
+  the first request or sign-in after a quiet spell can take up to a minute.
+- **No capacity planning.** Concurrent users share the same provider quotas; there is no
+  queue, priority or per-user budget beyond per-IP rate limits.
+
+**Accuracy and evidence**
+
+- **Results vary between runs.** Retrieval uses live web search, so the same idea can return
+  different sources, competitors and numbers on different days. A single run is not a
+  reproducible measurement. The scoring code is deterministic only for a given set of evidence.
+- **The analysis reads snippets, not whole pages.** Each source is trimmed to roughly 1,500
+  characters before it reaches an agent, so a fact deeper in a page is missed.
+- **"Grounded" is not "true".** It means a claim cites a source that a verification pass
+  accepted as supporting it. The source itself may be wrong, biased or out of date.
+- **Market sizing is only as good as the sources.** TAM, SAM and SOM are shown only where a
+  source states the figure; otherwise the tier is hidden, which can leave the Market tab thin.
+- **Competitor results are imperfect.** Rival classification can under-label a company when
+  its source text is thin, and a real company that is off-topic for the idea can still appear.
+  Price and feature-breadth labels come from text heuristics and are often "unknown".
+  Competitor enrichment (ratings, logos) only attaches when the name matches exactly, so some
+  rivals have none.
+- **Scores and the verdict are not calibrated.** The weights are reasoned and documented, not
+  tuned against ideas whose real outcomes are known. The verdict is decision support, not
+  investment advice or a prediction of success.
+- **Tested on a limited set.** Live verification covered seven industries and a small number
+  of testers. Niche, non-English or offline markets, where the web has little to say, are
+  untested and will return less evidence.
+
+**Product and operations**
+
+- **No charts in the PDF**, and sections appear only once the whole run finishes.
+- **No password reset or email verification** for accounts.
+- **Reports expire.** Validation sessions are kept for 7 days, even for signed-in users, and
+  a free Render Postgres database expires 30 days after creation.
+- **Share links are open.** Anyone holding a report's link can view that report, its PDF and
+  its chat, without signing in.
+- **The local-model fallback is impractical without real hardware**, so hosted deployments
+  do not use it.
+
+### 13.2 Not done yet
+
+Work that was asked for or planned and is not finished:
 
 - **PDF charts.** The PDF is built with ReportLab as structured text and tables; it has no
   charts. A mentor asked for charts, and this is open.
@@ -300,14 +357,13 @@ Stated plainly so nobody has to discover it:
   pending; the practical limits are the provider quotas in section 9, a free web host that
   sleeps when idle, and a free database that auto-suspends. See [scaling-options.md](scaling-options.md).
 - **Progressive rendering** (showing sections as each finishes) was deliberately deferred.
-- **Known weaknesses:** no password reset or email verification; a free Render Postgres
-  expires after 30 days; the local-model fallback needs real hardware; rival classification
-  under-labels when source text is thin; some NER fragments still slip through.
-  Full list: [known-limitations-and-future-work.md](known-limitations-and-future-work.md).
+- **Full list** of limits and future work: [known-limitations-and-future-work.md](known-limitations-and-future-work.md).
 - **Environment-dependent tests.** Two backend tests fail when real API keys are present in
   `.env`, because they assume a keyless setup. They also fail on earlier commits.
 
 ## 14. Testing and verification
+
+### 14.1 Automated and live verification
 
 - **Backend:** roughly 520 unit and integration tests (`python -m unittest discover -s tests`).
 - **Frontend:** about 100 Vitest tests covering the report tabs, landing page, competitor
@@ -321,6 +377,29 @@ Stated plainly so nobody has to discover it:
   and [milestone4-verification.md](milestone4-verification.md).
 - **Lesson recorded:** NER output varies run to run because live search varies, so one good
   or bad run proves little. Fixes were checked across several ideas.
+
+### 14.2 Informal user test
+
+The app was tried by **five people**. Observed outcome, as reported by the tester:
+
+| Outcome | People |
+|---|---|
+| Report returned on screen | 2 |
+| Asked for an email, then received the full report by email | 3 |
+
+Each of the three emailed reports arrived in roughly **4 to 5 minutes**.
+
+What this shows, and what it does not:
+
+- It matches the mechanism in section 9. When the free cloud quotas are exhausted the app
+  asks for an email, runs the slower path in the background and sends the result, and that
+  path completed for every tester who used it.
+- Three of five people hitting the email path means that, on the free tiers, it is a common
+  experience rather than a rare edge case. The 4 to 5 minute wait is the practical cost.
+- It is **five people, informally observed**. It is not a measured success rate or a latency
+  benchmark, and the exact timing was not logged per run. Treat it as an indication to be
+  re-measured under controlled conditions, not as a result.
+
 
 ## 15. Team and milestones
 
