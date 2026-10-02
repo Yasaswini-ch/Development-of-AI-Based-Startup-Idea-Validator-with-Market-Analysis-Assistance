@@ -51,10 +51,18 @@ class ValidDiscoveryShapeTests(unittest.TestCase):
 
 
 class GroundAndCleanCompetitorsTests(unittest.TestCase):
-    def test_drops_a_name_not_present_in_its_cited_source(self):
+    def test_keeps_a_name_not_present_in_its_cited_source(self):
+        # Relaxed by product decision (Sept 2026): a competitor no longer
+        # needs its name to literally appear in the cited source's text -
+        # only a valid sourceId, so the model can name a real competitor
+        # it recognizes from general knowledge even when the specific
+        # snippet didn't happen to spell it out. See
+        # _ground_and_clean_competitors' docstring.
         sources = {"r1": _source("HelloFresh charges $60/week for meal kits.")}
         raw = [{"name": "Blue Apron", "sourceIds": ["r1"], "classification": "direct"}]
-        self.assertEqual(competitor_agent._ground_and_clean_competitors(raw, sources), [])
+        cleaned = competitor_agent._ground_and_clean_competitors(raw, sources)
+        self.assertEqual(len(cleaned), 1)
+        self.assertEqual(cleaned[0]["name"], "Blue Apron")
 
     def test_keeps_a_name_present_in_its_cited_source(self):
         sources = {"r1": _source("HelloFresh charges $60/week for meal kits.")}

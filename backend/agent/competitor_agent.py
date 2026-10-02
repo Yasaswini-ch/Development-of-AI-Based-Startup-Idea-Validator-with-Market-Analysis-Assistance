@@ -608,8 +608,8 @@ def _refine_with_gemini(idea: str, entries: list[dict]) -> dict[str, dict]:
 
 
 _CLASSIFICATIONS = {"direct", "indirect", "unknown"}
-_MAX_LIST_ITEMS = 3
-_MAX_MATRIX_ROWS = 5
+_MAX_LIST_ITEMS = 5
+_MAX_MATRIX_ROWS = 8
 
 
 def _short_text(value, limit: int = 160) -> str | None:
@@ -622,7 +622,7 @@ def _short_text(value, limit: int = 160) -> str | None:
 def _short_list(value) -> list[str]:
     if not isinstance(value, list):
         return []
-    items = [_short_text(v, 120) for v in value]
+    items = [_short_text(v, 200) for v in value]
     return [v for v in items if v][:_MAX_LIST_ITEMS]
 
 
@@ -643,11 +643,11 @@ def _clean_profile(raw: dict) -> dict:
     classification = raw.get("classification")
     return {
         "classification": classification if classification in _CLASSIFICATIONS else "unknown",
-        "pricing": _short_text(raw.get("pricing"), 80) or "unknown",
-        "businessModel": _short_text(raw.get("businessModel"), 80) or "unknown",
+        "pricing": _short_text(raw.get("pricing"), 150) or "unknown",
+        "businessModel": _short_text(raw.get("businessModel"), 150) or "unknown",
         "strengths": _short_list(raw.get("strengths")),
         "weaknesses": _short_list(raw.get("weaknesses")),
-        "gap": _short_text(raw.get("gap"), 240),
+        "gap": _short_text(raw.get("gap"), 400),
     }
 
 
@@ -661,8 +661,8 @@ def _clean_matrix(raw, names: set[str]) -> list[dict]:
     for row in raw[:_MAX_MATRIX_ROWS]:
         if not isinstance(row, dict):
             continue
-        dimension = _short_text(row.get("dimension"), 60)
-        idea_cell = _short_text(row.get("idea"), 140)
+        dimension = _short_text(row.get("dimension"), 100)
+        idea_cell = _short_text(row.get("idea"), 300)
         cells = row.get("competitors")
         if not dimension or not idea_cell or not isinstance(cells, dict):
             continue
@@ -671,7 +671,7 @@ def _clean_matrix(raw, names: set[str]) -> list[dict]:
                 "dimension": dimension,
                 "idea": idea_cell,
                 "competitors": {
-                    name: _short_text(cells.get(name), 140) or "unknown" for name in names if name in cells
+                    name: _short_text(cells.get(name), 300) or "unknown" for name in names if name in cells
                 },
             }
         )
@@ -993,9 +993,11 @@ def _local_text_near_name(text: str, name: str) -> str:
     source's worth of unrelated competitors' numbers; it can still bleed
     into a different competitor's price when that competitor's own line
     comes immediately after this one's, same tradeoff as _local_context.
-    Falls back to the full text if the name can't be located in it
-    (defensive only - callers already confirm a case-insensitive
-    substring match exists before calling this).
+    Falls back to the full text if the name can't be located in it - no
+    longer purely defensive since _ground_and_clean_competitors stopped
+    requiring a literal substring match (Sept 2026), so a genuinely
+    ungrounded name (real, but not spelled out in this specific source)
+    hits this fallback in normal operation, not just as an edge case.
     """
     sentences = [s for s in text.split(". ") if s]
     lowered_name = name.lower()
@@ -1004,14 +1006,17 @@ def _local_text_near_name(text: str, name: str) -> str:
 
 
 def _ground_and_clean_competitors(raw: list, sources: dict[str, dict]) -> list[dict]:
-    """Keep only competitors the model can prove: a name is dropped unless
-    it names a `sourceIds` entry we actually gave the model AND the name
-    literally appears (case-insensitive) in that source's own text. This is
-    the same rule `sanitize_source_ids`/`verification.py` apply to claims
-    elsewhere in the pipeline, applied here to competitor names themselves -
-    the model can restate and reason about what's in the sources, but can't
-    add a competitor from its own training data. See
-    docs/competitor-detection-and-confidence-scoring-proposal.md Option B.
+    """Keep competitors that cite a real source we actually gave the model -
+    a name is dropped unless it names at least one `sourceIds` entry that
+    exists in `sources`. Deliberately does NOT require the name to
+    literally appear in that source's own text (relaxed by product
+    decision, Sept 2026): the stricter substring check was dropping real,
+    correct competitors the model recognized from general knowledge of the
+    category even when a specific snippet didn't happen to spell the name
+    out verbatim - the same tradeoff team-forge's competitor agent makes.
+    Every kept competitor still points at a real URL a user can click to
+    check for themselves; what changed is only that the specific name
+    isn't re-verified against that page's text.
     """
     cleaned: list[dict] = []
     seen_lower: set[str] = set()
@@ -1024,11 +1029,7 @@ def _ground_and_clean_competitors(raw: list, sources: dict[str, dict]) -> list[d
         source_ids = item.get("sourceIds")
         if not isinstance(source_ids, list):
             continue
-        matching_ids = [
-            sid
-            for sid in source_ids
-            if isinstance(sid, str) and sid in sources and name.lower() in sources[sid]["text"].lower()
-        ]
+        matching_ids = [sid for sid in source_ids if isinstance(sid, str) and sid in sources]
         if not matching_ids:
             continue
 
@@ -1098,7 +1099,12 @@ def _discover_with_llm(
         source_id = f"r{i}"
         text = _normalize_snippet_text(r.get("title", ""), r.get("snippet", ""))
         sources[source_id] = {"text": text, "result": r}
-        listing_lines.append(f"{source_id}: {text[:600]}")
+        # 1500, not 600: a competitor mentioned deeper in a longer article
+        # was invisible to the model at the old budget - team-forge's own
+        # competitor prompt uses the same 1500-char window per source for
+        # the same reason (its own comment: names mentioned deeper in
+        # articles were getting truncated out at 200-300 chars).
+        listing_lines.append(f"{source_id}: {text[:1500]}")
     listing = "\n".join(listing_lines)
 
     def build_crew(model: str):
@@ -1135,6 +1141,14 @@ def _discover_with_llm(
     try:
         output = kickoff_with_fallback(
             build_crew,
+            # Own lane, separate from market/swot/mvp's shared default
+            # (qwen3.8-27b): this call now asks for noticeably more output
+            # per competitor (richer offering/gap text, up to 8 matrix
+            # rows) than it used to, on top of already being the most
+            # quota-hungry call some nights - giving it its own Groq model
+            # bucket keeps that growth from crowding out the other
+            # sequential pipeline agents.
+            primary="groq/openai/gpt-oss-20b",
             allow_local=allow_local,
             validate=lambda o: extract_json_object(o.raw, _valid_discovery_shape) is not None,
         )

@@ -44,10 +44,14 @@ class CleanProfileTests(unittest.TestCase):
         self.assertEqual(cleaned["weaknesses"], [])
 
     def test_lists_are_truncated_and_filtered(self):
+        # _MAX_LIST_ITEMS raised 3 -> 5 (Sept 2026, richer-content pass) -
+        # this input has 5 valid entries after filtering "" and the
+        # non-string 5, so all 5 survive; a 6th would be the one actually
+        # truncated.
         cleaned = competitor_agent._clean_profile(
-            {"strengths": ["a", "", 5, "b", "c", "d"]}
+            {"strengths": ["a", "", 5, "b", "c", "d", "e", "f"]}
         )
-        self.assertEqual(cleaned["strengths"], ["a", "b", "c"])
+        self.assertEqual(cleaned["strengths"], ["a", "b", "c", "d", "e"])
 
 
 class CleanMatrixTests(unittest.TestCase):

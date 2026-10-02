@@ -99,6 +99,15 @@ def analyze_gtm(
     try:
         output = kickoff_with_fallback(
             lambda model: _build_crew(idea, target_customer, context, model),
+            # A different primary from mvp_agent's default (qwen3.8-27b) on
+            # purpose: graph.py fans GTM and MVP out to run concurrently
+            # (they have no dependency on each other), so both hitting the
+            # same Groq model at the same instant was a guaranteed
+            # same-bucket collision on every single request, not just
+            # under team load - confirmed live, this was the one
+            # contention point that didn't need concurrent *traffic* to
+            # trigger, only a single validation run.
+            primary="groq/openai/gpt-oss-120b",
             allow_local=allow_local,
             validate=lambda o: extract_json_object(o.raw, _valid_shape) is not None,
         )
