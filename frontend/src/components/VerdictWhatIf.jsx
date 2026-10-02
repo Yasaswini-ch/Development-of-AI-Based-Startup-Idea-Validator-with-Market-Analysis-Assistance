@@ -91,6 +91,7 @@ export default function VerdictWhatIf({ verdict, marketViability, swot, assumpti
             ? `Same call (${LABELS[decision]}), score moves from ${verdict.score} to ${next}.`
             : `This would change the call from ${verdict.label} to ${LABELS[decision]}.`
           : 'Move a slider to see what it would take.'}
+        {effective.highRisks >= 3 ? ` ${effective.highRisks} high-severity risks force a Rethink whatever the score is; fewer than 3 are needed.` : ''}
         {decision !== 'pursue' && gap > 0 ? ` Pursue needs a score of ${PURSUE_AT} (${gap} more) and nothing unproven.` : ''} Only
         these three inputs and the open risks and assumptions feed the verdict; price and CAC do not.
       </p>
