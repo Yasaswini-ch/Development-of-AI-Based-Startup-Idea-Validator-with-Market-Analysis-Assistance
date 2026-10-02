@@ -66,8 +66,21 @@ aggregators are excluded (`_EXCLUDED_DOMAINS` in `agent/retrieval.py`).
 `kickoff_with_fallback()` moves to the next model immediately on a rate limit, a missing
 model, a provider error, or a response whose JSON fails the caller's shape check.
 
-- **Load is split** so no single quota carries the whole run: competitor discovery starts on
-  `gpt-oss-20b`, go-to-market on `gpt-oss-120b`, and the advisor on Gemini.
+- **Load is split** so no single quota carries the whole run. Each agent starts on its own model
+  (`AGENT_PRIMARY_MODELS` in `agent/llm.py`; override one with `AGENT_MODEL_<NAME>`, for example
+  `AGENT_MODEL_SWOT=groq/openai/gpt-oss-20b`). Before this, six agents all started on Qwen, which
+  allows about one call a minute, so five of them waited on rate-limit errors first. The split
+  was reasoned from each agent's tokens and when it runs, and only partly checked live because the
+  free quotas were exhausted. The fallback chain still applies after the first model:
+
+  | Agent | Starts on | Why |
+  |---|---|---|
+  | Market | Groq `qwen3.8-27b` | best quality for the first, biggest step |
+  | Assumption tracker | Groq `qwen3.8-27b` | runs about a minute after market, so the 1,000-token-per-minute bucket has recovered |
+  | Competitor discovery, MVP, grounding verifier | Groq `gpt-oss-20b` | 8,000 tokens/min, 200k/day |
+  | SWOT, go-to-market | Groq `gpt-oss-120b` | its own 8,000 tokens/min bucket |
+  | Revenue models | Gemini 3.8 flash | one call per run, and its own bucket |
+  | Advisor | Gemini 3.6 flash | one call per chat message |
 - **Provider limits that shape this:** Qwen has a hard 1,000 output-tokens-per-minute cap, so
   its calls stay under about 950 tokens; the `gpt-oss` models allow 8,000 tokens per minute
   plus a daily cap; Gemini's free tier allows about 20 requests a day per model.

@@ -53,6 +53,44 @@ _LLM_CALL_TIMEOUT_SECONDS = float(os.environ.get("LLM_CALL_TIMEOUT_SECONDS", "30
 # account's budget." See get_llm's docstring for why this was previously
 # reverted and why the retest changed that.
 FALLBACK_MODELS = ("groq/openai/gpt-oss-20b", "groq/openai/gpt-oss-120b", "gemini/gemini-3.6-flash", "gemini/gemini-3.8-flash")
+
+# Which model each agent STARTS on. Every model is its own rate-limit bucket on a
+# free tier, so the agents are spread across them instead of queueing on one:
+#   groq/qwen3.8-27b    1,000 output tokens/min for the whole account: one call a
+#                       minute. Market analysis and the assumption tracker start here;
+#                       they run about a minute apart. Before this map six agents
+#                       (market, SWOT, MVP, assumptions, revenue models, verification)
+#                       all started on it, and all but the first spent their time on
+#                       rate-limit errors before falling down the chain.
+#   groq/gpt-oss-20b    8,000 tokens/min, 200k/day: competitors, MVP, verification
+#   groq/gpt-oss-120b   8,000 tokens/min, 200k/day: SWOT and go-to-market. Revenue models
+#                       were first put here too and fell back to the rule-based result:
+#                       SWOT, go-to-market and revenue all run within about 40 seconds,
+#                       more than 8,000 tokens for one bucket.
+#   gemini 3.6 flash    about 20 requests/day: the advisor (one call per chat message)
+#   gemini 3.8 flash    about 20 requests/day: revenue models (one call per run)
+# MVP and go-to-market run in parallel (see graph.py), so they must differ. The
+# split was reasoned from each agent's tokens and when it runs, and only partly
+# checked live (free-tier quotas were exhausted): adjust it with the overrides.
+# Any agent can be re-pointed without a code change: AGENT_MODEL_<NAME>, for
+# example AGENT_MODEL_SWOT=groq/openai/gpt-oss-20b (useful when keys change).
+AGENT_PRIMARY_MODELS = {
+    "market": "groq/qwen/qwen3.8-27b",
+    "competitor": "groq/openai/gpt-oss-20b",
+    "swot": "groq/openai/gpt-oss-120b",
+    "mvp": "groq/openai/gpt-oss-20b",
+    "gtm": "groq/openai/gpt-oss-120b",
+    "assumptions": "groq/qwen/qwen3.8-27b",
+    "revenue": "gemini/gemini-3.8-flash",
+    "verification": "groq/openai/gpt-oss-20b",
+    "advisor": "gemini/gemini-3.6-flash",
+}
+
+
+def primary_for(agent: str) -> str:
+    """The model an agent starts on: its AGENT_MODEL_<NAME> override, else the
+    map above, else DEFAULT_MODEL. The fallback chain still applies after it."""
+    return os.environ.get(f"AGENT_MODEL_{agent.upper()}") or AGENT_PRIMARY_MODELS.get(agent, DEFAULT_MODEL)
 _MAX_RETRY_WAIT_SECONDS = 30
 
 # Last-resort tier, tried only when a caller opts in via

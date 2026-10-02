@@ -8,7 +8,7 @@ from langgraph.graph import END, START, StateGraph
 
 from . import retrieval
 from .decision_history import summarize_decisions
-from .llm import get_llm, kickoff_with_fallback
+from .llm import get_llm, kickoff_with_fallback, primary_for
 from .output_guard import strip_reasoning
 from .prompts.loader import load_prompt
 from .session_store import append_turn, get_session, reserve_chat_request
@@ -163,7 +163,7 @@ def respond_node(state: ChatState) -> ChatState:
     fresh = compact_json(compact_sources(state.get("freshResults", []), limit=5), max_chars=2200)
     output = kickoff_with_fallback(
         lambda model: _build_response_crew(state["message"], context, history, decisions, fresh, model),
-        primary="gemini/gemini-3.6-flash",
+        primary=primary_for("advisor"),
     )
     reply = strip_reasoning(output.raw).strip()
     if not reply:

@@ -11,7 +11,7 @@ import logging
 from crewai import Agent, Crew, Process, Task
 
 from .deterministic_fallback import deterministic_assumptions
-from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback
+from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback, primary_for
 from .prompts.loader import load_prompt
 from .structured_output import (
     compact_json,
@@ -121,6 +121,7 @@ def analyze_assumptions(
     try:
         output = kickoff_with_fallback(
             lambda model: _build_crew(idea, target_customer, problem, context, model),
+            primary=primary_for("assumptions"),
             allow_local=allow_local,
             validate=lambda o: extract_json_object(o.raw, _valid_shape) is not None,
         )

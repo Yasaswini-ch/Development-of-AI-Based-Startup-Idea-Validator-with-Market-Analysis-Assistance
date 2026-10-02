@@ -22,7 +22,7 @@ import logging
 
 from crewai import Agent, Crew, Process, Task
 
-from .llm import get_llm, kickoff_with_fallback
+from .llm import get_llm, kickoff_with_fallback, primary_for
 from .prompts.loader import load_prompt
 from .structured_output import compact_json, extract_json_object
 
@@ -92,6 +92,7 @@ def verify_claims(
     try:
         output = kickoff_with_fallback(
             lambda model: _build_crew(idea, compact_json(payload, max_chars=3000), model),
+            primary=primary_for("verification"),
             allow_local=allow_local,
             validate=lambda o: extract_json_object(o.raw, _valid_shape) is not None,
         )

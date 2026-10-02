@@ -231,7 +231,7 @@
 
 ## Slide 21: Reliability — Fallback Chain & Fallbacks
 - **Chain:** `groq/qwen/qwen3.8-27b` → `groq/openai/gpt-oss-20b` → `groq/openai/gpt-oss-120b` → `gemini/gemini-3.6-flash` → `gemini/gemini-3.8-flash`.
-- **Load split:** competitor discovery starts on `gpt-oss-20b`, go-to-market on `gpt-oss-120b`, the advisor on Gemini, so no single free quota carries the whole run.
+- **Load split:** each agent starts on its own model so no single free quota carries the run: market and the assumption tracker on Qwen; competitor discovery, MVP and the verifier on `gpt-oss-20b`; SWOT and go-to-market on `gpt-oss-120b`; revenue models on Gemini 3.8; the advisor on Gemini 3.6. Six agents used to share Qwen's 1,000-tokens-a-minute bucket. Reasoned from tokens and timing; only partly checked live.
 - **Switch triggers:** rate limits, missing models, provider errors, **and responses that fail per-attempt shape validation** (for example unparseable JSON).
 - **Provider limits that shaped it:** Qwen has a hard 1,000 output-token per minute cap, so its calls stay under about 950 tokens; the `gpt-oss` models have 8,000 tokens per minute and a daily cap; Gemini's free tier allows about 20 requests a day per model.
 - **Last resort:** a local Ollama model (only where one runs), then one cloud retry after a cooldown, then a labelled deterministic fallback. Where a local model exists but no email is on file, the user is asked for an email so the slower run can be sent to them.

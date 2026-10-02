@@ -1172,7 +1172,7 @@ def _discover_with_llm(
     try:
         from crewai import Agent, Crew, Process, Task
 
-        from .llm import get_llm, kickoff_with_fallback
+        from .llm import get_llm, kickoff_with_fallback, primary_for
         from .prompts.loader import load_prompt
     except Exception:
         logger.warning("Competitor discovery unavailable (LLM stack not importable)", exc_info=True)
@@ -1235,7 +1235,7 @@ def _discover_with_llm(
             # quota-hungry call some nights - giving it its own Groq model
             # bucket keeps that growth from crowding out the other
             # sequential pipeline agents.
-            primary="groq/openai/gpt-oss-20b",
+            primary=primary_for("competitor"),
             allow_local=allow_local,
             validate=lambda o: extract_json_object(o.raw, _valid_discovery_shape) is not None,
         )

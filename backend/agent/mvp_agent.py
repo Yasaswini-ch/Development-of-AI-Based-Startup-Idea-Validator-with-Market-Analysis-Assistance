@@ -5,7 +5,7 @@ import logging
 from crewai import Agent, Crew, Process, Task
 
 from .deterministic_fallback import deterministic_mvp
-from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback
+from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback, primary_for
 from .verification import strip_unsupported, verify_claims
 from .prompts.loader import load_prompt
 from .structured_output import (
@@ -98,6 +98,7 @@ def analyze_mvp(
     try:
         output = kickoff_with_fallback(
             lambda model: _build_crew(idea, problem, context, model),
+            primary=primary_for("mvp"),
             allow_local=allow_local,
             validate=lambda o: extract_json_object(o.raw, _valid_shape) is not None,
         )

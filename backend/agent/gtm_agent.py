@@ -5,7 +5,7 @@ import logging
 from crewai import Agent, Crew, Process, Task
 
 from .deterministic_fallback import deterministic_gtm
-from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback
+from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback, primary_for
 from .verification import strip_unsupported, verify_claims
 from .prompts.loader import load_prompt
 from .structured_output import (
@@ -107,7 +107,7 @@ def analyze_gtm(
             # under team load - confirmed live, this was the one
             # contention point that didn't need concurrent *traffic* to
             # trigger, only a single validation run.
-            primary="groq/openai/gpt-oss-120b",
+            primary=primary_for("gtm"),
             allow_local=allow_local,
             validate=lambda o: extract_json_object(o.raw, _valid_shape) is not None,
         )

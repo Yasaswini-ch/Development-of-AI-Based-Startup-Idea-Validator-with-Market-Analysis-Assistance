@@ -241,9 +241,13 @@ Affinity runs on free tiers, so rate limits are the main operational risk.
   `groq/openai/gpt-oss-120b`, `gemini/gemini-3.6-flash`, `gemini/gemini-3.8-flash`. A
   call moves on for rate limits, missing models, provider errors, **and** responses whose
   JSON fails shape validation.
-- **Load is split across models** so no single quota carries everything: competitor
-  discovery starts on `gpt-oss-20b`, go-to-market on `gpt-oss-120b`, and the advisor on
-  Gemini.
+- **Load is split across models** so no single quota carries everything. Each agent starts on its
+  own model: market and the assumption tracker on Qwen, competitor discovery, MVP and the grounding
+  verifier on `gpt-oss-20b`, SWOT and go-to-market on `gpt-oss-120b`, revenue models on Gemini 3.8
+  and the advisor on Gemini 3.6. Before this, six agents all started on Qwen, which allows about
+  one call a minute, so most of them waited on rate limits before falling back. The split is
+  reasoned from each agent's tokens and timing, was only partly checked live (quotas were
+  exhausted), and any agent can be re-pointed with `AGENT_MODEL_<NAME>`.
 - **Provider limits that shaped the design:** the Qwen model has a hard 1,000 output-token
   per-minute cap, so its calls are kept under about 950 tokens; the `gpt-oss` models have an
   8,000 tokens-per-minute and a daily cap; Gemini's free tier allows about 20 requests a day

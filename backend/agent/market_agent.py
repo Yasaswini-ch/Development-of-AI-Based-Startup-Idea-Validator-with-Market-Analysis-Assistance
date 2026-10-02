@@ -37,7 +37,7 @@ import logging
 from crewai import Agent, Crew, Process, Task
 
 from .deterministic_fallback import deterministic_market_opportunity
-from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback
+from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback, primary_for
 from .verification import strip_unsupported, verify_claims
 from .prompts.loader import load_prompt
 from .structured_output import (
@@ -234,6 +234,7 @@ def analyze_market_opportunity(
     try:
         crew_output = kickoff_with_fallback(
             lambda model: _build_market_crew(idea, target_customer, problem, context, model),
+            primary=primary_for("market"),
             allow_local=allow_local,
             validate=lambda output: extract_json_object(output.raw, _is_valid_shape) is not None,
         )

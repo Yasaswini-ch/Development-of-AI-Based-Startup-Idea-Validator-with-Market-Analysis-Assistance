@@ -243,6 +243,16 @@ Findings from live use and a five-person informal test. The final project docume
 - **The App Store layer fits app-like ideas best.** For other kinds of product it usually adds
   nothing, because only apps sharing two topic words with the idea are kept.
 
-### 8.5 Not built
+### 8.5 The model split is reasoned, not fully measured
+- Which model each agent starts on (`AGENT_PRIMARY_MODELS`) came from each agent's token use and
+  when it runs. A live check with exhausted quotas confirmed SWOT on `gpt-oss-120b` returns valid,
+  non-degraded results, and showed revenue models colliding with SWOT on one bucket (so they were
+  moved). MVP, assumptions and revenue on their new models were not confirmed. Re-measure with
+  `scripts/latency_token_measurement.py` once quotas allow, and re-point any agent with
+  `AGENT_MODEL_<NAME>`.
+- `gpt-oss-20b` and `gpt-oss-120b` may format JSON differently from Qwen; the shape check and the
+  fallback chain catch a bad answer, at the cost of an extra call.
+
+### 8.6 Not built
 - PDF charts, a calibration of score weights, a measured competitor-recall figure, a written
   scaling plan, progressive rendering, and a saved real example report for the landing page.
