@@ -22,6 +22,7 @@ from .swot_agent import analyze_swot
 from .commercial_model import build_commercial_model
 from .delivery_roadmap import build_delivery_roadmap
 from .strategic_wedge import build_strategic_wedges
+from .sprint_plan import build_interview_script, build_sprint
 from .verdict import build_verdict
 from .viability_score import calculate_market_viability, calculate_viability_index
 from .voice_of_market import (
@@ -1166,6 +1167,29 @@ def confidence_dashboard_node(state: PipelineState) -> PipelineState:
     return {**state, "confidence": confidence}
 
 
+def validation_sprint_node(state: PipelineState) -> PipelineState:
+    """Adds a 4-week validation sprint and a customer-interview script to the
+    action plan (see sprint_plan.py). Deterministic, so it cannot fail a run:
+    on any problem the action plan is left exactly as it was."""
+    plan = state.get("actionPlan")
+    if state.get("error") or not isinstance(plan, dict):
+        return state
+    try:
+        extra = {}
+        sprint = build_sprint(state.get("assumptions"), state.get("experiments"))
+        if sprint:
+            extra["sprint"] = sprint
+        script = build_interview_script(
+            state.get("idea", ""), state.get("targetCustomer", ""), state.get("problem", ""), state.get("assumptions")
+        )
+        if script:
+            extra["interviewScript"] = script
+    except Exception:
+        logger.exception("[validation_sprint] FAILED")
+        return state
+    return {**state, "actionPlan": {**plan, **extra}} if extra else state
+
+
 def verdict_node(state: PipelineState) -> PipelineState:
     """Final go / no-go verdict (see verdict.py). Runs last so it can read
     viability, SWOT risks, assumptions and the confidence dashboard. Runs
@@ -1369,6 +1393,7 @@ def build_pipeline():
     # agreement, direct-evidence ratio) - runs last so it can see every
     # strategy agent's sourceIds-bearing claims.
     graph.add_node("confidence_dashboard", _timed("confidence_dashboard", confidence_dashboard_node))
+    graph.add_node("validation_sprint", _timed("validation_sprint", validation_sprint_node))
     graph.add_node("compute_verdict", _timed("verdict", verdict_node))
 
     # --------------------------------------------------
@@ -1439,7 +1464,8 @@ def build_pipeline():
     graph.add_edge("action_plan", "assumption_tracker")
     graph.add_edge("assumption_tracker", "revenue_models")
     graph.add_edge("revenue_models", "confidence_dashboard")
-    graph.add_edge("confidence_dashboard", "compute_verdict")
+    graph.add_edge("confidence_dashboard", "validation_sprint")
+    graph.add_edge("validation_sprint", "compute_verdict")
     graph.add_edge("compute_verdict", END)
 
     return graph.compile()

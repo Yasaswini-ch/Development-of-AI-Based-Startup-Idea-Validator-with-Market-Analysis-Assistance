@@ -1,5 +1,6 @@
 import { IconFlask, IconListChecks, IconAlertTriangle, IconLightbulb, IconUsers, IconTrendingUp, IconNewspaper } from './icons'
 import { ACTION_PLAN_WEEKS } from '../lib/timeline'
+import ValidationSprint from './ValidationSprint'
 
 const ACTION_CATEGORIES = [
   { label: 'Build',    icon: IconLightbulb,  keys: ['build','ship','develop','create','implement','code','deploy','publish page','landing'], style: 'bg-accent/10 text-accent border-accent/30' },
@@ -164,6 +165,7 @@ export default function ExperimentsActionPlan({ experiments, actionPlan, error }
   if (items.length === 0 && !hasPlan) return <Unavailable error={error} />
 
   return (
+    <>
     <div className="grid gap-4 md:grid-cols-3">
       {COLUMNS.map((col) => {
         const exps = expByPhase[col.key] ?? []
@@ -218,5 +220,7 @@ export default function ExperimentsActionPlan({ experiments, actionPlan, error }
         )
       })}
     </div>
+    <ValidationSprint plan={plan} />
+    </>
   )
 }
