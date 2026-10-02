@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { AGENTS } from './agentsData'
 import useTypewriter from '../hooks/useTypewriter'
 import GoogleSignInButton from './GoogleSignInButton'
 import useAuthRequest from '../hooks/useAuthRequest'
@@ -6,6 +7,7 @@ import { DECISION_STYLES } from './VerdictCard'
 import { FormArtifact, ResearchArtifact, VerdictArtifact, ChatArtifact } from './HowItWorksArtifacts'
 import AgentsGrid from './AgentsGrid'
 import TechStack from './TechStack'
+import SampleReportPreview from './SampleReportPreview'
 import ComparisonTable from './ComparisonTable'
 import {
   IconLightbulb,
@@ -173,6 +175,7 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
   const demoStyle = DECISION_STYLES[demo.decision] || DECISION_STYLES.validate_first
   const google = useAuthRequest(apiUrl, onAuthenticated)
   const [activeStep, setActiveStep] = useState(0)
+  const [heroIdea, setHeroIdea] = useState('')
   const step = STEPS[activeStep]
   const StepArtifact = STEP_ARTIFACTS[activeStep]
 
@@ -232,15 +235,34 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
           </p>
 
           <div className="mt-8 flex flex-col items-center gap-2.5">
-            <div className="flex flex-wrap items-center justify-center gap-3">
-              <button
-                type="button"
-                onClick={onStart}
-                className="rounded-full bg-accent px-7 py-3 font-mono text-sm font-semibold uppercase tracking-wide text-white shadow-sm transition-transform hover:-translate-y-0.5 hover:bg-accent-hover"
-              >
-                Validate my idea →
-              </button>
-            </div>
+            <form
+              className="w-full max-w-md"
+              onSubmit={(e) => {
+                e.preventDefault()
+                onStart(heroIdea.trim())
+              }}
+            >
+              <label htmlFor="hero-idea" className="sr-only">
+                Your startup idea
+              </label>
+              <textarea
+                id="hero-idea"
+                rows={2}
+                maxLength={2000}
+                value={heroIdea}
+                onChange={(e) => setHeroIdea(e.target.value)}
+                placeholder="Describe your idea in a sentence or two…"
+                className="w-full resize-none rounded-2xl border border-border bg-panel px-4 py-3 text-left text-sm leading-relaxed text-text shadow-sm outline-none transition-colors placeholder:text-muted focus:border-accent"
+              />
+              <div className="mt-3 flex flex-wrap items-center justify-center gap-3">
+                <button
+                  type="submit"
+                  className="rounded-full bg-accent px-7 py-3 font-mono text-sm font-semibold uppercase tracking-wide text-white shadow-sm transition-transform hover:-translate-y-0.5 hover:bg-accent-hover"
+                >
+                  Validate my idea →
+                </button>
+              </div>
+            </form>
             {!currentUser && apiUrl && onAuthenticated && (
               <div className="mt-1 flex w-full max-w-xs flex-col items-center">
                 <div className={`w-full ${google.isSubmitting ? 'pointer-events-none opacity-60' : ''}`} aria-busy={google.isSubmitting}>
@@ -259,6 +281,11 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
             <p className="text-[13px] text-muted">
               {currentUser ? 'Signed in · Your validations are saved to your account' : 'No signup required to try · Sign in to save your history'}
             </p>
+            <ul aria-label="What you get" className="mt-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 font-mono text-[11px] uppercase tracking-wide text-muted-strong">
+              <li>{AGENTS.length} agents and engines</li>
+              <li>Every claim Grounded or Inferred</li>
+              <li>PDF and email report</li>
+            </ul>
           </div>
         </section>
 
@@ -291,6 +318,8 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
             </p>
           </div>
         </section>
+
+        <SampleReportPreview />
 
         <section className="mt-16">
           <p

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { IconLightbulb, IconUsers, IconAlertTriangle, IconCheckCircle } from './icons'
 import { assessIdeaClarity } from '../lib/ideaClarity'
 import ThoughtLine from './ThoughtLine'
+import { SAMPLE_IDEAS } from '../lib/examples'
 
 const IDEA_MAX = 2000
 
@@ -15,10 +16,10 @@ function LoadingSteps({ phases, currentIndex }) {
   )
 }
 
-export default function IdeaForm({ onSubmit, isLoading, loadingProgress, disabled }) {
-  const [idea, setIdea] = useState('')
-  const [targetCustomer, setTargetCustomer] = useState('')
-  const [problem, setProblem] = useState('')
+export default function IdeaForm({ onSubmit, isLoading, loadingProgress, disabled, initial }) {
+  const [idea, setIdea] = useState(initial?.idea ?? '')
+  const [targetCustomer, setTargetCustomer] = useState(initial?.targetCustomer ?? '')
+  const [problem, setProblem] = useState(initial?.problem ?? '')
   const [error, setError] = useState('')
   const [errorField, setErrorField] = useState('')
   // A vague idea gets flagged, not blocked - the founder can submit anyway
@@ -57,12 +58,38 @@ export default function IdeaForm({ onSubmit, isLoading, loadingProgress, disable
     onSubmit({ idea, targetCustomer, problem, email: '' })
   }
 
+  function fillSample(sample) {
+    setIdea(sample.idea)
+    setTargetCustomer(sample.targetCustomer)
+    setProblem(sample.problem)
+    setError('')
+    setErrorField('')
+    setClarityWarning(null)
+  }
+
   return (
     <form
       onSubmit={handleSubmit}
       className="rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8"
     >
       <div className="space-y-5">
+        <div>
+          <p className="mb-2 font-mono text-[11px] uppercase tracking-wider text-muted">Not sure what to write? Try a sample</p>
+          <ul className="flex flex-wrap gap-2">
+            {SAMPLE_IDEAS.map((sample) => (
+              <li key={sample.label}>
+                <button
+                  type="button"
+                  onClick={() => fillSample(sample)}
+                  disabled={isLoading}
+                  className="rounded-full border border-border bg-surface px-3 py-1 text-xs text-muted-strong transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
+                >
+                  {sample.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
         <div>
           <div className="mb-1.5 flex items-center justify-between">
             <label htmlFor="idea" className="flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider text-muted">

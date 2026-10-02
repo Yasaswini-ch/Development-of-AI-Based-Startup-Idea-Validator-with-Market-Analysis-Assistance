@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import LandingPage from '../LandingPage'
 
@@ -11,20 +11,20 @@ function renderLanding() {
 describe('Landing page How it works', () => {
   it('opens on step 1 and switches the detail panel when another step is clicked', () => {
     renderLanding()
-    const tabs = screen.getAllByRole('tab')
+    const tabs = within(screen.getByRole('tablist', { name: 'How it works' })).getAllByRole('tab')
     expect(tabs).toHaveLength(4)
     expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByRole('tabpanel')).toHaveTextContent('Describe your idea')
+    expect(document.getElementById('how-step-panel')).toHaveTextContent('Describe your idea')
 
     fireEvent.click(tabs[2])
     expect(tabs[2]).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByRole('tabpanel')).toHaveTextContent('A verdict, not a guess')
-    expect(screen.getByRole('tabpanel')).toHaveTextContent('Grounded vs Inferred')
+    expect(document.getElementById('how-step-panel')).toHaveTextContent('A verdict, not a guess')
+    expect(document.getElementById('how-step-panel')).toHaveTextContent('Grounded vs Inferred')
   })
 
   it('moves between steps with the arrow keys', () => {
     renderLanding()
-    const tabs = screen.getAllByRole('tab')
+    const tabs = within(screen.getByRole('tablist', { name: 'How it works' })).getAllByRole('tab')
     fireEvent.keyDown(tabs[0], { key: 'ArrowRight' })
     expect(tabs[1]).toHaveAttribute('aria-selected', 'true')
     fireEvent.keyDown(tabs[1], { key: 'ArrowLeft' })

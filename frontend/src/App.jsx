@@ -86,6 +86,8 @@ export default function App() {
   // finishes (success or failure) spaces that out.
   const [cooldown, setCooldown] = useState(false)
   const [validation, setValidation] = useState(persisted?.validation ?? null)
+  // The idea typed into the landing hero, carried into the form (see IdeaForm's `initial`).
+  const [prefill, setPrefill] = useState(null)
   const [errorMessage, setErrorMessage] = useState('')
   const [processingMessage, setProcessingMessage] = useState('')
   const [deepAnalysisMessage, setDeepAnalysisMessage] = useState('')
@@ -421,7 +423,10 @@ export default function App() {
   if (view === 'landing') {
     return (
       <LandingPage
-        onStart={() => setView('form')}
+        onStart={(idea) => {
+          if (idea) setPrefill({ idea, key: Date.now() })
+          setView('form')
+        }}
         currentUser={currentUser}
         onSignIn={() => {
           setPreAuthView('landing')
@@ -566,7 +571,7 @@ export default function App() {
             </p>
           </header>
 
-          <IdeaForm onSubmit={validateIdea} isLoading={isLoading} loadingProgress={loadingProgress} disabled={cooldown} />
+          <IdeaForm key={prefill?.key ?? 'blank'} initial={prefill} onSubmit={validateIdea} isLoading={isLoading} loadingProgress={loadingProgress} disabled={cooldown} />
 
           {deepAnalysisMessage && (
             <DeepAnalysisPrompt
