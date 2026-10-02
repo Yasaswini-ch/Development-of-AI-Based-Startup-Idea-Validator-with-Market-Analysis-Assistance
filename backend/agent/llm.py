@@ -77,9 +77,12 @@ FALLBACK_MODELS = ("groq/openai/gpt-oss-20b", "groq/openai/gpt-oss-120b", "gemin
 #   groq/gpt-oss-120b   8,000 tokens/min, 200k/day: SWOT and go-to-market. Revenue models
 #                       were first put here too and fell back to the rule-based result:
 #                       SWOT, go-to-market and revenue all run within about 40 seconds,
-#                       more than 8,000 tokens for one bucket.
+#                       more than 8,000 tokens for ONE account. That is why a second and
+#                       third Groq account in GROQ_API_KEYS matters for this model.
 #   gemini 3.6 flash    about 20 requests/day: the advisor (one call per chat message)
-#   gemini 3.8 flash    about 20 requests/day: revenue models (one call per run)
+#                       Revenue models also start here now: with several Groq accounts in the
+#                       key pool the bucket is no longer the constraint, and starting on Gemini
+#                       3.8 (about 20 requests/day, usually spent) cost a failed request first.
 # MVP and go-to-market run in parallel (see graph.py), so they must differ. The
 # split was reasoned from each agent's tokens and when it runs, and only partly
 # checked live (free-tier quotas were exhausted): adjust it with the overrides.
@@ -92,7 +95,7 @@ AGENT_PRIMARY_MODELS = {
     "mvp": "groq/openai/gpt-oss-20b",
     "gtm": "groq/openai/gpt-oss-120b",
     "assumptions": "groq/openai/gpt-oss-20b",
-    "revenue": "gemini/gemini-3.8-flash",
+    "revenue": "groq/openai/gpt-oss-120b",
     "verification": "groq/openai/gpt-oss-20b",
     "advisor": "gemini/gemini-3.6-flash",
 }

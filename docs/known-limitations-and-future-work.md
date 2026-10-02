@@ -251,7 +251,8 @@ Findings from live use and a five-person informal test. The final project docume
   failing the shape check on Qwen every time (its answer needs about 1,500 tokens, Qwen's ceiling is
   950), so it moved to `gpt-oss-20b`. After that, SWOT, MVP, assumptions and revenue models all ran
   live without degrading, in 3-10 s each, with no invalid-answer retries. Revenue models' first
-  choice (Gemini 3.8) was out of daily quota, so they fell to `gpt-oss-20b`, which worked. Re-point
+  choice (Gemini 3.8) was out of daily quota, so they fell to `gpt-oss-20b`, which worked; they now
+  start on `gpt-oss-120b` instead of spending a failed request on Gemini first. Re-point
   any agent with `AGENT_MODEL_<NAME>`; `scripts/latency_token_measurement.py` re-measures.
 - **Cut-off answers were the main hidden cost.** The gpt-oss models count hidden reasoning against
   `max_tokens`, so the 900-token budget tuned for Qwen truncated their JSON; each truncation failed
@@ -273,6 +274,24 @@ Findings from live use and a five-person informal test. The final project docume
   actually rate limited, because the key near its daily limit still had room for small calls. That
   path (including the retry-after cooldown) is covered by tests with mocks only.
 
-### 8.7 Not built
-- PDF charts, a calibration of score weights, a measured competitor-recall figure, a written
-  scaling plan, progressive rendering, and a saved real example report for the landing page.
+### 8.6a Noise filters (added 2026-10-03)
+- Page chrome and review sites ("Chrome", "Key Features", Capterra, G2, Gartner and similar) are no
+  longer accepted as competitor names. Marketplace category headings such as "DEVELOPMENT & IT"
+  were already filtered by an earlier rule; the PDFs that showed them predate it.
+- Voice-of-the-market quotes in another language are dropped: a quote is rejected when it uses a
+  non-Latin script, has more other-language marker words than English ones, or has accented
+  letters and no English word. The check is deliberately conservative, so a foreign sentence with
+  no marker word and no accents can still pass, and a very short English quote is kept.
+
+### 8.7 The PDF
+- **Correction (2026-10-03):** earlier notes here and in the final document said the PDF had no
+  charts. It has had charts since Milestone 4 (confidence bars, viability radar, risk heat-map,
+  positioning grid, delivery timeline); those notes were wrong and are removed.
+- The PDF now prints everything the tabs show, including the comparison table, TAM/SAM/SOM with
+  Estimate labels, competitor profiles, the bear case, per-angle charts and an evidence log of
+  every source (capped at 120). Limits: URLs are plain text, not links; table text is clipped
+  because rows cannot split across pages; there is no table of contents or page-number index.
+
+### 8.8 Not built
+- A calibration of score weights, a measured competitor-recall figure, a written scaling plan,
+  progressive rendering, and a saved real example report for the landing page.

@@ -45,18 +45,18 @@ class ModelMapTests(unittest.TestCase):
     def test_no_model_carries_more_than_four_agents(self):
         counts = Counter(llm.AGENT_PRIMARY_MODELS.values())
         self.assertLessEqual(max(counts.values()), 4)
-        self.assertGreaterEqual(len(counts), 4)
+        self.assertGreaterEqual(len(counts), 3)
 
-    def test_swot_go_to_market_and_revenue_do_not_share_one_8000_token_bucket(self):
-        # They run within about 40 seconds of each other; revenue models fell back to
-        # the rule-based result when all three were on gpt-oss-120b.
+    def test_swot_go_to_market_and_revenue_share_the_120b_models_pool_of_accounts(self):
+        # They run within about 40 seconds of each other. On ONE Groq account that is more
+        # than the model's 8,000 tokens a minute (revenue models fell back to the rule-based
+        # result), so this only works because GROQ_API_KEYS pools several accounts.
         models = {llm.primary_for(a) for a in ("swot", "gtm", "revenue")}
-        self.assertEqual(len(models), 3 - 1)  # swot and gtm may share; revenue must not join them
-        self.assertNotIn(llm.primary_for("revenue"), {llm.primary_for("swot"), llm.primary_for("gtm")})
+        self.assertEqual(models, {"groq/openai/gpt-oss-120b"})
 
-    def test_gemini_free_quota_goes_only_to_agents_that_make_one_call_per_run_or_message(self):
+    def test_gemini_free_quota_goes_only_to_the_advisor(self):
         gemini = sorted(a for a, m in llm.AGENT_PRIMARY_MODELS.items() if m.startswith("gemini/"))
-        self.assertEqual(gemini, ["advisor", "revenue"])  # about 20 requests a day per model
+        self.assertEqual(gemini, ["advisor"])  # about 20 requests a day per model
 
     def test_every_primary_has_a_reasoning_effort_entry_unless_deliberately_without_one(self):
         # gemini-3.8-flash has no entry on purpose (see _REASONING_EFFORT's comments).

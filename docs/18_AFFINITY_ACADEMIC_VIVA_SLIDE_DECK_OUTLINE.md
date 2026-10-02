@@ -211,7 +211,7 @@
 ---
 
 ## Slide 19: Delivery — PDF & Email
-- **PDF:** built on the server with **ReportLab**. Seventeen sections (market size, competitors, SWOT, voice of the market, viability, white space, wedges, MVP, delivery roadmap, commercial economics, go-to-market, revenue models, tension flags, assumptions, experiments, 90-day plan, cited sources). The delivery roadmap, commercial economics and validation experiments sections carry an "Estimate" badge. **It has no charts yet.**
+- **PDF:** built on the server with **ReportLab**, typically 15 to 25 pages, and it prints everything the eight tabs show. Charts: evidence-confidence and source-agreement bars, a viability radar, a risk heat-map, a price-by-breadth positioning chart and a delivery timeline. Content: verdict, TAM/SAM/SOM (each marked Sourced or Estimate), market trends, segments, competitor profiles, the idea-versus-rivals comparison table, SWOT and bear case, white space, wedges, MVP, roadmap, assumptions, experiments, economics, go-to-market, revenue models, the 90-day plan, and an evidence log of every source with its excerpt. An "About this report" box says where a section used a rule-based fallback. Roadmap, economics and experiments carry an "Estimate" badge.
 - **Email:** sent through **SendGrid's HTTP API** (chosen because the free host blocks SMTP ports). The email carries the report summary and a link to view it again. It does not attach the PDF; the PDF is a separate download.
 - **Why email exists:** a run that cannot finish on the free quotas within about a minute continues in the background and is emailed when ready (see Slide 21).
 - **Sharing:** a report link is a random id that works without sign-in, so anyone holding it can open that report.
@@ -231,7 +231,7 @@
 
 ## Slide 21: Reliability — Fallback Chain & Fallbacks
 - **Chain:** `groq/qwen/qwen3.8-27b` → `groq/openai/gpt-oss-20b` → `groq/openai/gpt-oss-120b` → `gemini/gemini-3.6-flash` → `gemini/gemini-3.8-flash`.
-- **Load split:** each agent starts on its own model so no single free quota carries the run: market on Qwen; competitor discovery, MVP, the assumption tracker and the verifier on `gpt-oss-20b`; SWOT and go-to-market on `gpt-oss-120b`; revenue models on Gemini 3.8; the advisor on Gemini 3.6. Six agents used to share Qwen's 1,000-tokens-a-minute bucket. Reasoned from tokens and timing; only partly checked live.
+- **Load split:** each agent starts on its own model so no single free quota carries the run: market on Qwen; competitor discovery, MVP, the assumption tracker and the verifier on `gpt-oss-20b`; SWOT, go-to-market and revenue models on `gpt-oss-120b`; the advisor on Gemini 3.6. Six agents used to share Qwen's 1,000-tokens-a-minute bucket. Reasoned from tokens and timing; only partly checked live.
 - **Switch triggers:** rate limits, missing models, provider errors, **and responses that fail per-attempt shape validation** (for example unparseable JSON). A common cause was a cut-off answer: the gpt-oss models spend part of `max_tokens` on hidden reasoning, so token budgets are now scaled per model (SWOT needed about 1,100-2,200 tokens against a 900 limit).
 - **Provider limits that shaped it:** Qwen has a hard 1,000 output-token per minute cap, so its calls stay under about 950 tokens; the `gpt-oss` models have 8,000 tokens per minute and a daily cap; Gemini's free tier allows about 20 requests a day per model.
 - **Last resort:** a local Ollama model (only where one runs), then one cloud retry after a cooldown, then a labelled deterministic fallback. Where a local model exists but no email is on file, the user is asked for an email so the slower run can be sent to them.
@@ -280,7 +280,7 @@
 ---
 
 ## Slide 26: Limitations & Future Work
-- **Not built yet:** charts in the PDF; a calibration of the score weights against labelled ideas; a measured competitor-recall figure; a written scaling plan beyond free tiers; progressive rendering of sections as they finish; a saved real example report on the landing page.
+- **Not built yet:** a calibration of the score weights against labelled ideas; a measured competitor-recall figure; a written scaling plan beyond free tiers; progressive rendering of sections as they finish; a saved real example report on the landing page.
 - **Accuracy:** results vary run to run because retrieval uses live search; agents mostly read trimmed snippets, with deeper content only for the market-size and competitor angles (Tavily advanced search, and full-page Extract for the top three competitor sources, capped at 2,500 characters); "Grounded" means a claim cites an accepted source, not that the source is true; SAM and SOM estimates are the model's own working and are labelled as such; scores are reasoned, not calibrated; tested on seven industries, so niche or non-English markets are unproven.
 - **Quota exposure:** on free tiers, heavy use pushes runs onto the slower email path (3 of 5 testers saw it).
 - **Operational:** sessions expire after 7 days; Render's free Postgres expires after 30 days; a free host sleeps when idle and the free database auto-suspends, which slows the first sign-in; no email verification yet (password reset was added on 2026-10-02).

@@ -131,6 +131,12 @@ _GENERIC_WORDS = {
     "market", "industry", "report", "analysis", "options", "bank", "cloud",
     "sync", "unlimited", "premium", "team", "cash", "trade", "exploration",
     "ratings", "rating", "awards", "award",
+    # Page chrome and non-competitors that real runs surfaced as "rivals": a
+    # browser named in "Chrome extension", the "Key Features" heading of a
+    # product page, and the review/analyst sites a "best X software" article is
+    # published on (Capterra, G2 ...). A review site is a source, not a rival.
+    "chrome", "firefox", "safari", "features", "feature", "capterra", "g2", "trustpilot",
+    "trustradius", "gartner", "forrester", "pcmag", "techradar", "cnet",
     # Platform/tech/UI-chrome words that show up as capitalized ORG mentions
     # in almost any product-related source, regardless of the idea's actual
     # domain - "Available on Android and iOS", "Export as PDF", a forum

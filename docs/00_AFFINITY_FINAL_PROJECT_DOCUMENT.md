@@ -80,7 +80,7 @@ Around the report:
   relevance, recency) and a **contradiction banner** when sections disagree.
 - A **chat advisor** that answers follow-up questions from the report and jumps to the
   section it used.
-- **PDF export** and **email delivery** of the finished report.
+- **PDF export**, a 15 to 25 page report with charts that prints everything the tabs show (comparison table, TAM/SAM/SOM, competitor profiles, bear case, every source and a note wherever a section used a fallback), and **email delivery** of the finished report.
 - For signed-in users: **history**, **compare ideas**, a **dashboard**, and for admins a
   **platform health** view.
 
@@ -243,7 +243,7 @@ Affinity runs on free tiers, so rate limits are the main operational risk.
   JSON fails shape validation.
 - **Load is split across models** so no single quota carries everything. Each agent starts on its
   own model: market on Qwen, competitor discovery, MVP, the assumption tracker and the grounding
-  verifier on `gpt-oss-20b`, SWOT and go-to-market on `gpt-oss-120b`, revenue models on Gemini 3.8
+  verifier on `gpt-oss-20b`, SWOT, go-to-market and revenue models on `gpt-oss-120b`
   and the advisor on Gemini 3.6. Before this, six agents all started on Qwen, which allows about
   one call a minute, so most of them waited on rate limits before falling back. The split is
   reasoned from each agent's tokens and timing, was only partly checked live (quotas were
@@ -387,7 +387,7 @@ the system behaves; 13.2 is work that was asked for or planned and is not finish
 
 **Product and operations**
 
-- **No charts in the PDF**, and sections appear only once the whole run finishes.
+- **Sections appear only once the whole run finishes** (no progressive rendering). The PDF has charts and prints everything the on-screen report shows, except that long text is clipped in tables and URLs are not clickable.
 - **No email verification** for accounts. Password reset was added on 2026-10-02: a single-use
   link, valid 30 minutes, emailed through SendGrid. It does not sign out sessions already issued.
 - **Reports expire.** Validation sessions are kept for 7 days, even for signed-in users, and
@@ -401,8 +401,6 @@ the system behaves; 13.2 is work that was asked for or planned and is not finish
 
 Work that was asked for or planned and is not finished:
 
-- **PDF charts.** The PDF is built with ReportLab as structured text and tables; it has no
-  charts. A mentor asked for charts, and this is open.
 - **Real example report on the landing page.** The "See an example report" feature and hero
   input are built but not shipped: a real saved run could not be captured because the free
   model quotas were exhausted, and a placeholder was not used in its place.

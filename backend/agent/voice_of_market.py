@@ -151,6 +151,36 @@ def _sentiment(sentence: str, dimension: str, friction_dimension: str, negative_
     return "neutral"
 
 
+# A quote is shown to an English-speaking founder as "what the market says", so a
+# sentence in another language (a Portuguese forum post surfaced in a real report)
+# is noise. A sentence is rejected only on real evidence of another language: a
+# non-Latin script, more other-language marker words than English ones, or accented
+# letters with no English word at all. Plain ASCII text with no marker either way
+# is kept, since English founder sentences can be short ("We doubled our revenue").
+# The marker sets are deliberately small and skip words that are also English.
+_ENGLISH_WORDS = frozenset(
+    "the and to of is in for that with are on it you as this be your can or an was have not but they at from "
+    "we our i my how what when will has had more than get their all so if do about by there which".split()
+)
+_OTHER_LANGUAGE_WORDS = frozenset(
+    "que não nao é el los las una uma para com por est les des du une der die das und ist nicht mit che non della são "
+    "dans pour sur sont avec pas más pero como esta este isso não também".split()
+)
+
+
+def _looks_english(text: str) -> bool:
+    if any(c.isalpha() and ord(c) > 0x024F for c in text):  # CJK, Cyrillic, Arabic, Devanagari ...
+        return False
+    words = re.findall(r"[a-zà-ÿ']+", text.lower())
+    english = sum(w in _ENGLISH_WORDS for w in words)
+    other = sum(w in _OTHER_LANGUAGE_WORDS for w in words)
+    if other > english:
+        return False
+    if english == 0 and any(0xC0 <= ord(c) <= 0x24F for c in text):  # accented letters, no English word
+        return False
+    return True
+
+
 def _clean(sentence: str) -> str:
     sentence = re.sub(r"\s+", " ", sentence).strip().strip("\"'“”")
     # Snippets are often cut mid-sentence by the search provider ("...") -
@@ -170,6 +200,8 @@ def _extract_candidates_with(
         for raw in _SENTENCE_SPLIT.split(snippet):
             sentence = _clean(raw)
             if not (_MIN_QUOTE_CHARS <= len(sentence) <= _MAX_QUOTE_CHARS):
+                continue
+            if not _looks_english(sentence):
                 continue
             dimension = _tag(sentence, keyword_groups)
             if dimension is None:

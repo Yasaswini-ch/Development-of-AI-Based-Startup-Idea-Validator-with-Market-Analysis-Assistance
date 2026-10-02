@@ -77,8 +77,7 @@ model, a provider error, or a response whose JSON fails the caller's shape check
   |---|---|---|
   | Market | Groq `qwen3.8-27b` | best quality for the first, biggest step |
   | Competitor discovery, MVP, assumption tracker, grounding verifier | Groq `gpt-oss-20b` | 8,000 tokens/min, 200k/day |
-  | SWOT, go-to-market | Groq `gpt-oss-120b` | its own 8,000 tokens/min bucket |
-  | Revenue models | Gemini 3.8 flash | one call per run, and its own bucket |
+  | SWOT, go-to-market, revenue models | Groq `gpt-oss-120b` | three agents within about 40 s: too much for one account's 8,000 tokens/min, which is why several accounts in `GROQ_API_KEYS` matter |
   | Advisor | Gemini 3.6 flash | one call per chat message |
 - **Token budgets are scaled per model** (`_token_budget` in `agent/llm.py`). The `max_tokens` each agent
   asks for was tuned for Qwen, which allows 950 output tokens at most. The gpt-oss models count their
