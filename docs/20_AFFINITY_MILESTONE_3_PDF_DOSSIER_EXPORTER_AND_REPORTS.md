@@ -56,32 +56,56 @@ default 10/minute).
 > via a separate, direct-download path (`GET /validate/{sessionId}/pdf`, covered
 > below) rather than bundled into every email.
 
-## 2. What the Generated PDF Actually Contains
+## 2. What the Generated PDF Contains (updated 2026-10-03)
 
-Four sections, built directly from whatever fields are present in the input dict
-(every field access is defensive — a missing section is simply skipped, not an error):
+> **Correction.** Earlier versions of this chapter said the PDF had four sections and no
+> charts. That was wrong or out of date: the exporter has drawn charts since Milestone 4,
+> and as of 2026-10-03 it prints everything the on-screen report shows. A real report is
+> typically 15 to 25 pages.
 
-1. **Header + Executive Summary** — idea title, target customer, the opportunity
-   score (read from `marketOpportunity.opportunityScore`), the go/no-go `verdict` and
-   its next step when present, and the `summary` string.
-2. **Market Size & Growth** — `marketOpportunity.marketSize` and a table of up to 3
-   customer segments (`segment`, `painPoints`).
-3. **Competitor Landscape** — a table of up to 5 competitors with `name`,
-   `estimatedPrice`, `featureBreadth` — these are frequently `"unknown"` in real
-   output (see doc on competitor discovery), which the table renders as-is rather than
-   hiding.
-4. **SWOT & Risk Matrix** — strengths and weaknesses joined into two summary lines.
-   SWOT items are `{"text": ..., "sourceIds": [...]}` objects (Milestone 4, Track A);
-   the exporter reads `.get("text")` from each rather than assuming a bare string.
+Every field is read defensively: a missing section is skipped, not an error. Numbered
+sections (`§01`, `§02`, ...) are only numbered when present.
 
-There is **no rendered opportunity-score gauge graphic, no rendered 3×3 competitor
-positioning chart, and no source-citation index with hyperlinks** in the actual PDF —
-those were described in the earlier, incorrect version of this document but were
-never built. The competitor/segment data appears as plain tables, not visual charts.
+**Front matter**
+- Cover and idea context (idea, target customer, problem) and the **verdict card**: decision,
+  headline score, reasons and next step.
+- **Executive summary and KPI strip** (sources, competitors, gaps, personas).
+- **Evidence confidence**: overall score and bars for source coverage, cross-source agreement,
+  direct evidence, average relevance and dated sources.
+- **Source agreement by research angle** and **Sources by research angle** (bar charts).
+- **About this report**: a box listing every section built by a rule-based fallback, every
+  section that failed, competitors profiled from search text only, and any SAM or SOM that is a
+  labelled estimate. Present only when there is something to say.
 
-MVP recommendations and GTM strategy are part of the canonical report object
-(`report_assembler.py`, Milestone 4) but are not yet rendered into the PDF output
-itself — `generate_dossier_pdf()` only reads the four sections listed above.
+**Analysis sections**
+1. **Market size and growth**: the sized market, CAGR, opportunity score; **TAM / SAM / SOM cards**
+   each marked Sourced or Estimate (an estimate shows its assumption); **market trends** with
+   Grounded or Inferred tags; **customer segments** with pain points, motivations and buying
+   behaviour.
+2. **Competitor landscape**: type, pricing and breadth table; weaknesses of direct rivals; a
+   **positioning chart** (price by feature breadth); **competitor profiles** (offering, pricing,
+   business model, rating or founding year, strengths, weaknesses, where the idea can differ);
+   **How your idea compares** (the idea against up to 8 rivals, three to a table); and **similar
+   products** from Product Hunt.
+3. **SWOT and risk matrix**: four quadrants with provenance tags, a **risk heat-map**, a risks
+   table with mitigations, and the **bear case** (investor objections with suggested answers).
+4. **Tension flags** (contradictions), **voice of the market** (customer and owner quotes),
+   **market viability** (a **radar chart** and scored axes), **market white space**, **strategic
+   wedges**.
+5. **MVP feature plan** (impact and effort), **delivery roadmap** (a **timeline chart**),
+   **key assumptions**, **validation experiments**, **commercial economics**, **go-to-market**,
+   **revenue model options** and the **90-day action plan**. The roadmap, economics and experiments
+   sections carry an Estimate badge.
+
+**Appendix**
+- **Cited sources**: the most load-bearing sources.
+- **Evidence log**: every retrieved source, in citation order (`src-1`, `src-2`, ...), with its
+  research angle, relevance, date and an excerpt. Capped at 120 sources; the count beyond that is
+  stated.
+
+**Limits.** URLs are printed as text, not clickable links. A very long source list or comparison
+table adds pages. Rows that cannot be split across pages are kept short on purpose, so long text
+is clipped with an ellipsis (the full text is in the on-screen report).
 
 ## 3. Real Code (verbatim structure, `backend/agent/pdf_exporter.py`)
 

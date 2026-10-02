@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import useCountUp from '../hooks/useCountUp'
 import { IconTrendingUp, IconUsers, IconShield, IconNewspaper, IconGlobe, IconDownload, IconLink } from './icons'
 import MarketOpportunity from './MarketOpportunity'
@@ -9,6 +9,7 @@ import MvpRecommendations from './MvpRecommendations'
 import GtmStrategy from './GtmStrategy'
 import ChatAdvisor from './ChatAdvisor'
 import ConfidenceDashboard from './ConfidenceDashboard'
+import EvidenceAudit from './EvidenceAudit'
 import ContradictionsBanner from './ContradictionsBanner'
 import ExperimentsActionPlan from './ExperimentsActionPlan'
 import { buildSourceMap } from '../lib/sources'
@@ -19,6 +20,7 @@ import AssumptionTracker from './AssumptionTracker'
 import BearCase from './BearCase'
 import RevenueModels from './RevenueModels'
 import VerdictCard from './VerdictCard'
+import VerdictWhatIf from './VerdictWhatIf'
 import VoiceOfMarketSection from './VoiceOfMarketCard'
 import MvpDeliveryRoadmap from './MvpDeliveryRoadmap'
 
@@ -180,9 +182,11 @@ function AngleGroup({ angle, items }) {
 
 const TABS = [
   { key: 'sources', label: 'Evidence' },
-  { key: 'market', label: 'Market & Rivals' },
+  { key: 'market', label: 'Market' },
+  { key: 'competitors', label: 'Competitors' },
   { key: 'customers', label: 'Customers' },
-  { key: 'opportunity', label: 'Gaps & Exposure' },
+  { key: 'gaps', label: 'Gaps' },
+  { key: 'risks', label: 'Risks' },
   { key: 'build', label: 'Build & Ship' },
   { key: 'experiments', label: 'Roadmap' },
 ]
@@ -195,9 +199,9 @@ function tabBadge(key, { results, competitorCount, marketOpportunity, whiteSpace
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
   const counts = {
     sources: [results.length, 'source'],
-    market: [competitorCount, 'competitor'],
+    competitors: [competitorCount, 'competitor'],
     customers: [marketOpportunity?.segments?.length ?? 0, 'customer segment'],
-    opportunity: [whiteSpace?.opportunities?.length ?? 0, 'market gap'],
+    gaps: [whiteSpace?.opportunities?.length ?? 0, 'market gap'],
   }
   if (!counts[key]) return null
   const [count, word] = counts[key]
@@ -294,11 +298,59 @@ export default function ValidationResults({
   assumptions,
   revenueModels,
   verdict,
+  marketViability,
   sessionId,
   apiUrl,
   errors,
 }) {
   const [activeTab, setActiveTab] = useState('sources')
+  // A chat answer about e.g. competitors or TAM tells the report which
+  // section it corresponds to (agent/chat_graph.py's classify_section); this
+  // queues a tab switch + scroll so the user sees the answer and the
+  // underlying report data together instead of just the chat bubble.
+  const [pendingNav, setPendingNav] = useState(null)
+  const tabsRef = useRef(null)
+  const contentRef = useRef(null)
+
+  // Switching tabs from further down the page used to leave the reader
+  // wherever the old scroll offset landed in the new tab's content. When the
+  // top of the content is already scrolled above the sticky tab bar, bring it
+  // back to just under the bar so the tab is read from its start.
+  function selectTab(key) {
+    setActiveTab(key)
+    requestAnimationFrame(() => {
+      const content = contentRef.current
+      if (!content) return
+      const barHeight = tabsRef.current?.offsetHeight ?? 0
+      if (content.getBoundingClientRect().top < barHeight) {
+        content.style.scrollMarginTop = `${barHeight}px`
+        content.scrollIntoView({ block: 'start' })
+      }
+    })
+  }
+
+  function navigateToSection(section) {
+    if (!section?.tab) return
+    setActiveTab(section.tab)
+    setPendingNav(section)
+  }
+
+  useEffect(() => {
+    if (!pendingNav || pendingNav.tab !== activeTab) return
+    const frame = requestAnimationFrame(() => {
+      const target = pendingNav.id ? document.getElementById(pendingNav.id) : null
+      const el = target || tabsRef.current
+      el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      if (target) {
+        target.classList.add('ring-2', 'ring-accent', 'ring-offset-2', 'ring-offset-surface')
+        setTimeout(() => {
+          target.classList.remove('ring-2', 'ring-accent', 'ring-offset-2', 'ring-offset-surface')
+        }, 2200)
+      }
+      setPendingNav(null)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [pendingNav, activeTab])
 
   const groups = []
   const order = [...RESEARCH_ANGLES]
@@ -327,6 +379,14 @@ export default function ValidationResults({
 
       {/* The decision first: verdict + the report's one headline score */}
       <VerdictCard data={verdict} />
+      <VerdictWhatIf
+        verdict={verdict}
+        marketViability={marketViability}
+        swot={swot}
+        assumptions={assumptions}
+        confidence={confidence}
+        marketOpportunity={marketOpportunity}
+      />
 
       <div className="flex flex-wrap items-center gap-6 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
         <div className="min-w-0 flex-1">
@@ -366,6 +426,8 @@ export default function ValidationResults({
         <ConfidenceDashboard data={confidence} />
       </div>
 
+      <EvidenceAudit marketOpportunity={marketOpportunity} swot={swot} mvp={mvp} gtm={gtm} />
+
       {veryThinData && (
         <GroundingNotice message="Fewer than 4 sources were retrieved for this idea — some sections may be inferred rather than grounded in real market data. Try rephrasing the idea or problem statement for a deeper result." />
       )}
@@ -375,7 +437,7 @@ export default function ValidationResults({
       </div>
 
       {/* Pill tab switcher */}
-      <div className="sticky top-0 z-10 max-w-full overflow-x-auto bg-surface/95 py-2 backdrop-blur-sm">
+      <div ref={tabsRef} className="sticky top-0 z-10 max-w-full overflow-x-auto bg-surface/95 py-2 backdrop-blur-sm">
         <div role="tablist" aria-label="Report sections" className="inline-flex min-w-max gap-0.5 rounded-full bg-border p-1">
           {TABS.map((t) => {
           const active = activeTab === t.key
@@ -384,7 +446,7 @@ export default function ValidationResults({
             <button
               key={t.key}
               role="tab"
-              onClick={() => setActiveTab(t.key)}
+              onClick={() => selectTab(t.key)}
               aria-selected={active}
               title={badge?.title}
               className={`flex items-center gap-2 rounded-full px-5 py-2 font-serif text-[15px] transition-colors ${
@@ -410,7 +472,7 @@ export default function ValidationResults({
         </div>
       </div>
 
-      <div>
+      <div ref={contentRef}>
         {activeTab === 'sources' && (
           <div className="space-y-8">
             {groups.length > 0 ? (
@@ -428,13 +490,20 @@ export default function ValidationResults({
             <SectionNav sections={[
               { id: 'sec-market', label: 'Market signal' },
               ...(marketOpportunity?.viabilityIndex?.dimensions?.length > 0 ? [{ id: 'sec-dynamics', label: 'Viability breakdown' }] : []),
-              { id: 'sec-competitors', label: 'Competitive field' },
-              ...(competitors?.comparisonMatrix?.length > 0 ? [{ id: 'sec-compare', label: 'How you compare' }] : []),
             ]} />
             <div id="sec-market" className="scroll-mt-16 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
               <SectionDivider label="Market signal" />
               <MarketOpportunity data={marketOpportunity} error={errors?.marketOpportunity} sourceMap={sourceMap} />
             </div>
+          </div>
+        )}
+
+        {activeTab === 'competitors' && (
+          <div className="space-y-8">
+            <SectionNav sections={[
+              { id: 'sec-competitors', label: 'Competitive field' },
+              ...(competitors?.comparisonMatrix?.length > 0 ? [{ id: 'sec-compare', label: 'How you compare' }] : []),
+            ]} />
             <div id="sec-competitors" className="scroll-mt-16 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
               <SectionDivider label="Competitive field" />
               <CompetitorAnalysis data={competitors} error={errors?.competitors} />
@@ -456,26 +525,36 @@ export default function ValidationResults({
                 </p>
               )}
             </div>
-            {marketOpportunity?.voiceOfMarket?.length > 0 && (
+            {(marketOpportunity?.voiceOfMarket?.length > 0 || marketOpportunity?.voiceOfOwner?.length > 0) && (
               <div className="rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
-                <VoiceOfMarketSection quotes={marketOpportunity.voiceOfMarket} sourceMap={sourceMap} />
+                <VoiceOfMarketSection
+                  quotes={marketOpportunity.voiceOfMarket}
+                  summary={marketOpportunity.voiceOfMarketSummary}
+                  ownerQuotes={marketOpportunity.voiceOfOwner}
+                  ownerSummary={marketOpportunity.voiceOfOwnerSummary}
+                  sourceMap={sourceMap}
+                />
               </div>
             )}
           </div>
         )}
 
-        {activeTab === 'opportunity' && (
+        {activeTab === 'gaps' && (
           <div className="space-y-8">
-            <SectionNav sections={[
-              { id: 'sec-whitespace', label: 'Whitespace gaps' },
-              { id: 'sec-swot', label: 'Strengths & exposure' },
-              { id: 'sec-bearcase', label: 'Bear case' },
-              { id: 'sec-assumptions', label: 'Key assumptions' },
-            ]} />
             <div id="sec-whitespace" className="scroll-mt-16 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
               <SectionDivider label="Whitespace gaps" />
               <WhiteSpaceAnalysis data={whiteSpace} />
             </div>
+          </div>
+        )}
+
+        {activeTab === 'risks' && (
+          <div className="space-y-8">
+            <SectionNav sections={[
+              { id: 'sec-swot', label: 'Strengths & exposure' },
+              { id: 'sec-bearcase', label: 'Bear case' },
+              { id: 'sec-assumptions', label: 'Key assumptions' },
+            ]} />
             <div id="sec-swot" className="scroll-mt-16 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
               <SectionDivider label="Strengths & exposure" />
               <SwotAnalysis data={swot} error={errors?.swot} sourceMap={sourceMap} />
@@ -547,7 +626,9 @@ export default function ValidationResults({
         )}
       </div>
 
-      {sessionId && <ChatAdvisor key={sessionId} sessionId={sessionId} apiUrl={apiUrl} />}
+      {sessionId && (
+        <ChatAdvisor key={sessionId} sessionId={sessionId} apiUrl={apiUrl} onNavigateSection={navigateToSection} />
+      )}
     </div>
   )
 }

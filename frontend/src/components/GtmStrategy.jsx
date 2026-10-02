@@ -138,6 +138,45 @@ function PhaseSection({ section, sourceMap }) {
   )
 }
 
+function Targets({ data }) {
+  const cac = data.acquisition?.estimatedCac
+  const method = data.acquisition?.primaryMethod
+  const kpis = Array.isArray(data.kpis) ? data.kpis : []
+  if (!cac && !method && kpis.length === 0) return null
+  return (
+    <div className="mt-2 rounded-xl border border-border bg-surface p-5" data-testid="gtm-targets">
+      <p className="mb-3 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-muted">
+        <IconTrendingUp className="h-3.5 w-3.5" />
+        Acquisition cost and KPI targets
+        <span className="rounded-full border border-border-strong px-1.5 py-0.5 normal-case tracking-normal">Estimate</span>
+      </p>
+      {(method || cac) && (
+        <div className="mb-4">
+          {cac && (
+            <p className="text-sm text-text">
+              Estimated CAC <span className="font-semibold">${Math.round(cac.low).toLocaleString()} – ${Math.round(cac.high).toLocaleString()}</span> per paying customer
+            </p>
+          )}
+          {method && <p className="mt-1 text-sm leading-relaxed text-text">{method}</p>}
+          {cac?.basis && <p className="mt-1 text-xs leading-relaxed text-muted">{cac.basis}</p>}
+        </div>
+      )}
+      {kpis.length > 0 && (
+        <ul className="grid gap-2 sm:grid-cols-2">
+          {kpis.map((k, i) => (
+            <li key={i} className="rounded-lg border border-border bg-panel p-3">
+              <p className="text-xs text-muted">{k.name}</p>
+              <p className="mt-0.5 text-sm font-semibold text-text">{k.target}</p>
+              {k.timeframe && <p className="font-mono text-[10px] text-muted">{k.timeframe}</p>}
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-3 text-[11px] text-muted">Model estimates from typical channel costs, not measured figures. Validate them in a pilot.</p>
+    </div>
+  )
+}
+
 export default function GtmStrategy({ data, error, sourceMap, roadmap }) {
   if (data === null || data === undefined) {
     return (
@@ -205,6 +244,8 @@ export default function GtmStrategy({ data, error, sourceMap, roadmap }) {
           )
         })}
       </div>
+
+      <Targets data={data} />
 
       <GtmCommercialModel data={data.commercialModel} />
     </div>

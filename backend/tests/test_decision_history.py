@@ -12,7 +12,7 @@ from unittest.mock import patch
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
 
-from agent.chat_graph import respond_node, run_chat_turn
+from agent.chat_graph import classify_section, respond_node, run_chat_turn
 from agent.decision_history import append_decision, extract_decision, summarize_decisions
 from agent.session_store import append_turn, create_session, get_session
 from agent.session_store import clear_sessions
@@ -152,6 +152,31 @@ class RunChatTurnEndToEndTests(unittest.TestCase):
         # at the start of run_chat_turn, after the previous append_turn.
         second_call_state = invoke.call_args_list[1][0][0]
         self.assertEqual(len(second_call_state["decisions"]), 1)
+
+
+class ClassifySectionTests(unittest.TestCase):
+    """agent/chat_graph.py's classify_section - ties a chat question to the
+    report section it's about, so the frontend can auto-scroll to it."""
+
+    def test_competitor_question_maps_to_competitors_section(self):
+        section = classify_section("Who are my main competitors?")
+        self.assertEqual(section, {"tab": "competitors", "id": "sec-competitors", "label": "Competitive field"})
+
+    def test_tam_question_maps_to_market_section(self):
+        section = classify_section("What's the TAM for this idea?")
+        self.assertEqual(section["id"], "sec-market")
+
+    def test_comparison_phrasing_takes_priority_over_generic_competitor_match(self):
+        section = classify_section("How do I compare to my competitors?")
+        self.assertEqual(section["id"], "sec-compare")
+
+    def test_unrelated_message_returns_none(self):
+        self.assertIsNone(classify_section("Thanks, that's helpful!"))
+
+    def test_customer_question_has_no_pinned_element_id(self):
+        section = classify_section("Who is my ideal customer?")
+        self.assertEqual(section["tab"], "customers")
+        self.assertIsNone(section["id"])
 
 
 if __name__ == "__main__":

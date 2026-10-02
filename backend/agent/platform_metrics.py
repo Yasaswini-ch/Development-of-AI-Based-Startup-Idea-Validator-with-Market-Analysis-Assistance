@@ -43,11 +43,39 @@ def _day_key(timestamp: float) -> str:
     return datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%Y-%m-%d")
 
 
+# The graph times nodes under their graph names, but failures and the live
+# counters use the short names the dashboard tracks. Normalise to the short
+# name so one node's latency, runs and failures are counted together.
+_NODE_ALIASES = {
+    "swot_analysis": "swot",
+    "mvp_recommendation": "mvp",
+    "gtm_strategy": "gtm",
+}
+
+
+def _canonical_node(name: str | None) -> str | None:
+    return _NODE_ALIASES.get(name, name)
+
+
 def _node_rate(snapshot: dict, node: str) -> float | None:
     success = snapshot.get(f"node.{node}.success", 0)
     failure = snapshot.get(f"node.{node}.failure", 0)
     total = success + failure
     return _pct(success, total) if total else None
+
+
+def _durable_node_rate(runs: int, failures: int) -> float | None:
+    """Success rate from the durable event log: every node execution records a
+    node_latency event and every failure records a pipeline_error event, so
+    rate = (runs - failures) / runs. Unlike the in-process counters this
+    survives restarts, which on a host that sleeps and redeploys is what made
+    the chart read "Not enough data yet". A node skipped by quick mode or an
+    upstream failure still records a (near-instant) run, so those count as
+    completed without error.
+    """
+    if runs <= 0:
+        return None
+    return _pct(max(runs - failures, 0), runs)
 
 
 def _daily_series(rows: list[dict], days: int) -> list[dict]:
@@ -158,18 +186,47 @@ def get_platform_metrics(days: int = 30) -> dict:
     error_events = events.query("pipeline_error", since=since, limit=200)
     email_events = events.query("email_sent", since=since)
 
-    llm_success = sum(snapshot.get(f"node.{n}.success", 0) for n in _LLM_NODES)
-    llm_failure = sum(snapshot.get(f"node.{n}.failure", 0) for n in _LLM_NODES)
-
     needs_deep_analysis = sum(
         1 for e in error_events if (e["detail"] or {}).get("errorType") == "NeedsDeepAnalysisError"
     )
 
     avg_latency_by_node = {}
+    runs_by_node: Counter = Counter()
+    for event in latency_events:
+        runs_by_node[_canonical_node(event["node"])] += 1
     for node in _ALL_TRACKED_NODES:
-        samples = [e["detail"]["seconds"] for e in latency_events if e["node"] == node and e.get("detail")]
+        samples = [
+            e["detail"]["seconds"]
+            for e in latency_events
+            if _canonical_node(e["node"]) == node and e.get("detail")
+        ]
         if samples:
             avg_latency_by_node[node] = round(sum(samples) / len(samples), 2)
+
+    # The recent-errors list above is capped at 200 rows; rates need every
+    # failure in the window, so count them separately.
+    failures_by_node = Counter(
+        _canonical_node(e["node"]) for e in events.query("pipeline_error", since=since) if e.get("node")
+    )
+    node_success_rates = {}
+    for node in _ALL_TRACKED_NODES:
+        rate = _durable_node_rate(runs_by_node.get(node, 0), failures_by_node.get(node, 0))
+        if rate is None:
+            rate = _node_rate(snapshot, node)  # nothing durable for this node yet
+        if rate is not None:
+            node_success_rates[node] = rate
+
+    # The headline "API success rate" must agree with the node chart and the
+    # deep-analysis rate above it, so it comes from the same durable log. The
+    # in-process counters only cover runs since the last restart, which let it
+    # read 100% beside a 30% deep-analysis rate.
+    llm_runs = sum(runs_by_node.get(n, 0) for n in _LLM_NODES)
+    if llm_runs:
+        llm_failure = min(sum(failures_by_node.get(n, 0) for n in _LLM_NODES), llm_runs)
+        llm_success = llm_runs - llm_failure
+    else:
+        llm_success = sum(snapshot.get(f"node.{n}.success", 0) for n in _LLM_NODES)
+        llm_failure = sum(snapshot.get(f"node.{n}.failure", 0) for n in _LLM_NODES)
 
     overall_latency_samples = [e["detail"]["seconds"] for e in latency_events if e.get("detail")]
 
@@ -206,7 +263,7 @@ def get_platform_metrics(days: int = 30) -> dict:
             {**day, "hits": hits_by_day.get(day["date"], 0), "hitRate": _pct(hits_by_day.get(day["date"], 0), hits_by_day.get(day["date"], 0) + day["count"])}
             for day in _daily_series(cache_misses, days)
         ],
-        "nodeSuccessRates": {node: _node_rate(snapshot, node) for node in _ALL_TRACKED_NODES if _node_rate(snapshot, node) is not None},
+        "nodeSuccessRates": node_success_rates,
         "modelUsage": [{"model": model, "count": count, "percentage": _pct(count, len(model_events))} for model, count in model_counts.most_common()],
         "latencyByNode": avg_latency_by_node,
         "tokenUsage": _token_usage(model_events, days, total_runs),

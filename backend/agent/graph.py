@@ -13,7 +13,7 @@ from .contradiction_detector import detect_contradictions
 from .experiment_generator import generate_experiments
 from .gtm_agent import analyze_gtm
 from .llm import NeedsDeepAnalysisError
-from .market_agent import MAX_SOURCES_IN_CONTEXT, analyze_market_opportunity
+from .market_agent import analyze_market_opportunity
 from .mvp_agent import analyze_mvp
 from .revenue_agent import analyze_revenue_models
 from .opportunity_score import calculate_opportunity_score
@@ -24,7 +24,12 @@ from .delivery_roadmap import build_delivery_roadmap
 from .strategic_wedge import build_strategic_wedges
 from .verdict import build_verdict
 from .viability_score import calculate_market_viability, calculate_viability_index
-from .voice_of_market import extract_voice_of_market
+from .voice_of_market import (
+    extract_voice_of_market,
+    extract_voice_of_owner,
+    summarize_voice_of_market,
+    summarize_voice_of_owner,
+)
 from .white_space import analyze_white_space
 
 logger = logging.getLogger(__name__)
@@ -384,6 +389,9 @@ def market_opportunity_node(state: PipelineState) -> PipelineState:
             market_opportunity = {
                 **market_opportunity,
                 "voiceOfMarket": extract_voice_of_market(results),
+                "voiceOfMarketSummary": summarize_voice_of_market(results),
+                "voiceOfOwner": extract_voice_of_owner(results),
+                "voiceOfOwnerSummary": summarize_voice_of_owner(results),
             }
 
         logger.info("[market_opportunity] COMPLETE")
@@ -436,14 +444,15 @@ def competitor_discovery_node(state: PipelineState) -> PipelineState:
     results = state.get("results", [])
 
     try:
-        # Quick mode keeps competitor discovery LLM-free (NER only); deep
-        # mode adds one bounded profiling call on top of it.
+        # Competitor discovery always runs the LLM profiling pass (for the
+        # comparison matrix and idea-specific gap analysis) regardless of
+        # pipeline mode - it fails silently back to NER-only on quota issues.
         competitors = analyze_competitors(
             idea,
             target_customer,
             problem,
             results,
-            profile=state.get("mode") != "quick",
+            profile=True,
             allow_local=state.get("allowLocalLlm", False),
         )
 
@@ -725,7 +734,7 @@ def mvp_node(state: PipelineState) -> PipelineState:
         _record_node_failure("mvp", exc)
         return {
             "mvp": None,
-            "errors": {"mvp": _friendly_error_message(exc)},
+            "errors": {**state.get("errors", {}), "mvp": _friendly_error_message(exc)},
         }
 
     # Pillar 5B: stage-gated delivery roadmap, deterministic and built from
@@ -769,7 +778,7 @@ def gtm_node(state: PipelineState) -> PipelineState:
         _record_node_failure("gtm", exc)
         return {
             "gtm": None,
-            "errors": {"gtm": _friendly_error_message(exc)},
+            "errors": {**state.get("errors", {}), "gtm": _friendly_error_message(exc)},
         }
 
     # Pillar 5A: unit economics + pricing tiers, deterministic (see
@@ -961,19 +970,16 @@ def _collect_claims(state: PipelineState) -> list[dict]:
 
 
 def _source_relevance_by_id(results: list) -> dict[str, float]:
-    """Map each "src-N" id back to its relevance score, using the exact same
-    ordering compact_sources() used when the agents built their prompts -
-    so a sourceId a claim cites resolves to the real score of the source it
-    actually came from, not a guess.
-
-    Uses market_agent.py's MAX_SOURCES_IN_CONTEXT (10), not
-    compact_sources()'s own default limit (6), because market_agent.py
-    shows the LLM up to 10 sources and sanitizes trend/segment sourceIds
-    against that same wider window - a legitimate market citation of
-    src-7..src-10 would otherwise have no relevance score here and get
-    silently dropped from averageRelevance below.
+    """Map each canonical "src-N" id back to its relevance score. The id is
+    the source's 1-based position in the full `results` list (see
+    compact_sources and market_agent._build_context), and claims can cite
+    any position - the market agent numbers all of `results` and the
+    deterministic fallback cites by URL match - so the lookup must cover the
+    whole list, not just the first few. A shorter window silently dropped
+    every citation past it, which read as "No cited sources yet" / 0%
+    overall confidence on a run that had 56 sources and cited claims.
     """
-    sources = compact_sources(results, limit=MAX_SOURCES_IN_CONTEXT)
+    sources = compact_sources(results, limit=len(results) or 1)
     lookup = {}
     for index, source in enumerate(sources):
         score = results[index].get("score") if index < len(results) else None
@@ -1059,14 +1065,24 @@ def _confidence_dashboard(state: PipelineState) -> dict:
 
     cited_ids: set[str] = set()
     claims_with_source = 0
-    claims_with_multiple = 0
+    source_id_claim_count: dict[str, int] = {}
     for claim in claims:
         source_ids = claim.get("sourceIds") or []
         if source_ids:
             claims_with_source += 1
             cited_ids.update(source_ids)
-        if len(source_ids) >= 2:
-            claims_with_multiple += 1
+        for sid in source_ids:
+            source_id_claim_count[sid] = source_id_claim_count.get(sid, 0) + 1
+
+    # "Cross-source agreement" = sources that back 2+ distinct findings.
+    # The old metric (claims with 2+ sourceIds each) was structurally always
+    # 0 because the strategy agents attach at most one sourceId per claim —
+    # so it reported 0% on every run regardless of evidence quality.
+    # Corroborated sources (one source cited by multiple findings) is the
+    # meaningful signal: does the same evidence thread appear in more than
+    # one part of the analysis?
+    corroborated = sum(1 for cnt in source_id_claim_count.values() if cnt >= 2)
+    total_unique_cited = len(source_id_claim_count)
 
     def _pct(numerator: int, denominator: int) -> int:
         return round((numerator / denominator) * 100) if denominator else 0
@@ -1081,11 +1097,22 @@ def _confidence_dashboard(state: PipelineState) -> dict:
     agreeing_cited = sum(1 for score in cited_scores if score >= 0.5)
     total_cited = len(cited_scores)
 
+    coverage_pct = _pct(claims_with_source, total_claims)
+    cross_pct = _pct(corroborated, total_unique_cited)
+    relevance_pct = round(average_relevance * 100) if average_relevance is not None else 0
+    # Headline = weighted blend of the four numbers shown under it. The old
+    # headline (share of cited sources scoring >= 0.5) was a cliff: sources
+    # at 0.45 counted as zero, so a report with 44% source coverage could
+    # read 0% overall. 0 stays 0 only when nothing is cited at all.
+    overall_pct = (
+        round(0.4 * coverage_pct + 0.2 * cross_pct + 0.2 * coverage_pct + 0.2 * relevance_pct) if total_cited else 0
+    )
+
     return {
         "agreeingSources": agreeing_cited,
         "totalSources": total_cited,
-        "percentage": _pct(agreeing_cited, total_cited),
-        "label": f"{agreeing_cited}/{total_cited} sources agree" if total_cited else "No cited sources yet",
+        "percentage": overall_pct,
+        "label": f"{total_cited} cited sources, {agreeing_cited} strongly relevant" if total_cited else "No cited sources yet",
         "sourceCoverage": {
             "claimsWithSource": claims_with_source,
             "totalClaims": total_claims,
@@ -1093,9 +1120,9 @@ def _confidence_dashboard(state: PipelineState) -> dict:
         },
         "averageRelevance": average_relevance,
         "crossSourceAgreement": {
-            "claimsWithMultipleSources": claims_with_multiple,
-            "totalClaims": total_claims,
-            "percentage": _pct(claims_with_multiple, total_claims),
+            "corroboratedSources": corroborated,
+            "totalUniqueSources": total_unique_cited,
+            "percentage": _pct(corroborated, total_unique_cited),
         },
         "directEvidenceRatio": {
             "direct": claims_with_source,

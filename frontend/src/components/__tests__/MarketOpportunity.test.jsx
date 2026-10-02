@@ -23,6 +23,22 @@ describe('MarketOpportunity', () => {
     expect(screen.getByText('USD 40M obtainable in year one.')).toBeInTheDocument()
   })
 
+  it('labels an estimated SAM/SOM as an estimate with its assumption, and never as sourced', () => {
+    const data = {
+      ...mockMarketOpportunity,
+      tam: { text: 'USD 2.4B total addressable market.', sourceIds: ['src-1'] },
+      sam: { text: 'About USD 480M (estimate)', sourceIds: [], estimated: true, assumptions: 'Assumes 20% of the TAM is reachable.' },
+      som: { text: 'About USD 10M (estimate)', sourceIds: [], estimated: true, assumptions: 'Assumes 2% of the SAM is winnable.' },
+    }
+    render(<MarketOpportunity data={data} sourceMap={sourceMap} />)
+
+    expect(screen.getAllByText('Estimate')).toHaveLength(2)
+    expect(screen.getByText(/Assumes 20% of the TAM is reachable\./)).toBeInTheDocument()
+    expect(screen.getAllByText(/Not from a source\./)).toHaveLength(2)
+    // The sourced TAM is not marked as an estimate.
+    expect(screen.getByText('USD 2.4B total addressable market.').closest('div')).not.toHaveTextContent('Estimate')
+  })
+
   it('omits the tier section entirely when none of TAM/SAM/SOM are supported by sources', () => {
     const data = { ...mockMarketOpportunity, tam: null, sam: null, som: null }
     render(<MarketOpportunity data={data} sourceMap={sourceMap} />)

@@ -15,9 +15,15 @@ sys.path.insert(0, str(BACKEND_DIR))
 
 from agent.output_guard import provenance
 from agent.viability_score import calculate_viability_index
-from agent.voice_of_market import MAX_QUOTES, extract_voice_of_market
+from agent.voice_of_market import (
+    MAX_QUOTES,
+    extract_voice_of_market,
+    extract_voice_of_owner,
+    summarize_voice_of_market,
+    summarize_voice_of_owner,
+)
 
-_QUOTE_KEYS = {"quote", "speakerOrSource", "sourceId", "url", "sentiment", "taggedDimension"}
+_QUOTE_KEYS = {"quote", "speakerOrSource", "sourceId", "url", "sentiment", "taggedDimension", "theme"}
 _DIMENSION_NAMES = [
     "Demand Urgency",
     "Expansion Velocity",
@@ -75,15 +81,144 @@ class VoiceOfMarketTests(unittest.TestCase):
         self.assertNotIn("src-3", ids)
 
     def test_at_most_one_quote_per_source_and_capped(self):
-        many = [dict(_RESULTS[1], url=f"https://reddit.com/{i}") for i in range(10)]
+        many = [dict(_RESULTS[1], url=f"https://reddit.com/{i}") for i in range(MAX_QUOTES + 10)]
         quotes = extract_voice_of_market(many)
         self.assertEqual(len(quotes), MAX_QUOTES)
         self.assertEqual(len({q["sourceId"] for q in quotes}), MAX_QUOTES)
+
+    def test_a_dimension_with_fewer_candidates_is_not_starved_out_by_the_cap(self):
+        # Regression: friction (18) + demand (18) alone exceed MAX_QUOTES, so a
+        # plain sort-then-slice would drop every tailwind quote even though
+        # tailwind candidates exist - the summary would then report a nonzero
+        # count for a dimension with zero quotes and no filter tab to show it.
+        friction = [
+            {"url": f"https://a.example/{i}", "snippet": "It is so tedious and frustrating to chase late payments every month."}
+            for i in range(18)
+        ]
+        demand = [
+            {"url": f"https://b.example/{i}", "snippet": "I am looking for a simpler alternative to what we use today."}
+            for i in range(18)
+        ]
+        tailwind = [
+            {"url": f"https://c.example/{i}", "snippet": "The market is growing fast and adoption keeps rising every quarter."}
+            for i in range(5)
+        ]
+        quotes = extract_voice_of_market(friction + demand + tailwind)
+        dimensions_present = {q["taggedDimension"] for q in quotes}
+        self.assertIn("Structural Tailwind", dimensions_present)
+
+    def test_theme_is_tagged_from_the_sentence_content(self):
+        results = [
+            {"url": "https://a.example/1", "snippet": "The pricing is way too expensive for what you get every month."},
+            {"url": "https://b.example/2", "snippet": "Integrating with our existing API was so difficult and confusing it took weeks."},
+        ]
+        quotes = {q["sourceId"]: q for q in extract_voice_of_market(results)}
+        self.assertEqual(quotes["src-1"]["theme"], "Pricing & Cost")
+        self.assertEqual(quotes["src-2"]["theme"], "Integrations & Compatibility")
+
+    def test_theme_falls_back_to_general(self):
+        first = extract_voice_of_market(_RESULTS)[0]
+        self.assertIn(first["theme"], {"General", "Pricing & Cost", "Integrations & Compatibility",
+                                        "Reliability & Support", "Onboarding & Usability",
+                                        "Competition & Alternatives"})
 
     def test_no_usable_snippets_returns_empty_list(self):
         self.assertEqual(extract_voice_of_market([]), [])
         self.assertEqual(extract_voice_of_market([{"snippet": "Nothing relevant here at all, just words."}]), [])
         self.assertEqual(extract_voice_of_market(None), [])
+
+
+_OWNER_RESULTS = [
+    {
+        "url": "https://a.example/hiring",
+        "snippet": "As a small SaaS founder, it's been hard to hire good engineers who can also do support.",
+    },
+    {
+        "url": "https://b.example/growth",
+        "snippet": "We scaled our invoicing startup to $40k MRR within a year of launch.",
+    },
+    {
+        "url": "https://c.example/pivot",
+        "snippet": "We pivoted our billing product twice before finding a market that would actually pay.",
+    },
+    {
+        "url": "https://d.example/customer",
+        "snippet": "I hate how tedious it is to chase multi-client payouts every single month for my freelance work.",
+    },
+]
+
+
+class VoiceOfOwnerTests(unittest.TestCase):
+    def test_quotes_match_the_contract_shape(self):
+        quotes = extract_voice_of_owner(_OWNER_RESULTS)
+        self.assertTrue(quotes)
+        for quote in quotes:
+            self.assertEqual(set(quote), _QUOTE_KEYS)
+
+    def test_operational_friction_ranks_first_and_is_negative(self):
+        first = extract_voice_of_owner(_OWNER_RESULTS)[0]
+        self.assertEqual(first["taggedDimension"], "Operational Friction")
+        self.assertEqual(first["sentiment"], "negative_towards_incumbent")
+
+    def test_growth_quote_is_positive(self):
+        quotes = {q["sourceId"]: q for q in extract_voice_of_owner(_OWNER_RESULTS)}
+        self.assertEqual(quotes["src-2"]["taggedDimension"], "Growth & Traction")
+        self.assertEqual(quotes["src-2"]["sentiment"], "positive_market_signal")
+
+    def test_customer_side_sentence_is_not_picked_up_as_owner_voice(self):
+        ids = {q["sourceId"] for q in extract_voice_of_owner(_OWNER_RESULTS)}
+        self.assertNotIn("src-4", ids)
+
+    def test_owner_and_customer_extraction_are_independent(self):
+        # The customer-side extractor should not surface the owner-only quotes either.
+        ids = {q["sourceId"] for q in extract_voice_of_market(_OWNER_RESULTS)}
+        self.assertIn("src-4", ids)
+        self.assertNotIn("src-2", ids)
+
+    def test_no_usable_snippets_returns_empty_list(self):
+        self.assertEqual(extract_voice_of_owner([]), [])
+        self.assertEqual(extract_voice_of_owner(None), [])
+
+
+class VoiceOfOwnerSummaryTests(unittest.TestCase):
+    def test_counts_every_owner_dimension(self):
+        summary = summarize_voice_of_owner(_OWNER_RESULTS)
+        self.assertEqual(
+            set(summary["dimensionCounts"]),
+            {"Operational Friction", "Growth & Traction", "Strategic Signal"},
+        )
+        self.assertGreaterEqual(summary["sourcesWithSignal"], 3)
+
+    def test_every_dimension_key_present_even_when_zero(self):
+        summary = summarize_voice_of_owner([])
+        self.assertEqual(
+            summary["dimensionCounts"],
+            {"Operational Friction": 0, "Growth & Traction": 0, "Strategic Signal": 0},
+        )
+
+
+class VoiceOfMarketSummaryTests(unittest.TestCase):
+    def test_counts_every_tagged_sentence_not_just_the_capped_quotes(self):
+        total = MAX_QUOTES + 10
+        many = [dict(_RESULTS[1], url=f"https://reddit.com/{i}") for i in range(total)]
+        summary = summarize_voice_of_market(many)
+        self.assertEqual(summary["dimensionCounts"]["Observed Friction"], total)
+        self.assertEqual(summary["sourcesWithSignal"], total)
+        self.assertEqual(summary["sourcesScanned"], total)
+        # extract_voice_of_market caps to MAX_QUOTES, but the summary must not.
+        self.assertGreater(summary["sourcesWithSignal"], len(extract_voice_of_market(many)))
+
+    def test_every_dimension_key_present_even_when_zero(self):
+        summary = summarize_voice_of_market([])
+        self.assertEqual(
+            summary["dimensionCounts"],
+            {"Observed Friction": 0, "Demand Signal": 0, "Structural Tailwind": 0},
+        )
+        self.assertEqual(summary["sourcesScanned"], 0)
+        self.assertEqual(summary["sourcesWithSignal"], 0)
+
+    def test_handles_none_and_non_dict_results(self):
+        self.assertEqual(summarize_voice_of_market(None)["sourcesScanned"], 0)
 
 
 class ProvenanceTests(unittest.TestCase):

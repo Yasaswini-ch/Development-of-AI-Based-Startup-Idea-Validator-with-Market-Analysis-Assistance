@@ -47,7 +47,7 @@ The full request cycle involves two external API categories: **search** and **LL
 
 #### 3.1.1 Search Angles
 
-The retrieval layer expands one idea into up to five distinct angles (from [`agent/retrieval.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/retrieval.py)):
+The retrieval layer expands one idea into up to five distinct angles (from [`agent/retrieval.py`](../backend/agent/retrieval.py)):
 
 | Angle Label | Query Template | Always Fired? |
 |---|---|---|
@@ -73,7 +73,7 @@ Stopwords (`a`, `the`, `market`, `growth`, `competitors`, etc.) are stripped bef
 
 #### 3.2.1 Model Configuration
 
-Three Groq-hosted models are configured in [`agent/llm.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/llm.py), each with its own separate rate-limit quota bucket:
+Three Groq-hosted models are configured in [`agent/llm.py`](../backend/agent/llm.py), each with its own separate rate-limit quota bucket:
 
 | Role | Model String | `reasoning_effort` | Free Rate Limit | Input Price | Output Price |
 |---|---|---|---|---|---|
@@ -115,7 +115,7 @@ At the **fallback models**: $0.075 input / $0.30 output (gpt-oss-20b) → ~**$0.
 
 #### 3.2.3 Rate-Limit Fallback Logic
 
-Implemented in [`agent/llm.py`'s `kickoff_with_fallback()`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/llm.py#L104-L162):
+Implemented in [`agent/llm.py`'s `kickoff_with_fallback()`](../backend/agent/llm.py#L104-L162):
 
 ```
 Primary model → Rate limited? → Switch to fallback 1 immediately (no wait)
@@ -145,7 +145,7 @@ These nodes produce real, user-visible output with no API spend:
 
 ### 3.4 Request Caching (Cost Mitigation)
 
-An in-memory cache in [`backend/main.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/main.py) prevents paying for repeat submissions:
+An in-memory cache in [`backend/main.py`](../backend/main.py) prevents paying for repeat submissions:
 
 | Parameter | Value |
 |---|---|
@@ -220,7 +220,7 @@ Full cost for one unique validation request (cache miss), assuming **paid Tavily
 
 #### 4.2.2 Verified Accuracy (Live Tests)
 
-Cross-industry testing results from the Milestone 2 verification pass (see [`docs/milestone2-verification.md`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/docs/milestone2-verification.md)):
+Cross-industry testing results from the Milestone 2 verification pass (see [`docs/milestone2-verification.md`](milestone2-verification.md)):
 
 | Idea Tested | Real Competitors Identified | False Positives |
 |---|---|---|
@@ -452,13 +452,13 @@ All figures in this document are derived directly from the source code as of com
 
 | Source | What It Documents |
 |---|---|
-| [`backend/agent/llm.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/llm.py) | Model names, `reasoning_effort` values, fallback logic, retry cap |
-| [`backend/agent/retrieval.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/retrieval.py) | Search angles, per-angle result cap, domain exclusion list |
-| [`backend/agent/tools.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/tools.py) | Tavily integration, free fallback chain, relevance scoring formula |
-| [`backend/agent/market_agent.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/market_agent.py) | Context window bounds, output validation logic |
-| [`backend/agent/competitor_agent.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/competitor_agent.py) | NER filters, mention-count thresholds, price/breadth heuristics |
-| [`backend/agent/graph.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/graph.py) | `confidence_node`'s aggregation logic and output shape (the module actually wired into `/validate` - a separately-built `agent/confidence.py` was never reachable and has since been removed) |
-| [`backend/agent/opportunity_score.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/opportunity_score.py) | Score weights, signal thresholds, fallback cap |
-| [`backend/main.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/main.py) | Cache TTL, cache key normalization, partial-failure response shape |
-| [`docs/milestone2-verification.md`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/docs/milestone2-verification.md) | Live test results used in §4.2.2 accuracy table |
-| [`AGENTS.md`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/AGENTS.md) | Bug history, design rationale for API-cost trade-offs |
+| [`backend/agent/llm.py`](../backend/agent/llm.py) | Model names, `reasoning_effort` values, fallback logic, retry cap |
+| [`backend/agent/retrieval.py`](../backend/agent/retrieval.py) | Search angles, per-angle result cap, domain exclusion list |
+| [`backend/agent/tools.py`](../backend/agent/tools.py) | Tavily integration, free fallback chain, relevance scoring formula |
+| [`backend/agent/market_agent.py`](../backend/agent/market_agent.py) | Context window bounds, output validation logic |
+| [`backend/agent/competitor_agent.py`](../backend/agent/competitor_agent.py) | NER filters, mention-count thresholds, price/breadth heuristics |
+| [`backend/agent/graph.py`](../backend/agent/graph.py) | `confidence_node`'s aggregation logic and output shape (the module actually wired into `/validate` - a separately-built `agent/confidence.py` was never reachable and has since been removed) |
+| [`backend/agent/opportunity_score.py`](../backend/agent/opportunity_score.py) | Score weights, signal thresholds, fallback cap |
+| [`backend/main.py`](../backend/main.py) | Cache TTL, cache key normalization, partial-failure response shape |
+| [`docs/milestone2-verification.md`](milestone2-verification.md) | Live test results used in §4.2.2 accuracy table |
+| `AGENTS.md` | Bug history, design rationale for API-cost trade-offs |

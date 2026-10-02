@@ -1,4 +1,5 @@
 import datetime as dt
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -8,6 +9,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
+os.environ.setdefault("WEB_CACHE", "0")  # tests must never read or write the shared lookup cache (agent/web_cache.py)
 sys.path.insert(0, str(BACKEND_DIR))
 
 import main
@@ -174,10 +176,11 @@ class MilestoneThreeTests(unittest.TestCase):
 
         # 3 of 5 claims cite at least one source: strengths, opportunities, risks.
         self.assertEqual(confidence["sourceCoverage"], {"claimsWithSource": 3, "totalClaims": 5, "percentage": 60})
-        # Only "opportunities" cites 2+ sources.
+        # src-1 is cited by strengths + opportunities, src-2 by opportunities + risks:
+        # both are corroborated (cited by 2+ distinct findings) out of 2 unique sources.
         self.assertEqual(
             confidence["crossSourceAgreement"],
-            {"claimsWithMultipleSources": 1, "totalClaims": 5, "percentage": 20},
+            {"corroboratedSources": 2, "totalUniqueSources": 2, "percentage": 100},
         )
         self.assertEqual(confidence["directEvidenceRatio"], {"direct": 3, "inferred": 2, "percentage": 60})
         # Cited sources are src-1 (score 0.8) and src-2 (score 0.4) -> mean 0.6.
@@ -220,10 +223,11 @@ class MilestoneThreeTests(unittest.TestCase):
         # 2 of 3 market claims cite at least one source: the trend with
         # src-1, and the segment with src-1/src-2.
         self.assertEqual(confidence["sourceCoverage"], {"claimsWithSource": 2, "totalClaims": 3, "percentage": 67})
-        # Only the segment cites 2+ sources.
+        # src-1 is cited by the trend + the segment (corroborated); src-2 only by the
+        # segment, out of 2 unique cited sources.
         self.assertEqual(
             confidence["crossSourceAgreement"],
-            {"claimsWithMultipleSources": 1, "totalClaims": 3, "percentage": 33},
+            {"corroboratedSources": 1, "totalUniqueSources": 2, "percentage": 50},
         )
 
     def test_confidence_dashboard_source_recency_reports_known_and_unknown_dates(self):
@@ -307,18 +311,19 @@ class MilestoneThreeTests(unittest.TestCase):
         }
         final = confidence_dashboard_node(state)["confidence"]
 
-        # Only src-1 (score 0.9) is cited - 1/1 cited sources agree, a
-        # meaningfully different (and honest) number from the diluted
-        # raw-pool 10% above, not just a cosmetic tweak.
+        # Only src-1 (score 0.9) is cited: the headline is the blend of
+        # coverage 100, cross-source 0 (one source, one finding), direct
+        # evidence 100 and relevance 90 - meaningfully different from the
+        # diluted raw-pool 5% above.
         self.assertEqual(final["agreeingSources"], 1)
         self.assertEqual(final["totalSources"], 1)
-        self.assertEqual(final["percentage"], 100)
-        self.assertEqual(final["label"], "1/1 sources agree")
+        self.assertEqual(final["percentage"], 78)
+        self.assertEqual(final["label"], "1 cited sources, 1 strongly relevant")
 
     def test_confidence_dashboard_overall_percentage_reflects_weak_cited_sources_too(self):
-        # The fix isn't "always show a higher number" - a claim citing only
-        # weak sources must still show a low percentage, just computed over
-        # the right population.
+        # Weak cited sources must still pull the headline down relative to
+        # strong ones (relevance is 20% of the blend): 0.2 relevance gives
+        # 64 where a 0.9 source gives 78.
         state = {
             "results": [{"title": "Weak", "url": "https://a", "score": 0.2}],
             "swot": {
@@ -335,7 +340,25 @@ class MilestoneThreeTests(unittest.TestCase):
         final = confidence_dashboard_node(state)["confidence"]
         self.assertEqual(final["agreeingSources"], 0)
         self.assertEqual(final["totalSources"], 1)
-        self.assertEqual(final["percentage"], 0)
+        self.assertEqual(final["percentage"], 64)
+
+    def test_confidence_dashboard_headline_is_not_zero_when_cited_sources_are_only_mid_relevance(self):
+        # Regression: 5 cited sources averaging 28% relevance (none >= 0.5)
+        # with 44% source coverage used to read 0% overall.
+        results = [{"title": f"S{i}", "url": f"https://s{i}", "score": 0.28} for i in range(1, 6)]
+        strengths = [{"text": f"c{i}", "sourceIds": [f"src-{i}"]} for i in range(1, 6)] + [
+            {"text": f"uncited {i}", "sourceIds": []} for i in range(6)
+        ]
+        state = {
+            "results": results,
+            "swot": {"strengths": strengths, "weaknesses": [], "opportunities": [], "threats": [], "risks": []},
+            "mvp": None,
+            "gtm": None,
+            "errors": {},
+        }
+        final = confidence_dashboard_node(state)["confidence"]
+        self.assertEqual(final["agreeingSources"], 0)
+        self.assertGreater(final["percentage"], 0)
 
     def test_confidence_dashboard_labels_no_citations_honestly_rather_than_a_bare_0_0(self):
         state = {
@@ -355,6 +378,32 @@ class MilestoneThreeTests(unittest.TestCase):
         self.assertEqual(final["totalSources"], 0)
         self.assertEqual(final["percentage"], 0)
         self.assertEqual(final["label"], "No cited sources yet")
+
+    def test_confidence_dashboard_counts_citations_beyond_the_first_ten_sources(self):
+        # Regression: the relevance lookup only covered src-1..src-10, so a
+        # run with many sources whose claims cited later ones (market agent,
+        # deterministic fallback) showed 0% and "No cited sources yet".
+        state = {
+            "results": [{"title": f"S{i}", "url": f"https://s{i}", "score": 0.9} for i in range(1, 57)],
+            "swot": {
+                "strengths": [
+                    {"text": "Cites a late source", "sourceIds": ["src-40"]},
+                    {"text": "Cites another", "sourceIds": ["src-56", "src-40"]},
+                ],
+                "weaknesses": [],
+                "opportunities": [],
+                "threats": [],
+                "risks": [],
+            },
+            "mvp": None,
+            "gtm": None,
+            "errors": {},
+        }
+        final = confidence_dashboard_node(state)["confidence"]
+        self.assertEqual(final["totalSources"], 2)
+        self.assertEqual(final["agreeingSources"], 2)
+        # coverage 100, cross-source 50 (src-40 cited twice), direct 100, relevance 90.
+        self.assertEqual(final["percentage"], 88)
 
     def test_session_and_chat_history(self):
         session_id = create_session({"idea": "Idea"})

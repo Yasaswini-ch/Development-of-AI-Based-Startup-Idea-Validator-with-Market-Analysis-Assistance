@@ -46,7 +46,7 @@ sequenceDiagram
 > This section originally described an in-memory dict. The cache now lives in the
 > `validation_cache` database table; the key derivation and TTL below are unchanged.
 
-The caching engine in [`backend/main.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/main.py) uses cryptographic SHA-256 hashing to generate cache keys from normalized input parameters:
+The caching engine in [`backend/main.py`](../backend/main.py) uses cryptographic SHA-256 hashing to generate cache keys from normalized input parameters:
 
 ```python
 _CACHE_TTL_SECONDS = 30 * 60
@@ -107,7 +107,7 @@ Full detail in [doc 19](19_AFFINITY_MILESTONE_3_POSTGRESQL_AUTH_AND_DATA_PERSIST
 
 ## 3. Privacy & Search Anonymization
 
-When an idea is submitted, Affinity's retrieval layer in [`backend/agent/retrieval.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/retrieval.py) generates up to 5 generalized search queries:
+When an idea is submitted, Affinity's retrieval layer in [`backend/agent/retrieval.py`](../backend/agent/retrieval.py) generates up to 5 generalized search queries:
 1. `Market size & trends`
 2. `Competitors`
 3. `Industry news`
@@ -126,7 +126,7 @@ When an idea is submitted, Affinity's retrieval layer in [`backend/agent/retriev
 ### 4.1 Factual Metric Grounding
 A primary threat in AI-based financial validation is "hallucinated market figures" (e.g., invented TAM/SAM statistics or fabricated CAGR percentages).
 
-Affinity enforces strict negative constraints in [`backend/agent/market_agent.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/market_agent.py):
+Affinity enforces strict negative constraints in [`backend/agent/market_agent.py`](../backend/agent/market_agent.py):
 - The model is instructed to cite TAM, SAM, or CAGR metrics **only** when retrieved web snippets explicitly contain those figures.
 - If market metrics are missing in search results, the system explicitly reports: *"TAM/SAM figures are not clear from the provided sources."*
 

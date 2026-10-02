@@ -18,7 +18,7 @@
 
 A generic search query (e.g., *"invoice app for photographers"*) returns unstructured web results that crowd out critical market signals.
 
-Affinity's retrieval layer in [`backend/agent/retrieval.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/retrieval.py) expands a single startup submission into **up to 5 targeted research angles**, executes queries across live web search tools, and applies domain filtering to eliminate noise.
+Affinity's retrieval layer in [`backend/agent/retrieval.py`](../backend/agent/retrieval.py) expands a single startup submission into **up to 5 targeted research angles**, executes queries across live web search tools, and applies domain filtering to eliminate noise.
 
 ---
 
@@ -52,7 +52,7 @@ flowchart TD
 
 ## 3. Search Provider Architecture & Zero-Cost Fallback Chain
 
-In [`backend/agent/tools.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/tools.py), search execution is wrapped with an automated fallback chain:
+In [`backend/agent/tools.py`](../backend/agent/tools.py), search execution is wrapped with an automated fallback chain:
 
 ```mermaid
 flowchart LR
@@ -77,7 +77,7 @@ flowchart LR
 
 Early testing revealed that queries like *"AI invoicing for photographers"* returned academic papers on image processing or generic affiliate software directory pages.
 
-[`backend/agent/retrieval.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/retrieval.py) maintains `_EXCLUDED_DOMAINS` to strip out irrelevant sources:
+[`backend/agent/retrieval.py`](../backend/agent/retrieval.py) maintains `_EXCLUDED_DOMAINS` to strip out irrelevant sources:
 
 ```python
 _EXCLUDED_DOMAINS = {

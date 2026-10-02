@@ -3,6 +3,8 @@
 **Document Version:** 2.0 · September 2026 (Milestones 1 & 2 Completed)  
 **Status:** Capstone Evaluation Ready  
 
+> **Note (2 Oct 2026).** This chapter was written at Milestone 2 and is kept as the academic report of that stage. Later work (accounts, PDF and email, eight-tab report, LLM-plus-NER competitor discovery, 18 agents and engines) is described in [00_AFFINITY_FINAL_PROJECT_DOCUMENT.md](00_AFFINITY_FINAL_PROJECT_DOCUMENT.md). Where the two differ, the final document is current.
+
 ---
 
 ## 📑 Report Structure & Index

@@ -2,7 +2,7 @@
 
 **Version:** 1.0 · 2026-09-28 (written against the `staging` branch)  
 **Status:** plan only. Run it once feature work is finished, against a deployed build.  
-**Related:** [scaling-options.md](scaling-options.md), [track-f-token-budget-latency-findings.md](track-f-token-budget-latency-findings.md), [ops-runbook-troubleshooting.md](ops-runbook-troubleshooting.md)
+**Related:** [scaling-options.md](scaling-options.md), [track-f-token-budget-latency-findings.md](track-f-token-budget-latency-findings.md), [09 deployment runbooks](09_AFFINITY_CLOUD_DEPLOYMENT_AND_DEVOPS_RUNBOOKS.md)
 
 This doc says what to test, how to run it, what numbers to record, and what we expect
 to break first. The goal is not a big number; it is to show that Affinity stays

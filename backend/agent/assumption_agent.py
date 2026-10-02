@@ -11,7 +11,7 @@ import logging
 from crewai import Agent, Crew, Process, Task
 
 from .deterministic_fallback import deterministic_assumptions
-from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback
+from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback, primary_for, AGENT_MAX_EXECUTION_SECONDS, AGENT_MAX_ITER
 from .prompts.loader import load_prompt
 from .structured_output import (
     compact_json,
@@ -81,6 +81,8 @@ def _build_crew(
         goal="Identify and rank the riskiest hidden assumptions a startup plan rests on.",
         backstory=load_prompt("assumption_system"),
         llm=get_llm(max_tokens=650, model=model),
+        max_execution_time=AGENT_MAX_EXECUTION_SECONDS,
+        max_iter=AGENT_MAX_ITER,
         verbose=False,
     )
     task = Task(
@@ -121,6 +123,7 @@ def analyze_assumptions(
     try:
         output = kickoff_with_fallback(
             lambda model: _build_crew(idea, target_customer, problem, context, model),
+            primary=primary_for("assumptions"),
             allow_local=allow_local,
             validate=lambda o: extract_json_object(o.raw, _valid_shape) is not None,
         )

@@ -150,12 +150,18 @@ validation on every LLM-backed agent.
   > itself is still 100% local NER — this only affects the two grid fields.
   An empty `competitors: []` is a genuine "the sources didn't name an identifiable
   company" outcome, not a failure — see §4.
-- **Deep-mode profiling (Pillar 3):** when `mode` is not `"quick"`, one bounded LLM call
-  (`_profile_with_llm`) adds `classification`, `pricing`, `businessModel`, `strengths`,
-  `weaknesses` and an idea-specific `gap` per competitor, plus a top-level
-  `comparisonMatrix` (≤5 rows, idea vs. each competitor) and `profiled: true`. Any
-  failure keeps the NER-only result with `profiled: false`. See
-  [doc 23 §5](23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOOGLE_SSO.md#5-pillar-3-competitor-profiles-and-parity-grid).
+- **Deep-mode discovery (Pillar 3, updated 2026-09-28):** when `mode` is not
+  `"quick"`, one bounded LLM call (`_discover_with_llm`) reads every Competitors-angle
+  search result and returns competitors grounded back to the source text that named
+  them - including ones NER missed - plus `classification`, `pricing`,
+  `businessModel`, `strengths`, `weaknesses`, an idea-specific `gap` per competitor,
+  and a top-level `comparisonMatrix` (≤5 rows). Any NER name discovery didn't already
+  cover is appended as a recall safety net, up to 6 competitors total. Any failure
+  keeps the NER-only result with `profiled: false`. Product Hunt and Wikidata add
+  optional `enrichment` data (tagline/votes, or founding year, per competitor). See
+  [doc 14 §7](14_AFFINITY_COMPETITOR_GRID_AND_POSITIONING_PARSER.md#7-grounded-llm-discovery-2026-09-28)
+  and
+  [competitor-detection-and-confidence-scoring-proposal.md](competitor-detection-and-confidence-scoring-proposal.md).
 
 ### Opportunity Score (Milestone 2 stretch)
 
@@ -594,7 +600,6 @@ Blueprint-sync caveat and multi-instance guidance.
 │   └── tests/                        # Unit, contract, async, and integration/concurrency tests
 ├── docs/
 │   ├── architecture.md        # this file
-│   ├── milestone1-plan.md
 │   └── frontend-spec.md
 ├── .github/workflows/ci.yml   # backend tests + frontend lint/build on push/PR
 ├── render.yaml         # backend + frontend services, managed Postgres database

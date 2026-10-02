@@ -166,6 +166,43 @@ class TamSamSomShapeTests(unittest.TestCase):
         self.assertFalse(market_agent._is_valid_shape(self._base(sam=bad_tier)))
 
 
+class EstimatedTierTests(unittest.TestCase):
+    """SAM/SOM may be a labelled estimate; TAM never may, and an estimate
+    must show its assumption and never look sourced."""
+
+    def _base(self, **overrides):
+        data = {"marketSize": "text", "trends": _VALID_TRENDS, "segments": _VALID_SEGMENTS}
+        data.update(overrides)
+        return data
+
+    def test_estimate_with_assumption_is_valid(self):
+        sam = {"text": "About $400M (estimate)", "sourceIds": [], "estimated": True, "assumptions": "Assumes 20% reachable."}
+        self.assertTrue(market_agent._is_valid_shape(self._base(sam=sam)))
+
+    def test_estimate_without_assumption_is_rejected(self):
+        sam = {"text": "About $400M (estimate)", "sourceIds": [], "estimated": True}
+        self.assertFalse(market_agent._is_valid_shape(self._base(sam=sam)))
+
+    def test_clean_tier_drops_estimated_tam(self):
+        tam = {"text": "$1B", "sourceIds": [], "estimated": True, "assumptions": "guess"}
+        self.assertIsNone(market_agent._clean_tier("tam", tam, {"src-1"}, tam_present=True))
+
+    def test_clean_tier_drops_estimate_when_there_is_no_tam(self):
+        sam = {"text": "$400M", "sourceIds": [], "estimated": True, "assumptions": "20%"}
+        self.assertIsNone(market_agent._clean_tier("sam", sam, {"src-1"}, tam_present=False))
+
+    def test_clean_tier_strips_citations_from_an_estimate(self):
+        sam = {"text": "$400M", "sourceIds": ["src-1"], "estimated": True, "assumptions": "20%"}
+        out = market_agent._clean_tier("sam", sam, {"src-1"}, tam_present=True)
+        self.assertEqual(out["sourceIds"], [])
+        self.assertTrue(out["estimated"])
+        self.assertEqual(out["assumptions"], "20%")
+
+    def test_clean_tier_keeps_a_sourced_tier_unchanged_in_kind(self):
+        out = market_agent._clean_tier("sam", {"text": " $400M ", "sourceIds": ["src-1", "src-9"]}, {"src-1"}, tam_present=True)
+        self.assertEqual(out, {"text": "$400M", "sourceIds": ["src-1"]})
+
+
 class BuildContextTests(unittest.TestCase):
     def test_source_id_is_shown_alongside_its_evidence(self):
         # G: a search result's sourceId is actually available to the LLM

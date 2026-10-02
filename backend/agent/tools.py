@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 
 from ddgs import DDGS
 from tavily import TavilyClient
+from . import web_cache
 
 logger = logging.getLogger(__name__)
 
@@ -90,16 +91,96 @@ def _relevance_score(query: str, title: str, snippet: str) -> float:
     return round(min(1.0, weighted_ratio * coverage_ratio), 2)
 
 
-def _from_tavily(query: str, max_results: int) -> list[dict]:
+# Deeper Tavily content (advanced search, and full-page Extract for a few sources).
+# Costs more Tavily credits per run than basic search, so it is limited to the
+# angles that need it (see retrieval._DEEP_ANGLES) and can be switched off
+# entirely with TAVILY_DEEP=0 - for example when the credits run low. Every deep
+# call falls back to the plain behaviour if it fails.
+_TAVILY_DEEP_CHUNKS = 3
+_FULL_TEXT_CHARS = 2500
+
+
+def _deep_enabled() -> bool:
+    return os.environ.get("TAVILY_DEEP", "1") != "0"
+
+
+def _extract_full_text_uncached(urls: list[str], max_chars: int) -> dict[str, str]:
+    """Full page text for a few URLs via Tavily Extract, each capped at
+    max_chars. Returns {} when disabled, unconfigured or failing - callers keep
+    using the search snippet in that case.
+    """
+    api_key = os.environ.get("TAVILY_API_KEY")
+    if not urls or not api_key or not _deep_enabled():
+        return {}
+    try:
+        response = TavilyClient(api_key=api_key).extract(urls=urls)
+    except Exception:
+        logger.warning("Tavily extract failed; keeping search snippets", exc_info=True)
+        return {}
+    texts = {}
+    for item in response.get("results", []):
+        text = (item.get("raw_content") or "").strip()
+        if item.get("url") and text:
+            texts[item["url"]] = text[:max_chars]
+    return texts
+
+
+def extract_full_text(urls: list[str], max_chars: int = _FULL_TEXT_CHARS) -> dict[str, str]:
+    """_extract_full_text_uncached with a per-URL cache (web_cache, 7 days):
+    pages already extracted for an earlier run are not paid for again, and only
+    the missing ones go to Tavily."""
+    urls = [u for u in urls if u]
+    texts: dict[str, str] = {}
+    missing = []
+    for url in urls:
+        hit = web_cache.get("extract", f"{url}|{max_chars}")
+        if hit:
+            texts[url] = hit
+        else:
+            missing.append(url)
+    if missing:
+        for url, text in _extract_full_text_uncached(missing, max_chars).items():
+            texts[url] = text
+            web_cache.put("extract", f"{url}|{max_chars}", text)
+    return texts
+
+
+def _from_tavily(query: str, max_results: int, deep: bool = False) -> list[dict]:
+    if not os.environ.get("TAVILY_API_KEY"):
+        return []
+    mode = "deep" if deep and _deep_enabled() else "basic"
+    cache_key = f"tavily|{mode}|{max_results}|{query}"
+    cached = web_cache.get("search", cache_key)
+    if cached:
+        return cached
+    results = _from_tavily_uncached(query, max_results, deep)
+    web_cache.put("search", cache_key, results)
+    return results
+
+
+def _from_tavily_uncached(query: str, max_results: int, deep: bool = False) -> list[dict]:
     api_key = os.environ.get("TAVILY_API_KEY")
     if not api_key:
         return []
 
-    try:
-        response = TavilyClient(api_key=api_key).search(query=query, max_results=max_results)
-    except Exception:
-        logger.warning("Tavily search failed; using free search providers", exc_info=True)
-        return []
+    client = TavilyClient(api_key=api_key)
+    response = None
+    if deep and _deep_enabled():
+        try:
+            response = client.search(
+                query=query,
+                max_results=max_results,
+                search_depth="advanced",
+                chunks_per_source=_TAVILY_DEEP_CHUNKS,
+            )
+        except Exception:
+            logger.warning("Tavily advanced search failed; retrying with basic depth", exc_info=True)
+    if response is None:
+        try:
+            response = client.search(query=query, max_results=max_results)
+        except Exception:
+            logger.warning("Tavily search failed; using free search providers", exc_info=True)
+            return []
 
     return [
         {
@@ -118,6 +199,57 @@ def _from_tavily(query: str, max_results: int) -> list[dict]:
     ]
 
 
+def fetch_app_store_results(query: str, max_results: int = 5) -> list[dict]:
+    """A second, independent evidence layer for the Competitors angle: the App
+    Store's own search (keyless) for what the product does. Web search finds
+    articles that mention rivals; this finds the rival apps themselves, with
+    a real page to cite, so the two cover each other's gaps. Each hit is shaped
+    like any other search result so it flows through the same grounding.
+
+    Apple's own ranking is the relevance signal here (the web-page scorer above
+    rates even FreshBooks at 0.04 against a long query), so hits keep Apple's
+    order and retrieval.collect applies the topic-overlap filter. [] when
+    switched off (ITUNES_DISCOVERY=0) or on any failure - it never blocks a run.
+    """
+    if os.environ.get("ITUNES_DISCOVERY", "1") == "0" or not (query or "").strip():
+        return []
+    cached = web_cache.get("app_store", f"{max_results}|{query}")
+    if cached:
+        return cached
+    hits = _fetch_app_store_uncached(query, max_results)
+    web_cache.put("app_store", f"{max_results}|{query}", hits)
+    return hits
+
+
+def _fetch_app_store_uncached(query: str, max_results: int) -> list[dict]:
+    params = urllib.parse.urlencode({"term": query, "entity": "software", "country": "us", "limit": max_results * 3})
+    try:
+        data = _get_json(f"https://itunes.apple.com/search?{params}")
+    except Exception:
+        logger.warning("App Store search failed; skipping the app layer", exc_info=True)
+        return []
+
+    hits = []
+    for app in data.get("results", []):
+        name = (app.get("trackName") or "").strip()
+        link = (app.get("trackViewUrl") or "").split("?")[0]
+        description = " ".join((app.get("description") or "").split())
+        if not name or not link:
+            continue
+        score = round(max(0.5, 0.8 - 0.02 * len(hits)), 2)  # Apple's order, best first
+        hits.append(
+            {
+                "title": name,
+                "snippet": f"{name}. {description}"[:600],
+                "url": link,
+                "score": score,
+                "publishedAt": None,
+                "provider": "app_store",
+            }
+        )
+    return hits[:max_results * 3]
+
+
 def _get_json(url: str) -> dict:
     req = urllib.request.Request(url, headers={"User-Agent": "StartupIdeaValidator/1.0"})
     with urllib.request.urlopen(req, timeout=5) as resp:
@@ -125,6 +257,15 @@ def _get_json(url: str) -> dict:
 
 
 def _from_duckduckgo(query: str, max_results: int) -> list[dict]:
+    cached = web_cache.get("search", f"ddg|{max_results}|{query}")
+    if cached:
+        return cached
+    results = _from_duckduckgo_uncached(query, max_results)
+    web_cache.put("search", f"ddg|{max_results}|{query}", results)
+    return results
+
+
+def _from_duckduckgo_uncached(query: str, max_results: int) -> list[dict]:
     try:
         with DDGS() as ddgs:
             hits = list(ddgs.text(query, max_results=max_results))
@@ -263,13 +404,45 @@ def _free_fallback(query: str, max_results: int) -> list[dict]:
     return [result for result in scored if result["score"] >= 0.3]
 
 
-def fetch_results(query: str, max_results: int = 5) -> list[dict]:
-    """Tavily first (real relevance score); fall back to the free chain if
-    Tavily isn't configured or returns nothing.
+def fetch_results(query: str, max_results: int = 5, deep: bool = False) -> list[dict]:
+    """Blends Tavily with DuckDuckGo instead of only reaching for DDG when
+    Tavily fails or is unset - combining two independently-ranked providers
+    reduces how much one dominant page can flood a single query's results.
+    Confirmed live: a freelancer-invoicing "Competitors" search had Tavily
+    return several results all from one listicle site's own product/review
+    pages, feeding Competitor Discovery's NER pass an outsized share of
+    that one page's text (author bylines included). A single provider
+    being individually high-quality doesn't prevent this.
+
+    Wikipedia/Hacker News (_free_fallback) stay reserved for when neither
+    Tavily nor DuckDuckGo returns anything - a different kind of source
+    (encyclopedic / tech-discussion), not worth the latency on every call.
     """
-    results = _from_tavily(query, max_results)
+    tavily_results = _from_tavily(query, max_results, deep=deep)
 
-    if not results:
-        results = _free_fallback(query, max_results)
+    ddg_raw = _from_duckduckgo(query, max_results)
+    ddg_results = [
+        {
+            "title": html.unescape(r["title"]),
+            "snippet": html.unescape(r["snippet"]),
+            "url": r["url"],
+            "score": _relevance_score(query, r["title"], r["snippet"]),
+            "publishedAt": r.get("publishedAt"),
+        }
+        for r in ddg_raw
+        if r["url"]
+    ]
+    ddg_results = [r for r in ddg_results if r["score"] >= 0.3]
 
-    return [{**r, "query": query} for r in results]
+    combined = tavily_results + ddg_results
+    if not combined:
+        combined = _free_fallback(query, max_results)
+    elif tavily_results and ddg_results:
+        by_url: dict[str, dict] = {}
+        for r in combined:
+            existing = by_url.get(r["url"])
+            if existing is None or r["score"] > existing["score"]:
+                by_url[r["url"]] = r
+        combined = sorted(by_url.values(), key=lambda r: r["score"], reverse=True)[:max_results]
+
+    return [{**r, "query": query} for r in combined]

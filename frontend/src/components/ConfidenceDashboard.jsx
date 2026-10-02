@@ -100,7 +100,7 @@ export default function ConfidenceDashboard({ data }) {
           <MetricTile
             label="Cross-source agreement"
             percent={crossSourceAgreement.percentage}
-            detail={`${crossSourceAgreement.claimsWithMultipleSources}/${crossSourceAgreement.totalClaims} claims cite 2+ sources.`}
+            detail={`${crossSourceAgreement.corroboratedSources ?? crossSourceAgreement.claimsWithMultipleSources ?? 0}/${crossSourceAgreement.totalUniqueSources ?? crossSourceAgreement.totalClaims ?? 0} sources cited by 2+ findings.`}
           />
         )}
         {directEvidenceRatio && (
@@ -117,7 +117,7 @@ export default function ConfidenceDashboard({ data }) {
             detail={relevanceDetail(averageRelevance)}
           />
         )}
-        {sourceRecency && (
+        {sourceRecency && sourceRecency.sourcesWithKnownDate > 0 && (
           <MetricTile
             label="Source recency"
             percent={recencyPercent(sourceRecency)}

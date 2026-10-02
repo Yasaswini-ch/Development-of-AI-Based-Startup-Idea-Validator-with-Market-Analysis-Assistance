@@ -26,11 +26,13 @@ flowchart TD
 
     subgraph Dossier["Validation Dossier Tabs"]
         T1["Evidence (sources + confidence dashboard)"]
-        T2["Market & Rivals (market size, TAM/SAM/SOM, competitors grid)"]
-        T3["Customers (segments & personas)"]
-        T4["Gaps & Exposure (white space, SWOT, bear case, assumptions)"]
-        T5["Build & Ship (MVP, revenue models, go-to-market)"]
-        T6["Roadmap (experiments & action plan)"]
+        T2["Market (market size, TAM/SAM/SOM, viability)"]
+        T3["Competitors (rivals, direct vs indirect, comparison)"]
+        T4["Customers (segments & voice of the market)"]
+        T5["Gaps (white space & entry wedge)"]
+        T6["Risks (SWOT, bear case, assumptions)"]
+        T7["Build & Ship (MVP, revenue models, go-to-market)"]
+        T8["Roadmap (timeline, experiments & action plan)"]
     end
 
     Account["Account menu (signed in)"] --> History["History"]
@@ -137,9 +139,12 @@ All five are 0–100:
   describe how much is known rather than whether the news is good.
 
 ### 4.5 TAM / SAM / SOM
-The Market & Rivals tab shows TAM, SAM and SOM tiles only for figures a source actually
-supports, each with its citation. A missing tier means the sources didn't give that
-number, not that it's zero.
+The Market tab shows TAM, SAM and SOM tiles. TAM is shown only when a source states the
+figure, with its citation. SAM and SOM are shown the same way when a source states them.
+When none does but a TAM exists, the report may show an **estimate** instead: it carries an
+"Estimate" badge, a dashed border, no citation, and the assumption behind it (for example,
+"assumes 20% of the TAM is reachable"). Treat an estimate as a starting point to check, not
+as evidence. A missing tier means there was nothing to show, not that the figure is zero.
 
 ### 4.6 Grounded vs. Inferred badges
 The report uses one evidence scale everywhere. A green **Grounded** pill means the claim
@@ -156,7 +161,7 @@ tagged as (for example *Observed Friction*) and carries a citation marker; click
 name to open the source. The
 section is hidden when no source contains a usable sentence.
 
-### 4.8 Market Viability & Dynamics (Market & Rivals tab)
+### 4.8 Market Viability & Dynamics (Market tab)
 Five axes scored 1–5 with one sentence each: Demand Urgency, Expansion Velocity, Target
 Accessibility, Barrier to Entry / Moat and Capital Efficiency, plus their average out of 5.
 The report's one headline score is the verdict score at the top; the Market tab shows
@@ -164,11 +169,11 @@ the opportunity score as small secondary text.
 This is a more detailed view than the Dashboard radar in §4.4 and uses different axes.
 Capital Efficiency is always *Inferred* because it's read from how you describe the idea.
 
-### 4.9 How your idea compares (Market & Rivals tab, deep mode)
+### 4.9 How your idea compares (Competitors tab, deep mode)
 A table of up to five dimensions comparing your idea with each profiled competitor.
 "unknown" means the sources didn't say, not that the competitor lacks the feature.
 
-### 4.10 Strategic Wedge Blueprints (Gaps & Exposure tab)
+### 4.10 Strategic Wedge Blueprints (Gaps tab)
 The first card opens by default; the others show the wedge and key risk until you
 click to expand the chain *Observed Friction → Incumbent Blindspot → Structural
 Tailwind → Asymmetric Wedge → Defensibility Moat* for one customer segment. The

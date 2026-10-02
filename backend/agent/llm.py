@@ -1,4 +1,5 @@
 import logging
+import contextvars
 import os
 import re
 import threading
@@ -43,6 +44,14 @@ DEFAULT_MODEL = "groq/qwen/qwen3.8-27b"
 # what the rest of the system already assumes is possible.
 _LLM_CALL_TIMEOUT_SECONDS = float(os.environ.get("LLM_CALL_TIMEOUT_SECONDS", "30"))
 
+# Ceilings applied to every CrewAI agent (see each agent's Agent(...)). The per-call timeout
+# above bounds ONE request; these bound the whole agent: max_execution_time stops a run that
+# keeps retrying slow calls, and max_iter caps how often CrewAI re-prompts when an answer is
+# not in the format it expects (default 20, each re-prompt a paid call). Our agents answer
+# in one call, so 4 leaves room for a retry without allowing a runaway.
+AGENT_MAX_EXECUTION_SECONDS = int(os.environ.get("AGENT_MAX_EXECUTION_SECONDS", "75"))
+AGENT_MAX_ITER = int(os.environ.get("AGENT_MAX_ITER", "4"))
+
 # Two models hosted on the *same* Groq account, each with its own rate-limit
 # bucket - confirmed via `GET /openai/v1/models` against our own key and a
 # direct latency test (all respond in under a second). In practice, active
@@ -53,6 +62,49 @@ _LLM_CALL_TIMEOUT_SECONDS = float(os.environ.get("LLM_CALL_TIMEOUT_SECONDS", "30
 # account's budget." See get_llm's docstring for why this was previously
 # reverted and why the retest changed that.
 FALLBACK_MODELS = ("groq/openai/gpt-oss-20b", "groq/openai/gpt-oss-120b", "gemini/gemini-3.6-flash", "gemini/gemini-3.8-flash")
+
+# Which model each agent STARTS on. Every model is its own rate-limit bucket on a
+# free tier, so the agents are spread across them instead of queueing on one:
+#   groq/qwen3.8-27b    1,000 output tokens/min for the whole account: one call a
+#                       minute. Only market analysis starts here: its answer fits under
+#                       Qwen's 950-token output ceiling, and the assumption tracker's does
+#                       not (measured about 1,500 tokens, so it failed the shape check on
+#                       Qwen every time). Before this map six agents
+#                       (market, SWOT, MVP, assumptions, revenue models, verification)
+#                       all started on it, and all but the first spent their time on
+#                       rate-limit errors before falling down the chain.
+#   groq/gpt-oss-20b    8,000 tokens/min, 200k/day: competitors, MVP, assumptions, verification
+#   groq/gpt-oss-120b   8,000 tokens/min, 200k/day: SWOT and go-to-market. Revenue models
+#                       were first put here too and fell back to the rule-based result:
+#                       SWOT, go-to-market and revenue all run within about 40 seconds,
+#                       more than 8,000 tokens for ONE account. That is why a second and
+#                       third Groq account in GROQ_API_KEYS matters for this model.
+#   gemini 3.6 flash    about 20 requests/day: the advisor (one call per chat message)
+#                       Revenue models also start here now: with several Groq accounts in the
+#                       key pool the bucket is no longer the constraint, and starting on Gemini
+#                       3.8 (about 20 requests/day, usually spent) cost a failed request first.
+# MVP and go-to-market run in parallel (see graph.py), so they must differ. The
+# split was reasoned from each agent's tokens and when it runs, and only partly
+# checked live (free-tier quotas were exhausted): adjust it with the overrides.
+# Any agent can be re-pointed without a code change: AGENT_MODEL_<NAME>, for
+# example AGENT_MODEL_SWOT=groq/openai/gpt-oss-20b (useful when keys change).
+AGENT_PRIMARY_MODELS = {
+    "market": "groq/qwen/qwen3.8-27b",
+    "competitor": "groq/openai/gpt-oss-20b",
+    "swot": "groq/openai/gpt-oss-120b",
+    "mvp": "groq/openai/gpt-oss-20b",
+    "gtm": "groq/openai/gpt-oss-120b",
+    "assumptions": "groq/openai/gpt-oss-20b",
+    "revenue": "groq/openai/gpt-oss-120b",
+    "verification": "groq/openai/gpt-oss-20b",
+    "advisor": "gemini/gemini-3.6-flash",
+}
+
+
+def primary_for(agent: str) -> str:
+    """The model an agent starts on: its AGENT_MODEL_<NAME> override, else the
+    map above, else DEFAULT_MODEL. The fallback chain still applies after it."""
+    return os.environ.get(f"AGENT_MODEL_{agent.upper()}") or AGENT_PRIMARY_MODELS.get(agent, DEFAULT_MODEL)
 _MAX_RETRY_WAIT_SECONDS = 30
 
 # Last-resort tier, tried only when a caller opts in via
@@ -104,13 +156,127 @@ class NeedsDeepAnalysisError(Exception):
 # its default, it spends its entire max_tokens budget on hidden reasoning
 # and returns empty content (finish_reason="length", 0 text tokens) -
 # confirmed live, and "none" fixes it the same way, down to a 1-token reply.
+# gemini-3.8-flash has no entry here deliberately - it rejects
+# reasoning_effort="none" outright ("400 Thinking level MINIMAL is not
+# supported for this model"), unlike gemini-3.6-flash. A short-lived swap to
+# gemini-2.5-flash to dodge that turned out worse: that model 404s
+# unconditionally ("no longer available to new users" - confirmed live in
+# production logs, 2026-09-28), so every call to the 4th fallback tier was
+# failing outright instead of just risking an empty-content response. Back
+# on gemini-3.8-flash (the model Google's own 404 message names as current)
+# with no reasoning_effort override - get_llm skips the kwarg entirely for
+# any model not in this dict, so this is a real fallback again rather than a
+# guaranteed dead one, though its behavior without "none" hasn't been
+# confirmed live yet the way the others have.
 _REASONING_EFFORT = {
     "groq/qwen/qwen3.8-27b": "none",
     "groq/openai/gpt-oss-20b": "low",
     "groq/openai/gpt-oss-120b": "low",
     "gemini/gemini-3.6-flash": "none",
-    "gemini/gemini-3.8-flash": "none",
 }
+
+
+# ---------------------------------------------------------------------------
+# API key pool. A provider limit applies to the ACCOUNT (Groq: the organisation;
+# Gemini: the Google Cloud project), not to a key, so a second key only adds
+# capacity when it belongs to a different account or project. Set
+# GROQ_API_KEYS / GEMINI_API_KEYS to a comma-separated list; the single
+# GROQ_API_KEY / GEMINI_API_KEY keeps working and with one key nothing changes.
+# Calls alternate between keys, and a rate limit on one key retries the SAME
+# model on the next key before the chain falls to a weaker model. Keys are never
+# logged, only "key 2 of 3".
+# ---------------------------------------------------------------------------
+_active_key: contextvars.ContextVar = contextvars.ContextVar("llm_active_key", default=None)
+_key_counters: dict[str, int] = {}
+_key_counter_lock = threading.Lock()
+
+
+def _provider_of(model: str) -> str:
+    return model.split("/", 1)[0].lower()
+
+
+def _keys_for(provider: str) -> list[str]:
+    """Every configured key for a provider: the comma-separated *_API_KEYS list,
+    plus the single *_API_KEY if it is not already in it."""
+    name = provider.upper()
+    keys = [k.strip() for k in (os.environ.get(f"{name}_API_KEYS") or "").split(",") if k.strip()]
+    single = (os.environ.get(f"{name}_API_KEY") or "").strip()
+    if single and single not in keys:
+        keys.append(single)
+    return keys
+
+
+# (model, key) -> time until which that key is known to be rate limited for that
+# model. Groq's error says how long ("try again in 2m9.1s"), and a key that has
+# spent its daily tokens on one model would otherwise cost a failed request on
+# every call that happens to try it first.
+_key_cooldowns: dict[tuple[str, str], float] = {}
+_DEFAULT_KEY_COOLDOWN_SECONDS = 30.0
+_MAX_KEY_COOLDOWN_SECONDS = 15 * 60.0
+_RETRY_AFTER = re.compile(r"try again in\s+(?:(\d+)h)?(?:(\d+)m)?(\d+(?:\.\d+)?)s", re.IGNORECASE)
+
+
+def _key_cooldown_seconds(exc: Exception) -> float:
+    """How long the provider says to wait, from its error text; a short default
+    when the message has no hint. Capped so one odd value cannot park a key."""
+    match = _RETRY_AFTER.search(str(exc))
+    if not match:
+        return _DEFAULT_KEY_COOLDOWN_SECONDS
+    hours, minutes, seconds = match.groups()
+    total = int(hours or 0) * 3600 + int(minutes or 0) * 60 + float(seconds)
+    return min(max(total, 1.0), _MAX_KEY_COOLDOWN_SECONDS)
+
+
+def _mark_key_limited(model: str, key: str, exc: Exception) -> None:
+    with _key_counter_lock:
+        _key_cooldowns[(model, key)] = time.time() + _key_cooldown_seconds(exc)
+
+
+def _key_order(provider: str, model: str | None = None) -> list[str]:
+    """The provider's keys starting from a rotating position, so consecutive
+    calls spread across keys instead of always draining the first one. Keys
+    known to be rate limited for this model go last (never dropped: if every
+    key is limited they are all still tried, soonest-to-recover first)."""
+    keys = _keys_for(provider)
+    if len(keys) <= 1:
+        return keys
+    with _key_counter_lock:
+        start = _key_counters.get(provider, 0)
+        _key_counters[provider] = start + 1
+        until = {k: _key_cooldowns.get((model, k), 0.0) for k in keys} if model else {}
+    start %= len(keys)
+    order = keys[start:] + keys[:start]
+    now = time.time()
+    ready = [k for k in order if until.get(k, 0.0) <= now]
+    cooling = sorted((k for k in order if until.get(k, 0.0) > now), key=lambda k: until[k])
+    return ready + cooling
+
+
+# The max_tokens each agent asks for was tuned for Qwen, whose account-wide cap is
+# 1,000 output tokens a minute. The gpt-oss models count their hidden reasoning
+# against max_tokens too, so the same number leaves too little to finish the JSON:
+# measured on a real SWOT run, the answer needed about 1,100-1,600 completion tokens
+# on gpt-oss-20b and 2,241 on gpt-oss-120b against a limit of 900. A cut-off answer
+# fails the shape check and costs a whole second call (about 4,000 tokens) on the
+# next model. So the budget is scaled per model: (prefix, multiplier, floor).
+_COMPLETION_HEADROOM = (
+    ("groq/openai/gpt-oss-120b", 3.0, 1500),
+    ("groq/openai/gpt-oss-20b", 2.5, 1500),
+    ("gemini/", 1.5, 0),
+)
+_QWEN_OUTPUT_CEILING = 950  # its 1,000-per-minute cap: a larger request is refused outright
+
+
+def _token_budget(model: str, max_tokens: int | None) -> int | None:
+    """max_tokens adjusted for the model that will answer (see the note above)."""
+    if max_tokens is None:
+        return None
+    if model.startswith("groq/qwen/"):
+        return min(max_tokens, _QWEN_OUTPUT_CEILING)
+    for prefix, multiplier, floor in _COMPLETION_HEADROOM:
+        if model.startswith(prefix):
+            return max(int(max_tokens * multiplier), floor)
+    return max_tokens
 
 
 def get_llm(max_tokens: int | None = None, model: str | None = None):
@@ -150,10 +316,13 @@ def get_llm(max_tokens: int | None = None, model: str | None = None):
     if is_local:
         kwargs["api_base"] = _OLLAMA_BASE_URL
     if max_tokens is not None:
-        kwargs["max_tokens"] = max_tokens
+        kwargs["max_tokens"] = _token_budget(model, max_tokens)
     reasoning_effort = _REASONING_EFFORT.get(model)
     if reasoning_effort is not None:
         kwargs["reasoning_effort"] = reasoning_effort
+    active = _active_key.get()
+    if active and active[0] == _provider_of(model):
+        kwargs["api_key"] = active[1]  # the key chosen by the pool for this attempt
     return LLM(model=model, **kwargs)
 
 
@@ -440,11 +609,35 @@ def _kickoff_cloud_chain(build_crew, primary: str | None = None, validate=None):
         if m not in models:
             models.append(m)
 
-    def run(model):
+    def run_once(model):
         output = _kickoff_with_metrics(model, build_crew)
         if validate is not None and not validate(output):
             raise _ShapeValidationError(f"{model} response failed validation (unparseable or wrong shape).")
         return output
+
+    def run(model):
+        provider = _provider_of(model)
+        order = _key_order(provider, model)
+        if len(order) <= 1:
+            return run_once(model)
+        for position, key in enumerate(order, start=1):
+            token = _active_key.set((provider, key))
+            try:
+                return run_once(model)
+            except Exception as exc:
+                # Only a rate limit is a key problem; a bad answer or an outage
+                # would fail the same on any key, so it goes to the next model.
+                if not _is_rate_limit_error(exc):
+                    raise
+                _mark_key_limited(model, key, exc)
+                if position == len(order):
+                    raise
+                logger.warning(
+                    "Rate limited on %s with %s key %d of %d; retrying the same model on the next key",
+                    model, provider, position, len(order),
+                )
+            finally:
+                _active_key.reset(token)
 
     last_exc = None
     for i, model in enumerate(models):

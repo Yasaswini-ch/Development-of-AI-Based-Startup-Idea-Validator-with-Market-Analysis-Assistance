@@ -93,7 +93,7 @@ function Avatar({ role }) {
   )
 }
 
-export default function ChatAdvisor({ sessionId, apiUrl }) {
+export default function ChatAdvisor({ sessionId, apiUrl, onNavigateSection }) {
   const [isOpen, setIsOpen] = useState(false)
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
@@ -144,8 +144,11 @@ export default function ChatAdvisor({ sessionId, apiUrl }) {
       if (!response.ok) throw new Error(data.error || 'The advisor could not answer right now.')
       if (typeof data.reply !== 'string') throw new Error('The advisor returned an invalid response.')
 
-      setMessages((current) => [...current, { role: 'advisor', text: data.reply }].slice(-MAX_MESSAGES))
+      setMessages((current) =>
+        [...current, { role: 'advisor', text: data.reply, section: data.section || null }].slice(-MAX_MESSAGES),
+      )
       if (!isOpen) setUnreadCount((count) => count + 1)
+      if (data.section) onNavigateSection?.(data.section)
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -220,6 +223,12 @@ export default function ChatAdvisor({ sessionId, apiUrl }) {
                   }`}
                 >
                   <MessageContent text={item.text} />
+                  {item.section && (
+                    <p className="mt-2 flex items-center gap-1 border-t border-border/60 pt-1.5 font-mono text-[10px] uppercase tracking-wide text-muted">
+                      <IconGlobe className="h-3 w-3" />
+                      Jumped to: {item.section.label}
+                    </p>
+                  )}
                 </div>
               </div>
             ))}

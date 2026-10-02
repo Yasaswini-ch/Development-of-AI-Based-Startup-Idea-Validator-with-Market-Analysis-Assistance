@@ -1,8 +1,10 @@
 # Proposal: Better Competitor Detection and Confidence Scoring
 
 **Version:** 1.0 · 2026-09-28 (written against the `staging` branch)  
-**Status:** **proposal for discussion. Nothing here is implemented.** The team should
-pick an option for each part before any code changes.  
+**Status:** **Part 1 implemented 2026-09-28** (team picked Option B + Option C's
+Product Hunt/Wikidata pair). See [Implementation notes](#9-implementation-notes-2026-09-28)
+at the end. Section 4's S1/S2 confidence-scoring options are still a proposal - the
+team has not picked one yet.
 **Why now:** review feedback named competitor detection and the confidence score as the
 two weakest parts of Affinity, and suggested replacing NER with an API or an LLM to find
 more competitors and score and compare them better.  
@@ -189,3 +191,36 @@ Steps 1–2 are safe and quick; 3 is the main change the reviewer asked for.
 3. Is +1 LLM call per run acceptable, given shared free-tier quota? (If not, B can run
    only in deep mode.)
 4. Should "Suggested, unverified" competitors from model knowledge be shown at all?
+
+## 9. Implementation notes (2026-09-28)
+
+What shipped from §3/§5, against `backend/agent/competitor_agent.py` and
+`backend/agent/opportunity_score.py`:
+
+- **Option A (better queries):** a second "alternatives"-phrased Competitors search
+  query, one extra search call per run (`agent/retrieval.py`).
+- **Option B (grounded LLM discovery):** `_discover_with_llm` replaces
+  `_profile_with_llm`; see [doc 14 §7](14_AFFINITY_COMPETITOR_GRID_AND_POSITIONING_PARSER.md#7-grounded-llm-discovery-2026-09-28)
+  for the full mechanism. Cap raised from 4 to 6. Net LLM-call cost is the same as
+  before (it replaces the one deep-mode call, doesn't add one).
+- **Option C (company API), Product Hunt + Wikidata only:** `_enrich_with_apis`,
+  best-effort and additive (an `enrichment` object per competitor, only when a match is
+  found). Product Hunt needs `PRODUCTHUNT_API_TOKEN` (not yet provisioned as of this
+  writing) and its query is a best-effort guess at the public GraphQL schema - **verify
+  it live once a token exists**, since the exact search-by-name shape isn't documented.
+  Wikidata needs no key. Crunchbase (also part of Option C) was **not** built.
+- **S1.1 (stop rewarding missing data):** done - zero competitors scores 15/30
+  (neutral) unless the Competitors-angle search itself returned enough results to
+  trust a confirmed "none found".
+- **S1.2 (score more than count):** partially done - a competitor's `classification`
+  (direct/indirect, from B) now weights the competition score; incumbent
+  size/strength (from C) does not yet feed scoring.
+- **S1.3–S1.6 (Wilson-bound confidence, composite confidence, relabeling, showing
+  confidence with the score) and S2 (LLM-judged agreement, calibration set):** not
+  built. Still open decisions - see §4.
+
+Not yet done: frontend rendering of the new `enrichment` field; updating the
+Known Limitations doc's competitor/confidence entry to link here (see §3.4 there,
+already added).
+
+Tests: `backend/tests/test_competitor_discovery.py`, `backend/tests/test_competition_scoring.py`.

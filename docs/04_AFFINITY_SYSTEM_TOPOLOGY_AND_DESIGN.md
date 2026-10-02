@@ -115,25 +115,25 @@ flowchart TD
 
 | Module | Location | Primary Responsibility | Execution Class |
 |---|---|---|---|
-| `main.py` | [`backend/main.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/main.py) | FastAPI app entry point, routing, CORS, database-backed caching, per-IP rate limiting, request tracing | Gateway |
-| `graph.py` | [`backend/agent/graph.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/graph.py) | LangGraph pipeline definition, node execution, state transitions, confidence indicator + confidence dashboard | Orchestrator |
-| `chat_graph.py` | [`backend/agent/chat_graph.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/chat_graph.py) | Separate LangGraph flow for the multi-turn conversational advisor | Orchestrator |
-| `retrieval.py` | [`backend/agent/retrieval.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/retrieval.py) | 5-angle search expansion, domain filtering (`_EXCLUDED_DOMAINS`) | Retrieval Engine |
-| `tools.py` | [`backend/agent/tools.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/tools.py) | Search provider wrapper (Tavily $\to$ DDG $\to$ Wiki $\to$ HN fallback), publishedAt extraction | Search Wrapper |
-| `market_agent.py` | [`backend/agent/market_agent.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/market_agent.py) | Groq LLM market opportunity analysis, 4 customer segment profiles | LLM Agent |
-| `competitor_agent.py` | [`backend/agent/competitor_agent.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/competitor_agent.py) | spaCy NER competitor extraction & local price/breadth heuristics | Local NLP |
-| `swot_agent.py` | [`backend/agent/swot_agent.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/swot_agent.py) | Groq LLM SWOT/risk analysis with per-claim `sourceIds` citations | LLM Agent |
-| `mvp_agent.py` | [`backend/agent/mvp_agent.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/mvp_agent.py) | Groq LLM MVP feature prioritization | LLM Agent |
-| `gtm_agent.py` | [`backend/agent/gtm_agent.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/gtm_agent.py) | Groq LLM go-to-market positioning & channel strategy | LLM Agent |
-| `report_assembler.py` | [`backend/agent/report_assembler.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/report_assembler.py) | Compiles the canonical report object from an existing session's context | Synthesis Engine |
-| `white_space.py` | [`backend/agent/white_space.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/white_space.py) | Algorithmic synthesis of unaddressed feature opportunities | Synthesis Engine |
-| `opportunity_score.py` | [`backend/agent/opportunity_score.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/opportunity_score.py) | Mathematical formulation of consolidated 0–100 score | Math Engine |
-| `db.py` | [`backend/agent/db.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/db.py) | SQLAlchemy engine (Postgres prod / SQLite local) backing sessions, jobs, cache | Persistence |
+| `main.py` | [`backend/main.py`](../backend/main.py) | FastAPI app entry point, routing, CORS, database-backed caching, per-IP rate limiting, request tracing | Gateway |
+| `graph.py` | [`backend/agent/graph.py`](../backend/agent/graph.py) | LangGraph pipeline definition, node execution, state transitions, confidence indicator + confidence dashboard | Orchestrator |
+| `chat_graph.py` | [`backend/agent/chat_graph.py`](../backend/agent/chat_graph.py) | Separate LangGraph flow for the multi-turn conversational advisor | Orchestrator |
+| `retrieval.py` | [`backend/agent/retrieval.py`](../backend/agent/retrieval.py) | 5-angle search expansion, domain filtering (`_EXCLUDED_DOMAINS`) | Retrieval Engine |
+| `tools.py` | [`backend/agent/tools.py`](../backend/agent/tools.py) | Search provider wrapper (Tavily $\to$ DDG $\to$ Wiki $\to$ HN fallback), publishedAt extraction | Search Wrapper |
+| `market_agent.py` | [`backend/agent/market_agent.py`](../backend/agent/market_agent.py) | Groq LLM market opportunity analysis, 4 customer segment profiles | LLM Agent |
+| `competitor_agent.py` | [`backend/agent/competitor_agent.py`](../backend/agent/competitor_agent.py) | spaCy NER competitor extraction & local price/breadth heuristics | Local NLP |
+| `swot_agent.py` | [`backend/agent/swot_agent.py`](../backend/agent/swot_agent.py) | Groq LLM SWOT/risk analysis with per-claim `sourceIds` citations | LLM Agent |
+| `mvp_agent.py` | [`backend/agent/mvp_agent.py`](../backend/agent/mvp_agent.py) | Groq LLM MVP feature prioritization | LLM Agent |
+| `gtm_agent.py` | [`backend/agent/gtm_agent.py`](../backend/agent/gtm_agent.py) | Groq LLM go-to-market positioning & channel strategy | LLM Agent |
+| `report_assembler.py` | [`backend/agent/report_assembler.py`](../backend/agent/report_assembler.py) | Compiles the canonical report object from an existing session's context | Synthesis Engine |
+| `white_space.py` | [`backend/agent/white_space.py`](../backend/agent/white_space.py) | Algorithmic synthesis of unaddressed feature opportunities | Synthesis Engine |
+| `opportunity_score.py` | [`backend/agent/opportunity_score.py`](../backend/agent/opportunity_score.py) | Mathematical formulation of consolidated 0–100 score | Math Engine |
+| `db.py` | [`backend/agent/db.py`](../backend/agent/db.py) | SQLAlchemy engine (Postgres prod / SQLite local) backing sessions, jobs, cache | Persistence |
 | `viability_score.py` | [`backend/agent/viability_score.py`](../backend/agent/viability_score.py) | Market Viability Score: headline from demand/risk/velocity, plus `competitionClarity` and `timing` axes reported separately | Math Engine |
 | `auth.py` | [`backend/agent/auth.py`](../backend/agent/auth.py) | Signup/login, bcrypt hashing, JWT issue/verify, `require_user` / `require_admin`, `ADMIN_EMAILS` self-promotion | Security |
 | `events.py` | [`backend/agent/events.py`](../backend/agent/events.py) | Durable append-only event log (latency, model used, cache, errors, categories, email) with 90-day TTL | Persistence |
 | `user_analytics.py` / `platform_metrics.py` | [`backend/agent/`](../backend/agent/) | Aggregations behind the founder Dashboard and admin Platform Health | Analytics |
-| `llm.py` | [`backend/agent/llm.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/llm.py) | Groq → Gemini model fallback chain with per-attempt shape validation, `reasoning_effort` tuning, latency/token logging | Inference Wrapper |
+| `llm.py` | [`backend/agent/llm.py`](../backend/agent/llm.py) | Groq → Gemini model fallback chain with per-attempt shape validation, `reasoning_effort` tuning, latency/token logging | Inference Wrapper |
 
 > **Note:** an earlier, separately-built `agent/confidence.py` module (regex pattern
 > matching over search text) was never actually wired into the live pipeline - the
@@ -179,7 +179,7 @@ sequenceDiagram
 
 ## 5. Error Handling & Partial Failure Isolation
 
-Each pipeline node in [`backend/agent/graph.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/graph.py) contains independent `try...except` blocks:
+Each pipeline node in [`backend/agent/graph.py`](../backend/agent/graph.py) contains independent `try...except` blocks:
 
 ```python
 def market_opportunity_node(state: PipelineState) -> PipelineState:

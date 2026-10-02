@@ -16,7 +16,7 @@ describe('ConfidenceDashboard', () => {
     expect(screen.getByText('3/3 claims cite a source.')).toBeInTheDocument()
 
     expect(screen.getByText('Cross-source agreement')).toBeInTheDocument()
-    expect(screen.getByText('0/3 claims cite 2+ sources.')).toBeInTheDocument()
+    expect(screen.getByText('0/3 sources cited by 2+ findings.')).toBeInTheDocument()
 
     expect(screen.getByText('Direct evidence')).toBeInTheDocument()
     expect(screen.getByText('3 direct vs 0 inferred.')).toBeInTheDocument()
@@ -38,10 +38,27 @@ describe('ConfidenceDashboard', () => {
     expect(screen.queryByText('Cross-source agreement')).not.toBeInTheDocument()
   })
 
-  it('still shows source recency when there is no average relevance to show alongside it', () => {
+  it('hides the source recency tile when no source has a publish date', () => {
+    // A 0% recency tile read as "all sources are stale" when really the
+    // sources were just undated, so the tile is omitted instead.
     render(<ConfidenceDashboard data={{ sourceRecency: { sourcesWithKnownDate: 0, totalSources: 3, medianAgeDays: null } }} />)
-    expect(screen.getByText('Source recency')).toBeInTheDocument()
-    expect(screen.getByText('No dated sources available.')).toBeInTheDocument()
+    expect(screen.queryByText('Source recency')).not.toBeInTheDocument()
     expect(screen.queryByText('Average relevance')).not.toBeInTheDocument()
+  })
+
+  it('shows source recency when at least one source is dated, even without average relevance', () => {
+    render(<ConfidenceDashboard data={{ sourceRecency: { sourcesWithKnownDate: 2, totalSources: 3, medianAgeDays: 10 } }} />)
+    expect(screen.getByText('Source recency')).toBeInTheDocument()
+    expect(screen.getByText('Median source age: 10 days (2/3 dated).')).toBeInTheDocument()
+    expect(screen.queryByText('Average relevance')).not.toBeInTheDocument()
+  })
+
+  it('reads the corroborated-sources agreement shape', () => {
+    render(
+      <ConfidenceDashboard
+        data={{ crossSourceAgreement: { corroboratedSources: 2, totalUniqueSources: 8, percentage: 25 } }}
+      />,
+    )
+    expect(screen.getByText('2/8 sources cited by 2+ findings.')).toBeInTheDocument()
   })
 })

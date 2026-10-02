@@ -22,6 +22,17 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
+      # Startup network calls that can stall the boot on the free 0.1-CPU
+      # instance: CrewAI/OpenTelemetry telemetry export and LiteLLM's remote
+      # model-price download. Neither is needed to serve requests.
+      - key: CREWAI_DISABLE_TELEMETRY
+        value: "true"
+      - key: OTEL_SDK_DISABLED
+        value: "true"
+      - key: LITELLM_LOCAL_MODEL_COST_MAP
+        value: "True"
+      - key: PRODUCTHUNT_API_TOKEN
+        sync: false
       - key: SENDGRID_API_KEY
         sync: false
       - key: SENDGRID_FROM_EMAIL
@@ -36,10 +47,10 @@ services:
         generateValue: true
       - key: FRONTEND_ORIGIN
         value: https://startup-validator-frontend-5qcr.onrender.com
+      # Neon Postgres (pooled connection string), set by hand in the Render
+      # dashboard - see DEPLOYMENT.md "Moving to Neon".
       - key: DATABASE_URL
-        fromDatabase:
-          name: startup-validator-db
-          property: connectionString
+        sync: false
       # Google OAuth client ID (agent/google_auth.py) - sync: false since
       # this is created per-project in Google Cloud Console, not something
       # Render can generate; enter the same value here and on the frontend

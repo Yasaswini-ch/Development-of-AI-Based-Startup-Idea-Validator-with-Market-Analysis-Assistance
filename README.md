@@ -18,7 +18,7 @@
 [API](https://startup-validator-backend-pruu.onrender.com/health) ·
 [Documentation](docs/README.md) ·
 [Architecture](docs/architecture.md) ·
-[API reference](docs/api-reference.md)
+[API reference](docs/07_AFFINITY_REST_API_INTERFACE_SPECIFICATION.md)
 
 <img src="docs/images/Cover%20Page%20Diagram.jpeg" alt="Affinity: AI-Based Startup Idea Validator" width="820" />
 
@@ -56,7 +56,8 @@ Affinity searches the live web across five research angles, then runs a LangGrap
 pipeline of specialised agents over that evidence. The output is a full validation
 dossier: market sizing and segments, competitor landscape, whitespace gaps, SWOT and
 risk, viability scoring, MVP scope, go-to-market strategy, experiments, a 7/30/90-day
-action plan and unit economics.
+action plan and unit economics. The report opens in eight tabs: Evidence, Market,
+Competitors, Customers, Gaps, Risks, Build & Ship and Roadmap.
 
 Every key claim is labelled **Grounded** (traced to a cited source) or **Inferred**, and
 every AI-generated section has a deterministic fallback, so a report is never silently
@@ -67,11 +68,11 @@ fabricated and never comes back blank.
 | Area | What you get |
 |---|---|
 | **Live market research** | Real-time search across 5 angles (market size, competitors, industry news, customer demand, existing solutions), with per-angle source agreement scoring |
-| **Market opportunity** | Market size, trends, and customer segments with pain points, motivations and buying behaviour, grounded only in retrieved sources |
-| **Competitive intelligence** | Competitor discovery via local NER, deep-mode competitor profiles, and an idea-vs-competitor feature parity grid |
+| **Market opportunity** | Market size, trends, and customer segments with pain points, motivations and buying behaviour, grounded in retrieved sources. TAM is sourced; SAM and SOM are sourced when a source states them, otherwise a clearly badged estimate with its assumption shown |
+| **Competitive intelligence** | Competitors found from several sources combined (the web search results, local NER, an LLM pass, and Product Hunt, iTunes and Wikidata for enrichment), each labelled direct or indirect, with profiles, an idea-vs-competitor comparison and a positioning grid |
 | **Whitespace and strategy** | Evidence-backed market gaps, 5-vector strategic wedge blueprints, and a Market Viability & Dynamics Index |
 | **Risk and viability** | Source-cited SWOT, risk register, opportunity score, viability score, contradiction detection and a final verdict |
-| **Build and launch plan** | MVP feature recommendations, GTM strategy, validation experiments, a 7/30/90-day action plan, assumption tracker, revenue models, pricing tiers and an Alpha/Beta/GA delivery roadmap |
+| **Build and launch plan** | MVP feature recommendations, GTM strategy, validation experiments, a 7/30/90-day action plan, assumption tracker, revenue models (inferred from competitor pricing if the model call fails), pricing tiers and an Alpha/Beta/GA delivery roadmap |
 | **Voice of Market** | Direct quotes from what the market actually says, attached to the claims they support |
 | **Conversational advisor** | Session-aware follow-up chat that reuses the validation's evidence and only searches again when the question needs fresh data |
 | **Reports** | Publication-ready PDF dossier, email delivery, and side-by-side comparison of saved ideas |
@@ -108,7 +109,7 @@ flowchart TD
     START([POST /validate]) --> WS[Web search<br/>5 research angles]
     WS --> CI[Confidence indicator]
     CI --> MO[Market opportunity<br/>LLM]
-    MO --> CD[Competitor discovery<br/>spaCy NER]
+    MO --> CD[Competitor discovery<br/>NER + LLM + public APIs]
     CD --> OS[Opportunity score]
     OS --> WSP[Whitespace analysis<br/>+ strategic wedges]
     WSP --> SW[SWOT and risk<br/>LLM, source-cited]
@@ -162,9 +163,11 @@ the next model with its own quota (Groq `qwen3.8-27b`, then `gpt-oss-20b`,
 `gpt-oss-120b`, then Gemini Flash), with an optional local Ollama model. Latency and token
 usage are logged per call ([`llm.py`](backend/agent/llm.py)).
 
-**Deterministic where it can be.** Competitor discovery, whitespace analysis, strategic
-wedges, scoring, experiments and the action plan run without extra LLM calls. That keeps
-cost and latency down and makes those stages reproducible and testable.
+**Deterministic where it can be.** Whitespace analysis, strategic wedges, scoring,
+confidence, contradiction detection, experiments, the action plan and the verdict run
+without LLM calls (nine of the 18 agents and engines are plain code). Competitor discovery
+starts with local NER, so part of it costs no quota. That keeps cost and latency down and
+makes those stages reproducible and testable.
 
 **Stateless, horizontally scalable API.** Sessions, background jobs and the response
 cache live in Postgres, so any backend instance can serve any request.
@@ -256,7 +259,7 @@ dashboard in production.
 ## API
 
 The full contract, with field types and error shapes, is in
-[`docs/api-reference.md`](docs/api-reference.md) and
+[`docs/07_AFFINITY_REST_API_INTERFACE_SPECIFICATION.md`](docs/07_AFFINITY_REST_API_INTERFACE_SPECIFICATION.md) and
 [`docs/architecture.md`](docs/architecture.md#4-api-contract).
 
 | Method | Endpoint | Description |
@@ -270,6 +273,7 @@ The full contract, with field types and error shapes, is in
 | `POST` | `/reports/compare` | Compare several saved ideas side by side |
 | `POST` | `/reports/{sessionId}/email` | Email a report |
 | `POST` | `/auth/signup`, `/auth/login`, `/auth/google` | Authentication |
+| `POST` | `/auth/forgot-password`, `/auth/reset-password` | Password reset by emailed single-use link |
 | `GET` | `/auth/me`, `/me/history`, `/me/analytics` | Account, history and personal analytics |
 | `POST` | `/me/claim-session` | Attach a guest validation to the signed-in account |
 | `GET` | `/admin/platform-metrics` | Platform Health (admins only) |
@@ -296,7 +300,7 @@ invalid input, `429` for rate limits and `502` when every search provider is una
 
 ```bash
 # Backend: unit, contract, async and concurrency tests
-cd backend && python -m unittest discover -s tests
+cd backend && python scripts/run_tests.py   # keyless; plain `python -m unittest discover -s tests` also works but loads .env
 
 # Frontend: component tests, lint and production build
 cd frontend && npm test && npm run lint && npm run build
@@ -375,7 +379,7 @@ The [`docs/`](docs/README.md) folder holds the full engineering documentation:
 - [Five-pillar strategy layer and Google SSO](docs/23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOOGLE_SSO.md)
 - [Security, privacy and ethics](docs/security-privacy-ethics.md)
 - [Cost, accuracy and performance metrics](docs/api-cost-accuracy-performance-metrics.md)
-- [Operations runbook](docs/ops-runbook-troubleshooting.md)
+- [Operations runbook](docs/09_AFFINITY_CLOUD_DEPLOYMENT_AND_DEVOPS_RUNBOOKS.md)
 - [Known limitations and future work](docs/known-limitations-and-future-work.md)
 
 ## Contributing

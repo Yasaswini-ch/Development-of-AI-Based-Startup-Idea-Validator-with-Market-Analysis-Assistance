@@ -22,7 +22,7 @@ import logging
 
 from crewai import Agent, Crew, Process, Task
 
-from .llm import get_llm, kickoff_with_fallback
+from .llm import get_llm, kickoff_with_fallback, primary_for, AGENT_MAX_EXECUTION_SECONDS, AGENT_MAX_ITER
 from .prompts.loader import load_prompt
 from .structured_output import compact_json, extract_json_object
 
@@ -47,6 +47,8 @@ def _build_crew(idea: str, claims_text: str, model: str) -> Crew:
         goal="Confirm or reject each claim strictly against its own cited source text.",
         backstory=load_prompt("verification_system"),
         llm=get_llm(max_tokens=400, model=model),
+        max_execution_time=AGENT_MAX_EXECUTION_SECONDS,
+        max_iter=AGENT_MAX_ITER,
         verbose=False,
     )
     task = Task(
@@ -55,6 +57,31 @@ def _build_crew(idea: str, claims_text: str, model: str) -> Crew:
         agent=checker,
     )
     return Crew(agents=[checker], tasks=[task], process=Process.sequential, verbose=False)
+
+
+class Verdicts(list):
+    """The per-claim supported flags, plus whether the check actually ran.
+
+    A plain list of booleans cannot tell "every claim was supported" from "the
+    verification call failed and everything was kept as cited", and the evidence
+    audit must not claim a check that never happened. Still a list, so existing
+    callers are unchanged."""
+
+    ran: bool = False
+    checked: int = 0
+
+
+def audit(claims: list[dict], supported: list[bool]) -> dict:
+    """What the verification pass did to one section, for the evidence audit:
+    how many cited claims it examined, and which ones lost their citation (the
+    claim stays in the report, now labelled inferred)."""
+    ran = bool(getattr(supported, "ran", False))
+    removed = [
+        {"text": str(claim.get("text") or "")[:240], "sourceIds": list(claim.get("sourceIds") or [])}
+        for claim, ok in zip(claims, supported)
+        if not ok
+    ]
+    return {"ran": ran, "checked": int(getattr(supported, "checked", 0)), "removed": removed}
 
 
 def verify_claims(
@@ -75,7 +102,7 @@ def verify_claims(
     """
     indices_to_check = [i for i, claim in enumerate(claims) if claim.get("sourceIds")]
     if not indices_to_check:
-        return [True] * len(claims)
+        return Verdicts([True] * len(claims))
 
     checked = indices_to_check[:_MAX_CLAIMS_PER_PASS]
     payload = [
@@ -92,6 +119,7 @@ def verify_claims(
     try:
         output = kickoff_with_fallback(
             lambda model: _build_crew(idea, compact_json(payload, max_chars=3000), model),
+            primary=primary_for("verification"),
             allow_local=allow_local,
             validate=lambda o: extract_json_object(o.raw, _valid_shape) is not None,
         )
@@ -101,11 +129,14 @@ def verify_claims(
         supported_by_index = {item["index"]: item["supported"] for item in data["results"]}
     except Exception:
         logger.warning("Verification pass unavailable, keeping claims as originally cited", exc_info=True)
-        return [True] * len(claims)
+        return Verdicts([True] * len(claims))
 
     # Unchecked claims (no sourceIds, or beyond _MAX_CLAIMS_PER_PASS) default
     # to True - "not checked" is not the same as "unsupported".
-    return [supported_by_index.get(i, True) for i in range(len(claims))]
+    verdicts = Verdicts(supported_by_index.get(i, True) for i in range(len(claims)))
+    verdicts.ran = True
+    verdicts.checked = len(checked)
+    return verdicts
 
 
 def strip_unsupported(claims: list[dict], supported: list[bool]) -> list[dict]:

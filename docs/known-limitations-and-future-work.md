@@ -42,16 +42,25 @@ and what fixing it would take. Items are verified against the code on the date a
 
 ## 2. Accounts and security
 
-### 2.1 No password reset and no email verification
-- **What:** there is no "forgot password" flow and no check that the email belongs to
-  the person signing up.
-- **Impact:** a user who forgets their password must create a new account. Anyone can
-  register any email address, including one listed in `ADMIN_EMAILS` if that account
-  doesn't exist yet (see 2.3).
-- **Fix:** a short-lived, single-use reset token emailed through the existing SendGrid
-  path, plus a verification link at sign-up.
+### 2.1 Password reset is built; email verification is not
+- **Password reset (added 2026-10-02).** "Forgot password?" on the sign-in form emails a
+  link through the existing SendGrid path. The token is random, single-use and valid for 30
+  minutes; only its SHA-256 hash is stored. The endpoint gives the same answer whether or not
+  an account exists, and sends the email after responding, so neither the reply nor its
+  timing reveals which emails are registered. A new request replaces the earlier link.
+- **Limits of the reset.** Existing login tokens stay valid until they expire (see 2.2).
+  The email is sent from the one verified SendGrid sender, so on the free tier it can land in
+  spam. If SendGrid is not configured the request still answers normally but no email goes
+  out. Reset emails are counted in the platform's email-delivery figures. Because resetting
+  proves control of the inbox, a Google-only account can use it to add a password.
+- **Email verification is still not built.** Nothing checks that the email belongs to the
+  person signing up, so anyone can register any email address, including one listed in
+  `ADMIN_EMAILS` if that account doesn't exist yet (see 2.3). Resetting that account's
+  password would need access to the inbox, so it does not hand over the account.
+- **Fix:** a verification link at sign-up.
 
 ### 2.2 No token revocation
+- **Includes password reset:** changing a password does not sign out sessions already issued.
 - **What:** JWTs are stateless and valid for 30 days. Signing out only clears the
   browser copy. There is no "sign out everywhere".
 - **Fix:** a revocation list or short-lived access tokens with refresh tokens.
@@ -125,7 +134,7 @@ reports show only a narrative market size.
 - **What:** `docs/` holds two sets that describe the same system:
   - the numbered set `01_AFFINITY_*.md` … `22_AFFINITY_*.md`, written as a formal
     report/thesis structure, and
-  - the lowercase set (`architecture.md`, `api-reference.md`, `frontend-spec.md`,
+  - the lowercase set (`architecture.md`, `frontend-spec.md`,
     `prompt-engineering-agent-design.md`, `security-privacy-ethics.md`, ...), which is
     what engineers updated alongside code changes.
 - **What went wrong:** features changed faster than both sets were updated. The
@@ -196,3 +205,93 @@ Details and formulas: [doc 23](23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOO
   profiling) there are no weaknesses, so that vector is always inferred and conviction
   tops out at 75%.
 
+
+## 8. Added 2026-10-02
+
+Findings from live use and a five-person informal test. The final project document
+([00](00_AFFINITY_FINAL_PROJECT_DOCUMENT.md), section 13) lists the full set.
+
+### 8.1 Free-tier quota is the main operational risk
+- In an informal test with five people, two got their report on screen and three were asked
+  for an email and received the full report by email in roughly 4 to 5 minutes. On free
+  tiers, the email path is a common experience, not a rare edge case. It is five people
+  informally observed, not a measured rate.
+- Heavy use exhausts Groq's per-minute and daily limits and Gemini's roughly 20 requests a
+  day per model, after which runs take the slower path.
+
+### 8.2 Estimated SAM and SOM
+- When no source states SAM or SOM but a TAM exists, the model may give an estimate. It is
+  badged "Estimate", has no citation and shows its assumption, but it is the model's own
+  working, not evidence. It has not yet been checked in a live run, and a longer prompt
+  example presses against Qwen's roughly 950-token output cap.
+
+### 8.3 Revenue models
+- Fixed: a failed model call no longer leaves the section empty. If competitors have pricing
+  text, the section is built from it and labelled inferred. If they do not, the section
+  still says the AI step did not run.
+
+### 8.4 Lookup cache, App Store layer and the comparison table
+- **Cache reuse is mostly exact-match.** A repeat run is served almost entirely from the lookup
+  cache (20.4 s to 2.8 s, no paid calls in one measurement), but a different idea in the same
+  space searched different words and saved nothing. Company facts and recurring pages are what
+  carry across ideas. Reusing results for *similar* wording would need fuzzy or semantic matching.
+- **Cached data can go stale** within its time limit (search 12 h, extracts 7 d, App Store 24 h,
+  company facts 30 d). `WEB_CACHE=0` bypasses it.
+- **The product-first query is built by rule** from the idea's first sentence, so an unusually
+  phrased idea can still search poorly. Rivals found also depend on what Tavily and the App Store
+  return that day; names such as "Chrome" or "Key Features" can still slip through NER.
+- **The App Store layer fits app-like ideas best.** For other kinds of product it usually adds
+  nothing, because only apps sharing two topic words with the idea are kept.
+
+### 8.5 The model split is reasoned, not fully measured
+- Which model each agent starts on (`AGENT_PRIMARY_MODELS`) came from each agent's token use and
+  when it runs. A live check with exhausted quotas confirmed SWOT on `gpt-oss-120b` returns valid,
+  non-degraded results, and showed revenue models colliding with SWOT on one bucket (so they were
+  moved). A second live pass (2026-10-03, with three Groq accounts) found the assumption tracker
+  failing the shape check on Qwen every time (its answer needs about 1,500 tokens, Qwen's ceiling is
+  950), so it moved to `gpt-oss-20b`. After that, SWOT, MVP, assumptions and revenue models all ran
+  live without degrading, in 3-10 s each, with no invalid-answer retries. Revenue models' first
+  choice (Gemini 3.8) was out of daily quota, so they fell to `gpt-oss-20b`, which worked; they now
+  start on `gpt-oss-120b` instead of spending a failed request on Gemini first. Re-point
+  any agent with `AGENT_MODEL_<NAME>`; `scripts/latency_token_measurement.py` re-measures.
+- **Cut-off answers were the main hidden cost.** The gpt-oss models count hidden reasoning against
+  `max_tokens`, so the 900-token budget tuned for Qwen truncated their JSON; each truncation failed
+  the shape check and cost a second call of about 4,000 tokens. Budgets are now scaled per model
+  (`_token_budget` in `agent/llm.py`). The multipliers come from one idea, measured on one run per
+  agent, so a long answer on an unusual idea could still be cut off.
+- The two gpt-oss models and Qwen format JSON a little differently; the shape check and the fallback
+  chain still catch a bad answer, at the cost of an extra call.
+
+### 8.6 Key pooling depends on separate accounts
+- Several keys help only when they belong to different Groq organizations or Google Cloud projects:
+  the limit is per account. Keys from one account share one bucket and the retry on the next key
+  fails the same way, costing a call. Using several accounts may be restricted by a provider's terms,
+  which are the operator's responsibility to check.
+- Verified live (2026-10-02 and 2026-10-03): three local Groq keys have independent buckets (spending
+  about 3,000 tokens on one left the others' per-minute headroom untouched), all work on the Groq
+  models, and real calls through the pooled chain succeeded, including a retry on the next key when
+  one key was rate limited. Not verified live: skipping a key that is
+  actually rate limited, because the key near its daily limit still had room for small calls. That
+  path (including the retry-after cooldown) is covered by tests with mocks only.
+
+### 8.6a Noise filters (added 2026-10-03)
+- Page chrome and review sites ("Chrome", "Key Features", Capterra, G2, Gartner and similar) are no
+  longer accepted as competitor names. Marketplace category headings such as "DEVELOPMENT & IT"
+  were already filtered by an earlier rule; the PDFs that showed them predate it.
+- Voice-of-the-market quotes in another language are dropped: a quote is rejected when it uses a
+  non-Latin script, has more other-language marker words than English ones, or has accented
+  letters and no English word. The check is deliberately conservative, so a foreign sentence with
+  no marker word and no accents can still pass, and a very short English quote is kept.
+
+### 8.7 The PDF
+- **Correction (2026-10-03):** earlier notes here and in the final document said the PDF had no
+  charts. It has had charts since Milestone 4 (confidence bars, viability radar, risk heat-map,
+  positioning grid, delivery timeline); those notes were wrong and are removed.
+- The PDF now prints everything the tabs show, including the comparison table, TAM/SAM/SOM with
+  Estimate labels, competitor profiles, the bear case, per-angle charts and an evidence log of
+  every source (capped at 120). Limits: URLs are plain text, not links; table text is clipped
+  because rows cannot split across pages; there is no table of contents or page-number index.
+
+### 8.8 Not built
+- A calibration of score weights, a measured competitor-recall figure, a written scaling plan,
+  progressive rendering, and a saved real example report for the landing page.

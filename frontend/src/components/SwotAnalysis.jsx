@@ -1,6 +1,7 @@
 import { IconAlertTriangle, IconCheckCircle, IconShield, IconTrendingUp } from './icons'
 import DegradedBanner from './DegradedBanner'
 import Citation from './Citation'
+import ProvenanceBadge from './ProvenanceBadge'
 
 const QUADRANTS = [
   {
@@ -87,6 +88,7 @@ export default function SwotAnalysis({ data, error, sourceMap }) {
                 <div className="flex flex-col gap-2">
                   {items.map((item, i) => {
                     const text = typeof item === 'string' ? item : item.text
+                    const sourceIds = typeof item === 'string' ? [] : item.sourceIds
                     return (
                       <div key={i} className="flex items-start gap-2.5 rounded-lg border border-white/60 bg-white/50 p-3 shadow-sm">
                         <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${itemDot}`} />
@@ -95,6 +97,7 @@ export default function SwotAnalysis({ data, error, sourceMap }) {
                           {typeof item !== 'string' && sourceMap && (
                             <Citation sourceIds={item.sourceIds} sourceMap={sourceMap} />
                           )}
+                          <ProvenanceBadge sourceIds={sourceIds} className="ml-2" />
                         </span>
                       </div>
                     )

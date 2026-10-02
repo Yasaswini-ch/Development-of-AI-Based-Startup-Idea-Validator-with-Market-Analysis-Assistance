@@ -89,8 +89,10 @@ import json
 import logging
 import os
 import re
+import urllib.parse
 import urllib.request
 
+from . import web_cache
 from .structured_output import extract_json_object
 
 # crewai/llm are imported lazily inside _profile_with_llm: every other
@@ -99,7 +101,16 @@ from .structured_output import extract_json_object
 
 logger = logging.getLogger(__name__)
 
-_MAX_COMPETITORS = 4
+# No product-imposed cap on how many competitors get shown - Yalene asked for
+# every genuinely-grounded competitor the evidence supports, not an arbitrary
+# top-N. This is still a real ceiling, not "unlimited": each competitor must
+# be grounded to a source (_ground_and_clean_competitors), and the
+# "Competitors" search angle itself is bounded to ~20 raw results
+# (retrieval.py's per_angle=10 x _QUERIES_PER_ANGLE["Competitors"]=2), so in
+# practice this can never return more distinct, evidenced names than that -
+# raised here mainly so the count is no longer artificially truncated below
+# what the evidence actually supports.
+_MAX_COMPETITORS = 20
 
 _GAP_DISCLOSURE = (
     "Identified automatically from search results - a detailed, idea-specific "
@@ -120,6 +131,12 @@ _GENERIC_WORDS = {
     "market", "industry", "report", "analysis", "options", "bank", "cloud",
     "sync", "unlimited", "premium", "team", "cash", "trade", "exploration",
     "ratings", "rating", "awards", "award",
+    # Page chrome and non-competitors that real runs surfaced as "rivals": a
+    # browser named in "Chrome extension", the "Key Features" heading of a
+    # product page, and the review/analyst sites a "best X software" article is
+    # published on (Capterra, G2 ...). A review site is a source, not a rival.
+    "chrome", "firefox", "safari", "features", "feature", "capterra", "g2", "trustpilot",
+    "trustradius", "gartner", "forrester", "pcmag", "techradar", "cnet",
     # Platform/tech/UI-chrome words that show up as capitalized ORG mentions
     # in almost any product-related source, regardless of the idea's actual
     # domain - "Available on Android and iOS", "Export as PDF", a forum
@@ -139,6 +156,23 @@ _GENERIC_WORDS = {
     # is being validated. Same rationale as "newsweek" above; confirmed
     # live ("TechCrunch" surfaced as a "competitor" for a journaling app).
     "techcrunch", "forbes", "reuters", "bloomberg", "cnn", "bbc",
+    # Confirmed live (Sept 2026, water-bottle-idea test run): same
+    # publisher-citing-a-product pattern as the outlets above, this time a
+    # tech-news site the earlier denylist pass didn't happen to cover.
+    "nocamels",
+}
+
+# Role/title words that, immediately before a capitalized span, signal
+# "this is a person's name from a bio/attribution line" rather than a
+# company - e.g. "CEO: Cyril Xinyi HAN" on a "Top 10 Super Apps" listicle.
+# Confirmed live (Sept 2026, fintech-bill-negotiation-idea test run): that
+# exact "CEO: <name>" line got NER-tagged ORG and surfaced as a
+# "competitor." Distinct from _GENERIC_WORDS (which catches mislabeled
+# generic text) - this catches a correctly-parsed real name that's simply
+# not a company at all.
+_PERSON_ATTRIBUTION_WORDS = {
+    "ceo", "founder", "co-founder", "cofounder", "president", "director",
+    "cto", "coo", "cfo", "chairman", "chairwoman",
 }
 
 _INTERNAL_CAP = re.compile(r"[a-z][A-Z]")  # e.g. "HelloFresh", "QuickBooks"
@@ -201,7 +235,19 @@ def _clean_entity_name(name: str) -> str:
 
 def _is_generic_phrase(name: str) -> bool:
     words = [w.strip(",.") for w in name.lower().split()]
-    return any(w in _GENERIC_WORDS for w in words)
+    if any(w in _GENERIC_WORDS for w in words):
+        return True
+    # "Development & IT", "Design & Creative" - a marketplace's own category
+    # nav (Freelancer.com, Toptal, Upwork all list these) reads to spaCy's
+    # ORG tagger exactly like a two-word brand joined by "&", and the two
+    # words on either side are whatever the site's category taxonomy calls
+    # its skill categories - too open-ended to denylist word by word the
+    # way _GENERIC_WORDS does. Confirmed live: both category labels above
+    # surfaced as "competitors" for a freelancer-invoicing idea. A real
+    # brand containing "&" (AT&T, Proctor & Gamble) is rare enough in this
+    # context that the false-negative cost is worth it.
+    return "&" in name
+
 
 
 def _is_duplicated_merge(name: str) -> bool:
@@ -215,6 +261,23 @@ def _is_duplicated_merge(name: str) -> bool:
     """
     segments = _CAMEL_SPLIT.findall(name)
     return any(a.lower() == b.lower() for a, b in zip(segments, segments[1:]))
+
+
+# Byline/author-credit chrome that scrapes with zero whitespace between a
+# name and the word right after it - "Aasif KhanWritten byAasif Khan...",
+# "Abhinav GirdharLast updated onSeptember 2" - confirmed live (Sept 2026,
+# a "10 Best Apps" listicle). These fuse into a camelCase-looking span
+# ("KhanWritten", "GirdharLast") that passes as a real two-part brand name
+# on a single mention, exactly like "HelloFresh" is trusted to - the
+# byline text isn't malformed HTML, the site's own markup just renders
+# "Written by", "Reviewed by", "Last updated on" immediately adjacent to
+# the name with no separating space at all.
+_BYLINE_CHROME_WORDS = {"written", "reviewed", "updated", "edited", "published", "posted", "last"}
+
+
+def _is_byline_merge(name: str) -> bool:
+    segments = _CAMEL_SPLIT.findall(name)
+    return bool(segments) and segments[-1].lower() in _BYLINE_CHROME_WORDS
 
 
 def _normalize_snippet_text(title: str, snippet: str) -> str:
@@ -240,6 +303,35 @@ def _normalize_snippet_text(title: str, snippet: str) -> str:
 def _has_product_context(sentence: str) -> bool:
     words = {w.strip(",.!?():;$") for w in sentence.lower().split()}
     return bool(words & _PRODUCT_CONTEXT_WORDS) or "$" in sentence
+
+
+def _is_person_attribution(doc, ent) -> bool:
+    """True when a role/title word (see _PERSON_ATTRIBUTION_WORDS) sits in
+    the short span of text right before this entity - "CEO: Cyril Xinyi
+    HAN", "Founder, Jane Smith". A short character window (not just "the
+    previous word") because a colon, comma, or extra whitespace commonly
+    sits between the role word and the name itself.
+    """
+    start = max(0, ent.start_char - 25)
+    preceding_words = {w.strip(":,.()") for w in doc.text[start:ent.start_char].lower().split()}
+    return bool(preceding_words & _PERSON_ATTRIBUTION_WORDS)
+
+
+_REVIEW_DATE_PATTERN = re.compile(r"^\s*\.?\s*\d{1,2}/\d{1,2}/\d{2,4}\b")
+
+
+def _is_review_byline(doc, ent) -> bool:
+    """True when the entity is immediately followed by a date in
+    M/D/YYYY-style form - "Dakota MarTin. 09/10/2026. Works great!" - the
+    exact shape a scraped customer-review section produces (reviewer name,
+    review date, review text run together with no real separator).
+    Confirmed live (Sept 2026, water-bottle-idea test run): this got
+    NER-tagged ORG and surfaced as a "competitor" despite having no role
+    word nearby for _is_person_attribution to catch - a distinct pattern,
+    not a variant of the same one.
+    """
+    following = doc.text[ent.end_char : ent.end_char + 15]
+    return bool(_REVIEW_DATE_PATTERN.match(following))
 
 
 def _local_context(doc, ent) -> str:
@@ -355,7 +447,9 @@ def _extract_entities(results: list) -> dict[str, dict]:
             words = name.split()
             if len(words) > 3 or len(name) < 3 or _is_generic_phrase(name):
                 continue
-            if _is_duplicated_merge(name):
+            if _is_person_attribution(doc, ent) or _is_review_byline(doc, ent):
+                continue
+            if _is_duplicated_merge(name) or _is_byline_merge(name):
                 continue
             entry = mentions.setdefault(
                 name,
@@ -397,12 +491,15 @@ def _extract_entities(results: list) -> dict[str, dict]:
 
 
 def _clean_offering(snippet: str) -> str:
-    """Collapse a raw snippet's embedded newlines into a single readable
-    line before it reaches the frontend - a comparison-table-scraped
-    snippet (see _normalize_snippet_text) renders as garbled multi-line
-    text like "Noah Kaufman\\n Noah Kaufman\\n\\nBlack and White
-    Roasters\\n\\nCoffee" if shown raw, confirmed live."""
-    return " ".join(snippet.split())
+    """Collapse a raw snippet into a single readable line.
+    Strips markdown headers/bold/italic that some search results return
+    as raw markup (e.g. '#### Pros', '## provider'), then collapses
+    embedded newlines."""
+    import re as _re
+    text = _re.sub(r"^#{1,6}\s+", "", snippet, flags=_re.MULTILINE)
+    text = _re.sub(r"\*{1,2}([^*]+)\*{1,2}", r"\1", text)
+    text = _re.sub(r"_{1,2}([^_]+)_{1,2}", r"\1", text)
+    return " ".join(text.split())
 
 
 def _dedupe_near_matches(mentions: dict[str, dict]) -> list[str]:
@@ -412,7 +509,10 @@ def _dedupe_near_matches(mentions: dict[str, dict]) -> list[str]:
     names = sorted(mentions.keys(), key=lambda n: (-mentions[n]["count"], len(n)))
     kept: list[str] = []
     for name in names:
-        if any(name in k or k in name for k in kept):
+        lowered = name.lower()
+        # Case-insensitive: "Toptal" and "TopTal" are one company, and were kept
+        # as two rivals when this compared exact spellings.
+        if any(lowered in k.lower() or k.lower() in lowered for k in kept):
             continue
         kept.append(name)
     return kept
@@ -518,8 +618,25 @@ def _refine_with_gemini(idea: str, entries: list[dict]) -> dict[str, dict]:
 
 
 _CLASSIFICATIONS = {"direct", "indirect", "unknown"}
-_MAX_LIST_ITEMS = 3
-_MAX_MATRIX_ROWS = 5
+_MAX_LIST_ITEMS = 5
+_LISTING_CHARS_FULL = 1800
+# The discovery prompt must fit one account's 8,000 tokens a minute together with
+# the answer (a request counts prompt + max_tokens). Listing every competitor-angle
+# source at 1,500 characters grew past that once the angle returned about 25 sources
+# and three of them carried full page text: a measured run needed roughly 10,000
+# prompt tokens, so every Groq model refused it and competitors came back unprofiled.
+# So the listing takes the best sources only, with a hard total size.
+_LISTING_MAX_SOURCES = 14
+_LISTING_CHARS_NORMAL = 1000
+_LISTING_TOTAL_CHARS = 10000  # about 2,500 tokens; with CrewAI's wrapper and the instructions the prompt is about 4,000
+# One request counts prompt + max_tokens against an account's 8,000 tokens a minute,
+# so the answer has to fit in about 3,000 tokens next to a prompt of about 4,500.
+# Profiling 20 rivals and an 8-row matrix across all of them needed 3,500+ and was
+# cut off mid-list on every model, which fails the shape check. The model profiles
+# the closest 10; further names found by NER still appear (unprofiled) and the
+# comparison table is topped up from real data (see _pad_matrix).
+_MAX_LLM_PROFILES = 10
+_MAX_MATRIX_ROWS = 8
 
 
 def _short_text(value, limit: int = 160) -> str | None:
@@ -532,7 +649,7 @@ def _short_text(value, limit: int = 160) -> str | None:
 def _short_list(value) -> list[str]:
     if not isinstance(value, list):
         return []
-    items = [_short_text(v, 120) for v in value]
+    items = [_short_text(v, 200) for v in value]
     return [v for v in items if v][:_MAX_LIST_ITEMS]
 
 
@@ -553,11 +670,11 @@ def _clean_profile(raw: dict) -> dict:
     classification = raw.get("classification")
     return {
         "classification": classification if classification in _CLASSIFICATIONS else "unknown",
-        "pricing": _short_text(raw.get("pricing"), 80) or "unknown",
-        "businessModel": _short_text(raw.get("businessModel"), 80) or "unknown",
+        "pricing": _short_text(raw.get("pricing"), 150) or "unknown",
+        "businessModel": _short_text(raw.get("businessModel"), 150) or "unknown",
         "strengths": _short_list(raw.get("strengths")),
         "weaknesses": _short_list(raw.get("weaknesses")),
-        "gap": _short_text(raw.get("gap"), 240),
+        "gap": _short_text(raw.get("gap"), 400),
     }
 
 
@@ -571,8 +688,8 @@ def _clean_matrix(raw, names: set[str]) -> list[dict]:
     for row in raw[:_MAX_MATRIX_ROWS]:
         if not isinstance(row, dict):
             continue
-        dimension = _short_text(row.get("dimension"), 60)
-        idea_cell = _short_text(row.get("idea"), 140)
+        dimension = _short_text(row.get("dimension"), 100)
+        idea_cell = _short_text(row.get("idea"), 300)
         cells = row.get("competitors")
         if not dimension or not idea_cell or not isinstance(cells, dict):
             continue
@@ -581,86 +698,648 @@ def _clean_matrix(raw, names: set[str]) -> list[dict]:
                 "dimension": dimension,
                 "idea": idea_cell,
                 "competitors": {
-                    name: _short_text(cells.get(name), 140) or "unknown" for name in names if name in cells
+                    name: _short_text(cells.get(name), 300) or "unknown" for name in names if name in cells
                 },
             }
         )
     return rows
 
 
-def _profile_with_llm(
+_PRICE_LABELS = {
+    "low": "Low (under $10/mo)",
+    "mid": "Mid ($10-25/mo)",
+    "high": "High (over $25/mo)",
+    "unknown": "unknown",
+}
+_BREADTH_LABELS = {
+    "narrow": "Narrow - a focused feature set",
+    "moderate": "Moderate feature set",
+    "broad": "Broad feature set",
+    "unknown": "unknown",
+}
+_CLASSIFICATION_LABELS = {
+    "direct": "Direct competitor",
+    "indirect": "Indirect competitor",
+    "unknown": "Unclear positioning",
+}
+
+
+_MATRIX_MIN_ROWS = 6
+_MATRIX_MAX_COMPETITOR_COLUMNS = 8
+_PRE_LAUNCH = "Not yet - pre-launch"
+
+
+def _known(value) -> bool:
+    return bool(value) and str(value).strip().lower() not in {"unknown", "n/a", "see source for details."}
+
+
+def _matrix_competitors(competitors: list[dict]) -> list[dict]:
+    """The rivals worth a column: direct before indirect before unlabelled
+    (stable within each), at most _MATRIX_MAX_COMPETITOR_COLUMNS. A table with
+    every rival found (up to 20) is unreadable."""
+    order = {"direct": 0, "indirect": 1}
+    ranked = sorted(competitors, key=lambda c: order.get(c.get("classification"), 2))
+    return ranked[:_MATRIX_MAX_COMPETITOR_COLUMNS]
+
+
+def _rating_text(competitor: dict) -> str:
+    enrichment = competitor.get("enrichment") or {}
+    rating, count = enrichment.get("averageRating"), enrichment.get("ratingCount")
+    if not rating:
+        return "unknown"
+    text = f"{float(rating):.1f}/5"
+    return f"{text} from {int(count):,} ratings" if count else text
+
+
+def _candidate_rows(competitors: list[dict], idea: str) -> list[tuple[str, str, dict, bool]]:
+    """(dimension, idea cell, {competitor: cell}, always_show) for every row
+    that can be built from fields this module already holds - nothing here is
+    invented, and the idea's own side stays honest about being pre-launch."""
+    first = (idea or "").strip().split(". ")[0].strip()[:200]
+
+    def cells(fn):
+        return {c["name"]: fn(c) or "unknown" for c in competitors}
+
+    def first_item(key):
+        return lambda c: (c.get(key) or [None])[0]
+
+    return [
+        ("Price", "Not yet priced - pre-launch", cells(lambda c: _PRICE_LABELS[c.get("estimatedPrice", "unknown")]), True),
+        ("Feature breadth", "Not yet built - pre-launch", cells(lambda c: _BREADTH_LABELS[c.get("featureBreadth", "unknown")]), True),
+        ("Positioning", "New entrant addressing this need", cells(lambda c: _CLASSIFICATION_LABELS[c.get("classification", "unknown")]), True),
+        ("What it offers", first or "See the idea above", cells(lambda c: c.get("offering") if _known(c.get("offering")) else None), False),
+        ("Business model", "Not yet decided - pre-launch", cells(lambda c: c.get("businessModel") if _known(c.get("businessModel")) else None), False),
+        ("Main strength", "Not yet proven - pre-launch", cells(first_item("strengths")), False),
+        ("Main weakness", "Not yet known - pre-launch", cells(first_item("weaknesses")), False),
+        ("Customer rating", "No users yet - pre-launch", cells(lambda c: _rating_text(c) if _known(_rating_text(c)) else None), False),
+        ("Pricing details", "Not yet priced - pre-launch", cells(lambda c: c.get("pricing") if _known(c.get("pricing")) else None), False),
+        (
+            "Founded",
+            "New",
+            cells(lambda c: str((c.get("enrichment") or {}).get("foundedYear") or "") or None),
+            False,
+        ),
+    ]
+
+
+def _build_fallback_matrix(competitors: list[dict], idea: str = "") -> list[dict]:
+    """A deterministic comparisonMatrix built only from fields this module
+    already holds for every competitor - used whenever the LLM discovery pass
+    didn't produce one (it wasn't run, timed out, or found nothing), so the
+    comparison view isn't contingent on that one call succeeding. It is
+    honest about the idea's own side: pre-launch, there is no real price or
+    shipped feature set to compare with, so those cells say exactly that
+    instead of inventing one (same fabricate-nothing rule as _GAP_DISCLOSURE).
+
+    Price, Feature breadth and Positioning are always shown. Further rows
+    (what it offers, business model, pricing details, main strength, main
+    weakness, customer rating, founded) appear only when at least one rival
+    has real data for them, up to 8 rows in all. Columns are the closest
+    rivals, at most 8.
+    """
+    if not competitors:
+        return []
+    shown = _matrix_competitors(competitors)
+    rows = []
+    for dimension, idea_cell, cells, always in _candidate_rows(shown, idea):
+        if not always and not any(_known(v) for v in cells.values()):
+            continue
+        rows.append({"dimension": dimension, "idea": idea_cell, "competitors": cells})
+        if len(rows) >= _MAX_MATRIX_ROWS:
+            break
+    return rows
+
+
+def _pad_matrix(matrix: list[dict], competitors: list[dict], idea: str = "") -> list[dict]:
+    """Top up a short model-written matrix to at least _MATRIX_MIN_ROWS rows
+    with rule-based rows for dimensions it does not already cover, using the
+    same competitors the model's rows describe. Model rows come first and are
+    never altered."""
+    if not matrix or len(matrix) >= _MATRIX_MIN_ROWS:
+        return matrix
+    names = {name for row in matrix for name in row.get("competitors", {})}
+    shown = [c for c in competitors if c["name"] in names]
+    if not shown:
+        return matrix
+    present = " | ".join(row["dimension"].lower() for row in matrix)
+    padded = list(matrix)
+    for dimension, idea_cell, cells, _always in _candidate_rows(shown, idea):
+        if len(padded) >= _MATRIX_MIN_ROWS:
+            break
+        key = dimension.lower().split()[0]
+        if key in present or not any(_known(v) for v in cells.values()):
+            continue
+        padded.append({"dimension": dimension, "idea": idea_cell, "competitors": cells})
+    return padded
+
+
+_MAX_ENRICHED = 8  # was 4; the comparison table shows up to 8 rivals and a rating row, and lookups are cached
+_WIKIDATA_SEARCH_URL = "https://www.wikidata.org/w/api.php"
+_WIKIDATA_FOUNDING_YEAR = re.compile(r"\b(1[89]\d{2}|20[0-4]\d)\b")
+_PRODUCTHUNT_ENDPOINT = "https://api.producthunt.com/v2/api/graphql"
+_ITUNES_SEARCH_URL = "https://itunes.apple.com/search"
+# Wikimedia's User-Agent policy (meta.wikimedia.org/wiki/User-Agent_policy)
+# rejects requests with no identifying User-Agent - see _wikidata_lookup.
+_WIKIMEDIA_USER_AGENT = "AffinityStartupValidator/1.0 (contact: infyteamnova@gmail.com)"
+
+
+def _itunes_lookup(name: str) -> dict | None:
+    """A free, keyless enrichment source for consumer-app competitors:
+    Apple's public iTunes Search API. Unlike Wikidata (which only covers
+    well-known/established companies) or Product Hunt (which needs a
+    developer token and only indexes what's been submitted there), this
+    covers any app actually published to the App Store - including small,
+    recent competitors that are exactly the ones a new idea is most likely
+    to be up against.
+
+    Returns rating count and price, which double as a live-vs-abandoned
+    signal: an app with a real rating count is demonstrably installed and
+    used, not just a listed name. Best-effort like the other lookups here -
+    returns None on any failure or no match, never raises.
+
+    Confirmed live: for a name with no real match, iTunes' own search still
+    returns *something* (its ranking always returns its closest fuzzy hits,
+    never an empty list for a plausible-looking query) - e.g. a nonsense
+    name returned an unrelated Arabic-language app as the top hit. Requiring
+    the candidate's own name to actually be contained in the queried name's
+    match - same "don't trust a loose match" rule _wikidata_lookup already
+    applies - closes this without losing real matches: a genuine app's
+    trackName is virtually always a superset of the name it's known by
+    (e.g. "Rocket Money - Bills & Budgets" contains "Rocket Money").
+    """
+    try:
+        url = f"{_ITUNES_SEARCH_URL}?{urllib.parse.urlencode({'term': name, 'entity': 'software', 'limit': 5})}"
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            body = json.loads(resp.read())
+        results = body.get("results") or []
+        needle = name.strip().lower()
+        match = next(
+            (
+                r for r in results
+                if needle and needle in r.get("trackName", "").strip().lower()
+            ),
+            None,
+        )
+        if not match:
+            return None
+        return {
+            "source": "itunes",
+            "trackName": match.get("trackName"),
+            "price": match.get("formattedPrice") or ("Free" if match.get("price") == 0 else None),
+            "averageRating": match.get("averageUserRating"),
+            "ratingCount": match.get("userRatingCount"),
+            "artworkUrl": match.get("artworkUrl100"),
+            "url": match.get("trackViewUrl"),
+        }
+    except Exception:
+        logger.warning("iTunes enrichment unavailable for %r", name, exc_info=True)
+        return None
+
+
+def _wikidata_lookup(name: str) -> dict | None:
+    """A free, keyless enrichment source for established companies:
+    Wikidata's public search + entity APIs. Looks up `name`, and if the
+    top hit's own label is a reasonably close match (not a generic
+    disambiguation page or an unrelated entity that merely contains the
+    word), returns its short description, a rough founding year pulled
+    from that description if stated, and a link to the Wikidata item.
+
+    Best-effort like _refine_with_gemini: returns None on any failure
+    (network error, no match, unexpected shape), never raises, so a
+    Wikidata outage never affects competitor discovery itself.
+
+    Requires a descriptive User-Agent header - confirmed live: every call
+    was failing with HTTP 403 because urllib's default "Python-urllib/3.x"
+    User-Agent is exactly what Wikimedia's User-Agent policy
+    (meta.wikimedia.org/wiki/User-Agent_policy) blocks to keep out
+    unidentified bot traffic.
+    """
+    try:
+        search_url = (
+            f"{_WIKIDATA_SEARCH_URL}?action=wbsearchentities&search="
+            f"{urllib.parse.quote(name)}&language=en&type=item&limit=1&format=json"
+        )
+        request = urllib.request.Request(
+            search_url, headers={"User-Agent": _WIKIMEDIA_USER_AGENT}
+        )
+        with urllib.request.urlopen(request, timeout=5) as resp:
+            hits = json.loads(resp.read()).get("search") or []
+        if not hits:
+            return None
+        hit = hits[0]
+        if hit.get("label", "").strip().lower() != name.strip().lower():
+            # A loose/partial match is more likely a false hit (a person,
+            # an unrelated org sharing a word) than the actual company -
+            # skip rather than attach the wrong company's data.
+            return None
+        description = (hit.get("description") or "").strip()
+        year_match = _WIKIDATA_FOUNDING_YEAR.search(description)
+        return {
+            "source": "wikidata",
+            "description": description or None,
+            "foundedYear": int(year_match.group(0)) if year_match else None,
+            "url": f"https://www.wikidata.org/wiki/{hit['id']}",
+        }
+    except Exception:
+        logger.warning("Wikidata enrichment unavailable for %r", name, exc_info=True)
+        return None
+
+
+def _producthunt_search(query: str, first: int) -> list[dict] | None:
+    """Product Hunt v2 GraphQL `posts(query: $name)` full-text search, most
+    voted first. Returns the post nodes, or None when there is no token or
+    the request/shape fails - best effort, never raises. The variable must
+    be both declared and used in the query body (an unused `$name` is
+    invalid GraphQL)."""
+    token = os.environ.get("PRODUCTHUNT_API_TOKEN")
+    if not token:
+        return None
+    try:
+        request = urllib.request.Request(
+            _PRODUCTHUNT_ENDPOINT,
+            data=json.dumps(
+                {
+                    "query": (
+                        "query SearchProduct($name: String!, $first: Int!) { "
+                        "posts(query: $name, first: $first, order: VOTES) { "
+                        "edges { node { name tagline votesCount website url } } } }"
+                    ),
+                    "variables": {"name": query, "first": first},
+                }
+            ).encode(),
+            method="POST",
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
+        )
+        with urllib.request.urlopen(request, timeout=5) as resp:
+            body = json.loads(resp.read())
+        edges = body.get("data", {}).get("posts", {}).get("edges") or []
+        return [e["node"] for e in edges if e.get("node")]
+    except Exception:
+        logger.warning("Product Hunt search unavailable for %r", query, exc_info=True)
+        return None
+
+
+def _producthunt_lookup(name: str) -> dict | None:
+    """Enrichment for one already-named competitor: keeps a Product Hunt
+    result only on an exact case-insensitive name match (a different
+    product's tagline/votes on a competitor card is worse than none).
+    Requires PRODUCTHUNT_API_TOKEN; None on no token, no match or any
+    failure - can never break competitor discovery."""
+    nodes = _producthunt_search(name, 5)
+    match = next((n for n in nodes or [] if (n.get("name") or "").strip().lower() == name.strip().lower()), None)
+    if not match:
+        return None
+    return {
+        "source": "producthunt",
+        "tagline": match.get("tagline"),
+        "votesCount": match.get("votesCount"),
+        "website": match.get("website"),
+        "url": match.get("url"),
+    }
+
+
+_MAX_SIMILAR_PRODUCTS = 5
+
+
+def _similar_products(idea: str, exclude_names: list[str]) -> list[dict]:
+    """Products on Product Hunt that match the idea itself (a search on the
+    idea text, not on a competitor name), excluding ones already listed as
+    competitors. Shown separately from `competitors` on purpose: these are
+    Product Hunt's own search hits, not names grounded in this run's search
+    snippets, so they never feed the Opportunity Score or the comparison
+    grid. [] without a token or on any failure."""
+    query = " ".join((idea or "").split())[:100]
+    if not query:
+        return []
+    taken = {n.strip().lower() for n in exclude_names}
+    seen: set[str] = set()
+    similar = []
+    for node in _producthunt_search(query, _MAX_SIMILAR_PRODUCTS + len(taken)) or []:
+        name = (node.get("name") or "").strip()
+        key = name.lower()
+        if not name or key in taken or key in seen:
+            continue
+        seen.add(key)
+        similar.append(
+            {
+                "name": name,
+                "tagline": node.get("tagline"),
+                "votesCount": node.get("votesCount"),
+                "website": node.get("website"),
+                "url": node.get("url"),
+            }
+        )
+        if len(similar) >= _MAX_SIMILAR_PRODUCTS:
+            break
+    return similar
+
+
+def _enrich_with_apis(competitors: list[dict]) -> None:
+    """Best-effort, additive enrichment of the top _MAX_ENRICHED
+    competitors with external company data (Product Hunt for software/app
+    products, Wikidata for established companies) - see
+    docs/competitor-detection-and-confidence-scoring-proposal.md Option C.
+    Mutates each competitor dict in place, adding an "enrichment" key only
+    when a source actually matched; never removes or overrides an existing
+    field, and never raises - a provider outage or missing token just means
+    no enrichment for that run, exactly like the Gemini refinement pass.
+    Bounded to the top few competitors (not all _MAX_COMPETITORS) to keep
+    external call volume small regardless of how many are found.
+
+    Order matters: Product Hunt needs a token most deployments won't have
+    configured, so iTunes (keyless, and covers small/recent apps neither
+    Product Hunt nor Wikidata's "notable enough for an encyclopedia" bar
+    reaches) is tried before falling back to Wikidata's broader,
+    non-software-specific company coverage.
+    """
+    for competitor in competitors[:_MAX_ENRICHED]:
+        name = competitor["name"]
+        # Company facts rarely change, so a name already looked up (for this or
+        # any earlier idea) is reused for 30 days instead of calling three APIs.
+        enrichment = web_cache.get("enrichment", name.strip().lower())
+        if not enrichment:
+            enrichment = _producthunt_lookup(name) or _itunes_lookup(name) or _wikidata_lookup(name)
+            web_cache.put("enrichment", name.strip().lower(), enrichment)
+        if enrichment:
+            competitor["enrichment"] = enrichment
+
+
+def _valid_discovery_shape(data: dict) -> bool:
+    """Only the top-level shape is strict; per-competitor fields are
+    sanitized (and grounding-checked) by _ground_and_clean_competitors, so
+    one malformed competitor drops that competitor rather than the whole
+    discovery pass. "competitors": [] is a valid shape (a genuine "no
+    competitors in these sources" finding), unlike the old profiling
+    pass's non-empty requirement - discovery is allowed to say "none",
+    since unlike profiling it isn't just decorating names NER already
+    found.
+    """
+    if not isinstance(data, dict):
+        return False
+    competitors = data.get("competitors")
+    if not isinstance(competitors, list):
+        return False
+    return all(isinstance(c, dict) and isinstance(c.get("name"), str) for c in competitors)
+
+
+def _local_text_near_name(text: str, name: str) -> str:
+    """The sentence(s) mentioning `name` plus the one right after each,
+    instead of the whole shared source text - mirrors how _local_context
+    scopes an NER entity's context, for the same reason and the same
+    known limit: a single "Competitors" source snippet routinely names
+    several competitors (e.g. a listicle), each with its own price/
+    features stated nearby. Without this scoping, _estimate_price/
+    _estimate_breadth ran over the *entire* source text and could pick up
+    a different competitor's numbers - confirmed live: two competitors
+    sharing one source, one cheap and one expensive, both came out with
+    the cheaper one's price bucket, since _estimate_price just takes the
+    cheapest amount found anywhere in the text it's given. This bounds
+    that to at most the immediately-following sentence (the same
+    comparison-table shape _local_context's own 2-sentence window exists
+    for - a name on one line, its price on the very next), not a full
+    source's worth of unrelated competitors' numbers; it can still bleed
+    into a different competitor's price when that competitor's own line
+    comes immediately after this one's, same tradeoff as _local_context.
+    Falls back to the full text if the name can't be located in it - no
+    longer purely defensive since _ground_and_clean_competitors stopped
+    requiring a literal substring match (Sept 2026), so a genuinely
+    ungrounded name (real, but not spelled out in this specific source)
+    hits this fallback in normal operation, not just as an edge case.
+    """
+    sentences = [s for s in text.split(". ") if s]
+    lowered_name = name.lower()
+    matches = [". ".join(sentences[i : i + 2]) for i, s in enumerate(sentences) if lowered_name in s.lower()]
+    return " ".join(matches) if matches else text
+
+
+def _ground_and_clean_competitors(raw: list, sources: dict[str, dict]) -> list[dict]:
+    """Keep competitors that cite a real source we actually gave the model -
+    a name is dropped unless it names at least one `sourceIds` entry that
+    exists in `sources`. Deliberately does NOT require the name to
+    literally appear in that source's own text (relaxed by product
+    decision, Sept 2026): the stricter substring check was dropping real,
+    correct competitors the model recognized from general knowledge of the
+    category even when a specific snippet didn't happen to spell the name
+    out verbatim - the same tradeoff team-forge's competitor agent makes.
+    Every kept competitor still points at a real URL a user can click to
+    check for themselves; what changed is only that the specific name
+    isn't re-verified against that page's text.
+    """
+    cleaned: list[dict] = []
+    seen_lower: set[str] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        name = _short_text(item.get("name"), 80)
+        if not name or name.lower() in seen_lower or _is_generic_phrase(name):
+            continue
+        source_ids = item.get("sourceIds")
+        if not isinstance(source_ids, list):
+            continue
+        matching_ids = [sid for sid in source_ids if isinstance(sid, str) and sid in sources]
+        if not matching_ids:
+            continue
+
+        seen_lower.add(name.lower())
+        primary_source = sources[matching_ids[0]]["result"]
+        local_text = " ".join(_local_text_near_name(sources[sid]["text"], name) for sid in matching_ids)
+        profile = _clean_profile(item)
+        gap = profile.pop("gap")
+        offering = _short_text(item.get("offering"), 200) or _clean_offering(
+            (primary_source.get("snippet") or "").strip()
+        )
+        cleaned.append(
+            {
+                "name": name,
+                "offering": offering or "See source for details.",
+                "url": primary_source.get("url", ""),
+                "gap": gap or _GAP_DISCLOSURE,
+                **profile,
+                "estimatedPrice": _estimate_price(local_text) or "unknown",
+                "featureBreadth": _estimate_breadth(local_text) or "unknown",
+                "_local_text": local_text,
+            }
+        )
+        if len(cleaned) >= _MAX_COMPETITORS:
+            break
+    return cleaned
+
+
+def _discover_with_llm(
     idea: str,
     target_customer: str,
     problem: str,
-    entries: list[dict],
+    results: list,
+    ner_hint_names: list[str],
     allow_local: bool = False,
 ) -> dict | None:
-    """One bounded LLM call that turns NER's bare names into competitor
-    profiles (direct/indirect, pricing, business model, strengths,
-    weaknesses, an idea-specific gap) plus an idea-vs-competitor comparison
-    matrix - grounded in the same per-competitor local text the regex
-    heuristics read, never the model's general knowledge.
+    """One bounded LLM call that reads every "Competitors"-angle search
+    result (not just the ones NER already tagged) and returns the real
+    competitors named in them, each grounded back to the source it came
+    from - see _ground_and_clean_competitors. This is what lets discovery
+    find a competitor NER's small spaCy model missed entirely (a lowercase
+    or unusual brand name, a name split oddly across sentences), instead of
+    only ever decorating NER's own list as the old profiling pass did.
 
-    Strictly additive: returns None on any failure (quota exhausted, bad
-    JSON, missing dependency) and the caller keeps the NER-only result, so
-    this can never turn a working competitor section into a failed one or
-    trigger the deep-analysis short-circuit other strategy agents use.
+    Strictly additive: returns None on any failure (no competitor-angle
+    results, quota exhausted, bad JSON, missing dependency) or when nothing
+    survives grounding, and the caller keeps its NER-only result for those
+    names, so this can never turn a working competitor section into a
+    worse one, and never adds a call when `results` has no Competitors
+    angle at all (e.g. web search itself failed).
     """
-    if not entries:
+    competitor_results = [r for r in results if r.get("angle") == "Competitors"]
+    if not competitor_results:
         return None
     try:
         from crewai import Agent, Crew, Process, Task
 
-        from .llm import get_llm, kickoff_with_fallback
+        from .llm import AGENT_MAX_EXECUTION_SECONDS, AGENT_MAX_ITER, get_llm, kickoff_with_fallback, primary_for
         from .prompts.loader import load_prompt
     except Exception:
-        logger.warning("Competitor profiling unavailable (LLM stack not importable)", exc_info=True)
+        logger.warning("Competitor discovery unavailable (LLM stack not importable)", exc_info=True)
         return None
 
-    names = {e["name"] for e in entries}
-    listing = "\n".join(f'- "{e["name"]}": {e["text"][:500]}' for e in entries)
+    sources: dict[str, dict] = {}
+    listing_lines = []
+    listing_chars = 0
+    for i, r in enumerate(competitor_results[:_LISTING_MAX_SOURCES], start=1):
+        if listing_chars >= _LISTING_TOTAL_CHARS:
+            break
+        source_id = f"r{i}"
+        full_text = r.get("fullText")
+        text = _normalize_snippet_text(r.get("title", ""), full_text or r.get("snippet", ""))
+        sources[source_id] = {"text": text, "result": r}
+        # 1500, not 600: a competitor mentioned deeper in a longer article
+        # was invisible to the model at the old budget - team-forge's own
+        # competitor prompt uses the same 1500-char window per source for
+        # the same reason (its own comment: names mentioned deeper in
+        # articles were getting truncated out at 200-300 chars).
+        # A source with full page text (Tavily Extract) gets a bigger window.
+        line = f"{source_id}: {text[:_LISTING_CHARS_FULL if full_text else _LISTING_CHARS_NORMAL]}"
+        line = line[: max(200, _LISTING_TOTAL_CHARS - listing_chars)]
+        listing_lines.append(line)
+        listing_chars += len(line) + 1
+    listing = "\n".join(listing_lines)
 
     def build_crew(model: str):
         analyst = Agent(
             role="Competitive Intelligence Analyst",
-            goal="Profile each competitor strictly from its own source text and compare it with the startup idea.",
-            backstory=load_prompt("competitor_profile_system"),
-            llm=get_llm(max_tokens=900, model=model),
+            goal="Find every real competitor named in the given search results and profile each one strictly from its own text.",
+            backstory=load_prompt("competitor_discovery_system"),
+            # 950, not 1100: qwen/qwen3.8-27b (the primary/first model tried)
+            # enforces a hard 1000 output-tokens/minute ceiling - confirmed
+            # live, "Request too large... Requested 1100... exceed the
+            # enforced limit" fails on every single call regardless of
+            # remaining quota, not a transient rate limit. 950 leaves
+            # headroom under that ceiling; the fallback models have far
+            # higher per-minute budgets so this doesn't meaningfully
+            # constrain them.
+            llm=get_llm(max_tokens=1000, model=model),  # x3 on 120b, x2.5 on 20b: prompt + this must stay under 8,000
+            max_execution_time=AGENT_MAX_EXECUTION_SECONDS,
+            max_iter=AGENT_MAX_ITER,
             verbose=False,
         )
         task = Task(
             description=load_prompt(
-                "competitor_profile_task",
+                "competitor_discovery_task",
                 idea=idea,
                 target_customer=target_customer or "not specified",
                 problem=problem or "not specified",
                 listing=listing,
+                ner_hints=", ".join(ner_hint_names) or "none",
+                max_competitors=_MAX_LLM_PROFILES,
             ),
-            expected_output=load_prompt("competitor_profile_output"),
+            expected_output=load_prompt("competitor_discovery_output"),
             agent=analyst,
         )
         return Crew(agents=[analyst], tasks=[task], process=Process.sequential, verbose=False)
 
-    def validator(data: dict) -> bool:
-        return _valid_profile_shape(data, names)
-
     try:
         output = kickoff_with_fallback(
             build_crew,
+            # Own lane, separate from market/swot/mvp's shared default
+            # (qwen3.8-27b): this call now asks for noticeably more output
+            # per competitor (richer offering/gap text, up to 8 matrix
+            # rows) than it used to, on top of already being the most
+            # quota-hungry call some nights - giving it its own Groq model
+            # bucket keeps that growth from crowding out the other
+            # sequential pipeline agents.
+            primary=primary_for("competitor"),
             allow_local=allow_local,
-            validate=lambda o: extract_json_object(o.raw, validator) is not None,
+            validate=lambda o: extract_json_object(o.raw, _valid_discovery_shape) is not None,
         )
-        data = extract_json_object(output.raw, validator)
+        data = extract_json_object(output.raw, _valid_discovery_shape)
     except Exception:
-        logger.warning("Competitor profiling failed, keeping NER-only competitors", exc_info=True)
+        logger.warning("Competitor discovery failed, keeping NER-only competitors", exc_info=True)
         return None
     if data is None:
         return None
 
+    grounded = _ground_and_clean_competitors(data["competitors"], sources)
+    names = {c["name"] for c in grounded}
     return {
-        "profiles": {name: _clean_profile(raw) for name, raw in data["profiles"].items()},
-        "comparisonMatrix": _clean_matrix(data.get("comparisonMatrix"), names),
+        "competitors": grounded,
+        "comparisonMatrix": _clean_matrix(data.get("comparisonMatrix"), names) if names else [],
     }
+
+
+_MIN_OVERLAP_FOR_DIRECT = 2
+
+
+# Words that appear on almost any page about almost any idea, so matching
+# them says nothing about whether a competitor does the same *job* - found
+# live: "time", "hours", "clients" made every competitor of a freelancer
+# invoicing idea look direct.
+_GENERIC_TOPIC_STEMS = {
+    "time", "hour", "client", "customer", "user", "people", "business",
+    "work", "day", "way", "need", "tool", "app", "platform", "service",
+}
+
+
+def _stem(word: str) -> str:
+    """Crude suffix strip so "invoice"/"invoices"/"invoicing" count as one
+    topic instead of three separate matches."""
+    w = word.lower()
+    for suffix in ("ing", "ed", "es", "s"):
+        if w.endswith(suffix) and len(w) - len(suffix) >= 4:
+            return w[: -len(suffix)]
+    return w
+
+
+def _stems(text: str) -> set[str]:
+    return {_stem(w) for w in re.findall(r"[A-Za-z]{3,}", text)}
+
+
+def _classify_competitor(
+    idea_keywords: set[str], competitor_text: str, exclude_terms: str = ""
+) -> str:
+    """Deterministic direct/indirect label from how many distinct *job*
+    topics of the idea (e.g. invoicing, payments, tracking) a competitor's
+    own text covers - the fallback path's substitute for the LLM's
+    classification, which it otherwise lacks.
+
+    "direct" needs 2+ distinct topics, "indirect" exactly 1, "unknown" none.
+    Three things keep it from calling everything direct, which is what it
+    did before: variants collapse to one stem, the customer's own words
+    (`exclude_terms`, e.g. "freelancers") and generic words are ignored
+    because every page about the audience contains them, and callers should
+    pass only the competitor's own sentence(s), not the whole shared
+    listicle snippet it was found in.
+
+    Still textual overlap, not the reasoning an LLM does ("same customer,
+    same problem") - treat it as a rough signal.
+    """
+    ignore = _GENERIC_TOPIC_STEMS | _stems(exclude_terms)
+    topic_stems = {s for s in (_stem(k) for k in idea_keywords) if s not in ignore}
+    if not topic_stems:
+        return "unknown"
+    matched = len(topic_stems & _stems(competitor_text))
+    if matched >= min(_MIN_OVERLAP_FOR_DIRECT, len(topic_stems)):
+        return "direct"
+    if matched >= 1:
+        return "indirect"
+    return "unknown"
 
 
 def analyze_competitors(
@@ -671,41 +1350,86 @@ def analyze_competitors(
     profile: bool = False,
     allow_local: bool = False,
 ) -> dict:
-    """Identify competitors from `results` via local NER - no LLM call, no
-    API dependency, so this never fails due to rate limits or provider
-    outages. An empty `competitors: []` is a genuine, valid outcome (the
-    sources didn't name any identifiable company), not a failure - matches
-    the existing contract exactly, so the frontend's null-vs-empty
-    distinction still works unchanged.
+    """Identify competitors from `results`.
+
+    Base pass: local NER - no LLM call, no API dependency, so this never
+    fails due to rate limits or provider outages. An empty `competitors: []`
+    is a genuine, valid outcome (the sources didn't name any identifiable
+    company), not a failure - matches the existing contract exactly, so the
+    frontend's null-vs-empty distinction still works unchanged.
+
+    With profile=True (the full "deep" pipeline), _discover_with_llm reads
+    the same search results with an LLM and returns grounded competitors -
+    including ones NER missed - plus richer per-competitor fields
+    (classification, pricing, businessModel, strengths, weaknesses, a real
+    idea-specific gap) and a comparisonMatrix. Its list is used first (it
+    read strictly more of the source text and every name is grounding-
+    checked); any NER name it didn't already cover is appended after it, up
+    to _MAX_COMPETITORS, as a recall safety net - see
+    docs/competitor-detection-and-confidence-scoring-proposal.md Option B.
+    Any discovery failure (including "no Competitors-angle results at all")
+    leaves this exactly as the old NER-only behavior, with "profiled":
+    False whenever profile=True and the result is non-empty.
 
     A Gemini refinement pass (_refine_with_gemini) fills in the
-    estimatedPrice/featureBreadth cells the regex heuristics left
-    "unknown" - separate API key/quota from Groq, optional (skipped
-    entirely without GEMINI_API_KEY), and never overrides a value the
-    regex heuristics already found, only fills genuine gaps.
-
-    With profile=True (the full "deep" pipeline), _profile_with_llm adds
-    richer per-competitor fields (classification, pricing, businessModel,
-    strengths, weaknesses, a real idea-specific gap) and a top-level
-    comparisonMatrix. Any profiling failure leaves the NER-only result
-    exactly as before, with "profiled": False.
+    estimatedPrice/featureBreadth cells the regex heuristics (run for both
+    NER and discovered competitors) left "unknown" - separate API key/
+    quota from Groq, optional (skipped entirely without GEMINI_API_KEY),
+    and never overrides a value already found, only fills genuine gaps.
     """
     if _nlp is None:
         return {"competitors": []}
 
+    search_result_count = sum(1 for r in results if r.get("angle") == "Competitors")
     mentions = _extract_entities(results)
     kept_names = _dedupe_near_matches(mentions)
-    names_for_this_run = kept_names[:_MAX_COMPETITORS]
+
+    discovered = (
+        _discover_with_llm(idea, target_customer, problem, results, kept_names, allow_local=allow_local)
+        if profile
+        else None
+    )
+    discovered_competitors = discovered["competitors"] if discovered else []
+    discovered_names_lower = {c["name"].lower() for c in discovered_competitors}
+
+    remaining_slots = max(0, _MAX_COMPETITORS - len(discovered_competitors))
+    ner_names = [n for n in kept_names if n.lower() not in discovered_names_lower][:remaining_slots]
 
     refinable = [
+        {"name": c["name"], "text": c["_local_text"]}
+        for c in discovered_competitors
+        if c["estimatedPrice"] == "unknown" or c["featureBreadth"] == "unknown"
+    ] + [
         {"name": name, "text": mentions[name]["local_text"]}
-        for name in names_for_this_run
+        for name in ner_names
         if mentions[name]["price"] is None or mentions[name]["breadth"] is None
     ]
     refinements = _refine_with_gemini(idea, refinable) if refinable else {}
 
+    # Wide net (8, not the usual 3) since this only needs to catch overlap,
+    # not produce a short display phrase - see _classify_competitor. Lazy
+    # import to avoid a circular import: retrieval.py itself does
+    # `from .competitor_agent import _nlp` at its own module level, so
+    # importing retrieval.py from here at module load time would resolve
+    # before this module's own `_nlp` is defined, silently leaving
+    # retrieval.py's `_nlp` (and therefore _distinctive_nouns) permanently
+    # None - confirmed live: every classification came back "unknown"
+    # because of exactly this until the import was made lazy.
+    from .retrieval import _distinctive_nouns
+
+    idea_keywords = set(_distinctive_nouns(f"{idea} {problem}", max_words=8))
+
     competitors = []
-    for name in names_for_this_run:
+    for c in discovered_competitors:
+        refined = refinements.get(c["name"], {})
+        if c["estimatedPrice"] == "unknown":
+            c["estimatedPrice"] = refined.get("price", "unknown")
+        if c["featureBreadth"] == "unknown":
+            c["featureBreadth"] = refined.get("featureBreadth", "unknown")
+        del c["_local_text"]
+        competitors.append(c)
+
+    for name in ner_names:
         info = mentions[name]
         source = info["source"]
         offering = _clean_offering((source.get("snippet") or "").strip())
@@ -720,32 +1444,31 @@ def analyze_competitors(
                 "gap": _GAP_DISCLOSURE,
                 "estimatedPrice": price,
                 "featureBreadth": breadth,
+                "classification": _classify_competitor(
+                    idea_keywords, info["local_text"], exclude_terms=target_customer
+                ),
             }
         )
 
-    result = {"competitors": competitors}
+    _enrich_with_apis(competitors)
+
+    result = {"competitors": competitors, "searchResultCount": search_result_count}
+    similar = _similar_products(idea, [c["name"] for c in competitors])
+    if similar:
+        result["similarProducts"] = similar
     if not profile or not competitors:
         return result
 
-    profiled = _profile_with_llm(
-        idea,
-        target_customer,
-        problem,
-        [{"name": c["name"], "text": mentions[c["name"]]["local_text"] or c["offering"]} for c in competitors],
-        allow_local=allow_local,
-    )
-    if profiled is None:
-        result["profiled"] = False
-        return result
-
-    for competitor in competitors:
-        extra = profiled["profiles"].get(competitor["name"])
-        if not extra:
-            continue
-        gap = extra.pop("gap")
-        competitor.update(extra)
-        if gap:
-            competitor["gap"] = gap
-    result["comparisonMatrix"] = profiled["comparisonMatrix"]
-    result["profiled"] = True
+    matrix = discovered["comparisonMatrix"] if discovered else []
+    # The LLM discovery pass is what would normally build this (see
+    # competitor_discovery_task.md Step 3), but it's one more LLM call that
+    # can fail/rate-limit/return nothing - which used to mean the whole
+    # comparison view silently disappeared regardless of how good the
+    # competitor list itself was. Falling back to a matrix built from data
+    # this module already has (estimatedPrice/featureBreadth/classification)
+    # means the comparison always renders whenever there are competitors to
+    # compare against, independent of that one call's success - it's a
+    # thinner matrix than the LLM's idea-specific one, never a missing one.
+    result["comparisonMatrix"] = _pad_matrix(matrix, competitors, idea) if matrix else _build_fallback_matrix(competitors, idea)
+    result["profiled"] = discovered is not None
     return result

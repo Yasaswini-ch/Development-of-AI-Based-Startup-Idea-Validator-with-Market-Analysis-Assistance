@@ -2,6 +2,7 @@
 LLM-call semaphore (docs/unique-features-plan.md §4).
 """
 
+import os
 import sys
 import threading
 import time
@@ -10,6 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
+os.environ.setdefault("WEB_CACHE", "0")  # tests must never read or write the shared lookup cache (agent/web_cache.py)
 sys.path.insert(0, str(BACKEND_DIR))
 
 from fastapi.testclient import TestClient
@@ -143,6 +145,25 @@ class QuickDeepModeEndpointTests(unittest.TestCase):
         self.assertEqual(invoke.call_count, 2, "a quick request must not be served from the deep response's cache entry")
         self.assertEqual(deep_response.json()["summary"], "Deep summary")
         self.assertEqual(quick_response.json()["summary"], "Quick summary")
+
+
+    def test_a_degraded_response_is_not_cached(self):
+        degraded = {"summary": "S", "results": [], "errors": {}, "mode": "deep", "swot": {"degraded": True}}
+        clean = {"summary": "S2", "results": [], "errors": {}, "mode": "deep", "swot": {"degraded": False}}
+        with patch("main.pipeline.invoke") as invoke:
+            invoke.side_effect = [degraded, clean]
+            self.client.post("/validate", json={"idea": "Same idea"})
+            second = self.client.post("/validate", json={"idea": "Same idea"})
+        self.assertEqual(invoke.call_count, 2, "a degraded result must not be served from cache")
+        self.assertEqual(second.json()["summary"], "S2")
+
+    def test_a_clean_response_is_still_cached(self):
+        clean = {"summary": "S", "results": [], "errors": {}, "mode": "deep", "swot": {"degraded": False}}
+        with patch("main.pipeline.invoke") as invoke:
+            invoke.return_value = clean
+            self.client.post("/validate", json={"idea": "Same idea"})
+            self.client.post("/validate", json={"idea": "Same idea"})
+        self.assertEqual(invoke.call_count, 1)
 
 
 class LlmConcurrencySemaphoreTests(unittest.TestCase):

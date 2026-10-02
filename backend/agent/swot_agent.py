@@ -5,8 +5,8 @@ import logging
 from crewai import Agent, Crew, Process, Task
 
 from .deterministic_fallback import deterministic_swot
-from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback
-from .verification import strip_unsupported, verify_claims
+from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback, primary_for, AGENT_MAX_EXECUTION_SECONDS, AGENT_MAX_ITER
+from .verification import audit, strip_unsupported, verify_claims
 from .prompts.loader import load_prompt
 from .structured_output import (
     compact_json,
@@ -70,6 +70,8 @@ def _build_crew(idea: str, context: str, model: str) -> Crew:
         # Bumped to 900 (was 750) to accommodate the new mitigation field
         # added to each risk item — 4 risks × ~40 tokens each ≈ 160 extra.
         llm=get_llm(max_tokens=900, model=model),
+        max_execution_time=AGENT_MAX_EXECUTION_SECONDS,
+        max_iter=AGENT_MAX_ITER,
         verbose=False,
     )
     task = Task(
@@ -108,6 +110,7 @@ def analyze_swot(
     try:
         output = kickoff_with_fallback(
             lambda model: _build_crew(idea, context, model),
+            primary=primary_for("swot"),
             allow_local=allow_local,
             validate=lambda o: extract_json_object(o.raw, _valid_shape) is not None,
         )
@@ -137,6 +140,7 @@ def analyze_swot(
         )
         supported = verify_claims(idea, flat, snippets, allow_local=allow_local)
         verified = strip_unsupported(flat, supported)
+        data["verification"] = audit(flat, supported)
         cursor = 0
         for key in _SWOT_KEYS:
             for item in data[key]:

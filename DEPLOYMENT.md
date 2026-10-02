@@ -40,7 +40,7 @@ FRONTEND_ORIGIN    frontend Render URL
 PYTHON_VERSION     3.12.7
 
 # Database and accounts - see "Database (PostgreSQL on Render)" below
-DATABASE_URL           set automatically from the Blueprint database
+DATABASE_URL           Neon pooled connection string, set by hand (see "Moving to Neon")
 AUTH_SECRET_KEY        generated automatically by the Blueprint (generateValue)
 ADMIN_EMAILS           optional - comma-separated emails to promote to admin
 REQUIRE_PERSISTENT_DB  optional - set to 1 to refuse to start without Postgres
@@ -135,6 +135,33 @@ To make a missing database fail loudly instead of silently falling back to SQLit
 > or defense either upgrade to a paid plan or recreate the database (and re-sync the
 > Blueprint) well ahead of time. Recreating it starts with an empty database, so every
 > account must sign up again and admins are re-promoted through `ADMIN_EMAILS`.
+
+### Moving to Neon (free, no expiry)
+
+Neon's free Postgres (0.5 GB) does not expire, so it avoids the 30-day limit above. The app
+only reads `DATABASE_URL`, so no code change is needed.
+
+1. Create a Neon project in the same region as the backend (Oregon), leave Neon Auth off.
+2. Open **Connect**, tick **Connection pooling**, and use **Copy snippet** for the string.
+3. Copy the existing data first (from `backend/`, with both URLs in env vars, never in files):
+
+   ```
+   pip install -r requirements.txt
+   SOURCE_DATABASE_URL=<Render External Database URL>
+   DEST_DATABASE_URL=<Neon pooled URL>
+   python scripts/copy_database.py --dry-run   # row counts only
+   python scripts/copy_database.py             # copy and verify
+   ```
+
+   The script stops if a Neon table already has rows and never modifies the source.
+4. On the Render backend, set `DATABASE_URL` to the Neon string and `DB_POOL_SIZE=3`, then redeploy.
+5. Check `/health` reports `"database": "postgresql"`, then sign in and open a past validation.
+6. Keep the old Render database until step 5 passes.
+
+`render.yaml` no longer links `DATABASE_URL` to the Render database (`sync: false`), so the value
+you set in the dashboard is kept. The old `startup-validator-db` is still declared under
+`databases:`; delete it in the Render dashboard once you're sure Neon has everything, and then
+remove that block too.
 
 ### Admin access (`ADMIN_EMAILS`)
 

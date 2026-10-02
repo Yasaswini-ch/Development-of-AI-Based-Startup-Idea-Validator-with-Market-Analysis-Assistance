@@ -95,7 +95,7 @@ distinct, non-templated feel.
   random px values)
 
 ## API Contract
-See [`milestone1-plan.md`](milestone1-plan.md) for the full contract. Summary:
+See [doc 07](07_AFFINITY_REST_API_INTERFACE_SPECIFICATION.md) for the full contract. Summary:
 
 ```
 POST /validate
@@ -104,4 +104,4 @@ Response: { summary, results: [{ title, snippet, url, query, angle, score }] }
 ```
 
 That was the Milestone 1 contract. The current, much larger response shape is in
-[`architecture.md` §4](architecture.md#4-api-contract) and [`api-reference.md`](api-reference.md).
+[`architecture.md` §4](architecture.md#4-api-contract) and [doc 07](07_AFFINITY_REST_API_INTERFACE_SPECIFICATION.md).

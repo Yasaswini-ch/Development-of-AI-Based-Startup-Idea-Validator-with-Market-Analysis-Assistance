@@ -3,8 +3,7 @@
 Owner: Yasaswini · Last updated Sept 6, 2026 (added checks 1b-1e — the second
 competitor-NER fix, the directory-domain fix, and the positioning-grid fix)
 
-Separate from [`milestone2-status.md`](milestone2-status.md) (who's doing what, task
-by task) — this is a log of the actual checks run against the real running app this
+This is a log of the actual checks run against the real running app this
 session: what was tested, how, and what came back. Kept apart so the verification
 evidence doesn't get lost inside status-tracking prose, and so it's easy to point a
 teammate or grader at "here's proof, not just a claim."
@@ -412,7 +411,7 @@ checked directly). The `_REASONING_EFFORT` map was updated to match. Local
 **Verification:** after the fix, the same water-bottle idea returned a real,
 zero-error Market Opportunity analysis (76 score, 4 grounded segments, honest
 intra-source CAGR-discrepancy note) — see
-[`cross-industry-validation-report.md`](cross-industry-validation-report.md) for
+the cross-industry validation report (not in this repository) for
 the full run. Regression tests added in
 `backend/tests/test_model_swap_fixes.py` (escape repair, shape-gate passthrough,
 and fallback-chain switching on `model_not_found`) — 16/16 passing.

@@ -1,124 +1,182 @@
 # Backend
 
-FastAPI service exposing `POST /validate`. See [`docs/architecture.md`](../docs/architecture.md)
-for the full API contract and data flow.
+FastAPI service that runs the Affinity validation pipeline. Updated 2026-10-02.
 
-Agents are orchestrated by a **LangGraph** state graph (`agent/graph.py`) with 4 nodes
-so far: `web_search` (Milestone 1) → `market_opportunity` → `competitor_discovery` →
-`opportunity_score` → `white_space` → `swot_analysis` → `mvp_recommendation` →
-`gtm_strategy`. Each later node consumes the Web Search step's
-real results as context (no re-searching). Future milestones add more agents the same
-way, as additional graph nodes.
+- **Full API reference** (all 21 routes, auth, limits, failure responses):
+  [`docs/07_AFFINITY_REST_API_INTERFACE_SPECIFICATION.md`](../docs/07_AFFINITY_REST_API_INTERFACE_SPECIFICATION.md)
+- **System design and data contracts:** [`docs/architecture.md`](../docs/architecture.md)
+- **Whole-project summary:** [`docs/00_AFFINITY_FINAL_PROJECT_DOCUMENT.md`](../docs/00_AFFINITY_FINAL_PROJECT_DOCUMENT.md)
 
-Only `market_opportunity` is a **CrewAI** agent backed by an LLM call. `web_search`
-builds its summary from a plain template over the retrieved results instead (see
-below) - it used to be a CrewAI agent too, but that call was cut entirely since a
-fallback template was already producing the real output often enough to make the LLM
-call redundant. `competitor_discovery` was a CrewAI agent through Milestone 2's first
-pass, then rewritten to a **local NER step** (spaCy `en_core_web_sm`, no LLM call at
-all) — a deliberate decision, not a fallback: every LLM call on the shared Groq key is
-a call `market_opportunity` might need instead, and identifying which capitalized
-phrases in real search snippets are company names doesn't need an LLM's open-ended
-reasoning, just reliable name-reading, which NER does at zero API cost and zero rate
-limit. The trade: `gap` is an honest generic disclosure rather than a genuine
-comparative judgment, and `estimatedPrice`/`featureBreadth` are rough pattern matches
-from nearby source text when evidence exists, otherwise `"unknown"`. The frontend
-hides unsupported badges and only places competitors in the positioning grid when both
-fields have evidence. See `agent/competitor_agent.py`'s module docstring for the full
-rationale and how a scraped snippet's embedded newlines are normalized before NER to
-avoid comparison-table pages producing garbled entity names.
+## How it runs
 
-`market_opportunity` catches its own failure: if its LLM call fails (after exhausting
-the model fallback chain — see below), `marketOpportunity` comes back `null` with a
-message in `errors.marketOpportunity` instead of crashing the whole request.
-`competitor_discovery` has no LLM call to fail this way, so `competitors` is null only
-on an unexpected exception - an empty `competitors: []` is a normal, valid "none
-found" outcome, not a failure. Only a failure in `web_search` itself (nothing to
-reason over) fails the whole request with a `502`.
+A **LangGraph** state graph (`agent/graph.py`) wires 17 nodes. In deep mode they run in this
+order:
 
-Search uses Tavily when `TAVILY_API_KEY` is set (real relevance score, reliable
-results); otherwise it falls back to free DuckDuckGo/Wikipedia/Hacker News search with
-a computed relevance score. Each idea is expanded into 5 search angles (market size &
-trends, competitors, industry news, customer demand, how others solve this problem),
-academic/research-paper domains are filtered out, and results are deduped + ranked.
-Only the reasoning LLM (Groq, by default) requires a key.
+`web_search` → `confidence_indicator` → `market_opportunity` → `competitor_discovery` →
+`opportunity_score` → `white_space` → `swot_analysis` → `viability_score` →
+(`mvp_recommendation` ∥ `gtm_strategy`, in parallel) → `contradiction_detector` →
+`experiment_generator` → `action_plan` → `assumption_tracker` → `revenue_models` →
+`confidence_dashboard` → `compute_verdict`.
 
-The Market Opportunity agent validates its JSON shape before trusting it: a valid,
-correctly-shaped JSON object recovered from the raw text (even if surrounded by a
-rambling scratchpad, past `strip_reasoning()`) is trusted regardless of what's around
-it; otherwise the node fails and reports through `errors.marketOpportunity`. Neither
-the Web Search summary nor Competitor Discovery has an equivalent gate to worry about
-anymore, since neither is LLM-generated.
+Every node reads the Web Search step's results as context, so nothing re-searches. Each node
+is timed and logged. `mode: "quick"` skips the strategy nodes (SWOT, viability, MVP, GTM,
+contradictions, experiments, action plan, revenue models) and returns core market validation.
 
-Groq is the only reasoning LLM *provider* wired in — a same-request switch to Gemini
-(using the key already in `.env`) was tested directly and dropped: it hangs for minutes
-past its own `timeout` parameter instead of failing fast. Instead, `agent/llm.py`'s
-`kickoff_with_fallback()` chains through two more *models* on the same Groq account
-(`openai/gpt-oss-20b`, then `openai/gpt-oss-120b`, alongside the primary
-`qwen/qwen3.8-27b` — updated Sept 15, 2026 after Groq deprecated and removed the
-original primary `qwen3.6-27b` entirely, which also exposed that the chain only
-switched on rate limits and let a `model_not_found` 404 raise straight through; it
-now switches on that too): Groq rate-limits per model, not per account, so on a
-rate limit or a missing model it
-switches to the next model immediately (no wait) instead of retrying the same exhausted
-one. Only once every model in the chain has failed does it wait out the last
-rate limit's suggested cooldown (capped at 30s) for one final try. Each model also has its own
-confirmed-working `reasoning_effort` value (`llm.py`'s `_REASONING_EFFORT` map) - by
-default the old `qwen3.6-27b` reserved an output-token budget for hidden `<think>` reasoning
-that alone exceeded Groq's ~1000 output-tokens-per-minute cap, the actual cause of most
-"Request too large" failures; `reasoning_effort="none"` (the current qwen primary
-accepts it, confirmed live; the gpt-oss fallbacks require `"low"`) eliminates that
-wasted scratchpad, confirmed directly
-against the live API - fewer real failures and far fewer tokens used per call.
+**Which steps use an LLM.** Nine of the 18 agents and engines call a language model, each as
+a single-agent CrewAI crew with one task and no tools: market opportunity, competitor
+discovery, SWOT and risk, MVP, go-to-market, assumptions, revenue models, the grounding
+verifier and the advisor. The rest (web research, scoring, white space, viability, voice of
+the market, confidence, contradictions, experiments and action plan, verdict) are plain
+Python, so their numbers do not depend on a model.
 
-Two more quota-pressure mitigations sit on top of this: `main.py` caches identical
-`/validate` requests in memory for 30 minutes (never caching a response that has any
-`errors` set, so a retry after a transient failure isn't stuck replaying it), and the
-frontend disables the submit button for 5 seconds after a submission to cut down on
-accidental duplicate requests.
+**Competitor discovery combines several sources.** Local spaCy NER (`en_core_web_sm`) always
+runs over the search snippets first, at no API cost. An LLM pass then adds rivals with an
+offering, gap, strengths and weaknesses, and the two lists are merged. Product Hunt, the
+iTunes Search API and Wikidata enrich matches where the name is certain. Each rival is
+labelled direct or indirect from its own text. A deterministic matrix and profile fallback
+covers a failed model call. See the module docstring in `agent/competitor_agent.py`.
+
+**Failures are isolated.** A node that fails records its message under `errors.<section>`
+and the rest of the report still returns. Only a failure of `web_search` itself (nothing to
+reason over) fails the request with a `502`. Sections with a rule-based fallback (market
+opportunity, SWOT, MVP, GTM, competitors, revenue models) return a result flagged
+`"degraded": true` instead of coming back empty.
+
+## Search
+
+Tavily and DuckDuckGo results are blended and deduplicated by URL, keeping the best score. The
+"Market size & trends" and "Competitors" angles use Tavily's advanced search, and the top three
+Competitors results also get their full page text through Tavily Extract (capped at 2,500
+characters, read only by the competitor LLM pass and never returned in the API response). These
+use more credits per run; set `TAVILY_DEEP=0` to turn them off, and each falls back to normal
+search if it fails. The competitor angle searches for what the product does (`retrieval._what_it_does`),
+not the customer's words, and the App Store's own search adds rival apps as cited sources
+(`ITUNES_DISCOVERY=0` turns that off). `agent/web_cache.py` caches these lookups and company facts
+between runs (`WEB_CACHE=0` bypasses it);
+Wikipedia and Hacker News serve as a zero-cost fallback only when neither returns. Each
+idea is expanded into five angles (market size and trends, competitors, industry news,
+customer demand, how others solve this). Academic domains and generic directory or review
+aggregators are excluded (`_EXCLUDED_DOMAINS` in `agent/retrieval.py`).
+
+## LLM routing
+
+`agent/llm.py` routes through Groq and Gemini via LiteLLM. The chain starts at
+`groq/qwen/qwen3.8-27b`, then `groq/openai/gpt-oss-20b`, `groq/openai/gpt-oss-120b`,
+`gemini/gemini-3.6-flash` and `gemini/gemini-3.8-flash`.
+`kickoff_with_fallback()` moves to the next model immediately on a rate limit, a missing
+model, a provider error, or a response whose JSON fails the caller's shape check.
+
+- **Load is split** so no single quota carries the whole run. Each agent starts on its own model
+  (`AGENT_PRIMARY_MODELS` in `agent/llm.py`; override one with `AGENT_MODEL_<NAME>`, for example
+  `AGENT_MODEL_SWOT=groq/openai/gpt-oss-20b`). Before this, six agents all started on Qwen, which
+  allows about one call a minute, so five of them waited on rate-limit errors first. The split
+  was reasoned from each agent's tokens and when it runs, and only partly checked live because the
+  free quotas were exhausted. The fallback chain still applies after the first model:
+
+  | Agent | Starts on | Why |
+  |---|---|---|
+  | Market | Groq `qwen3.8-27b` | best quality for the first, biggest step |
+  | Competitor discovery, MVP, assumption tracker, grounding verifier | Groq `gpt-oss-20b` | 8,000 tokens/min, 200k/day |
+  | SWOT, go-to-market, revenue models | Groq `gpt-oss-120b` | three agents within about 40 s: too much for one account's 8,000 tokens/min, which is why several accounts in `GROQ_API_KEYS` matter |
+  | Advisor | Gemini 3.6 flash | one call per chat message |
+- **Token budgets are scaled per model** (`_token_budget` in `agent/llm.py`). The `max_tokens` each agent
+  asks for was tuned for Qwen, which allows 950 output tokens at most. The gpt-oss models count their
+  hidden reasoning against `max_tokens`, so the same number cut the JSON off: measured on a real SWOT
+  run it needed about 1,100-1,600 tokens on `gpt-oss-20b` and 2,241 on `gpt-oss-120b` against a limit of
+  900. A cut-off answer failed the shape check and cost a whole second call (about 4,000 tokens).
+  Qwen stays capped at 950, `gpt-oss-120b` gets 3x (floor 1,500), `gpt-oss-20b` 2.5x (floor 1,500) and
+  Gemini 1.5x. After the change, four real agents ran with zero invalid-answer retries (it was 5, then 4).
+- **Several keys per provider.** `GROQ_API_KEYS` and `GEMINI_API_KEYS` take a comma-separated list
+  (the single `GROQ_API_KEY` / `GEMINI_API_KEY` still works, and with one key nothing changes). Calls
+  alternate between keys, and a rate limit on one key retries the *same* model on the next key before
+  falling to a weaker model. A key that reports a rate limit is skipped for that model until the
+  provider's own "try again in ..." time passes (capped at 15 minutes), so an exhausted key costs one
+  failed request, not one per call. **A provider limit belongs to the account, not the key**: Groq's error
+  names the organization, and Gemini's limit is per Google Cloud project, so a second key only adds
+  capacity when it comes from a different account or project. Check each provider's terms before
+  pooling keys; one key per team member's own account is the plain case. Keys are never logged.
+- **Per-agent ceilings.** Every CrewAI agent gets `max_execution_time` (75 s, `AGENT_MAX_EXECUTION_SECONDS`)
+  and `max_iter` (4, `AGENT_MAX_ITER`; CrewAI's default is 20 and each extra iteration is a paid call),
+  on top of the 30 s per-request timeout.
+- **Provider limits that shape this:** Qwen has a hard 1,000 output-tokens-per-minute cap, so
+  its calls stay under about 950 tokens; the `gpt-oss` models allow 8,000 tokens per minute
+  plus a daily cap; Gemini's free tier allows about 20 requests a day per model.
+- **`reasoning_effort`** has a confirmed-valid value per model (`_REASONING_EFFORT`).
+  Qwen accepts `"none"`, the `gpt-oss` models need `"low"`, and `gemini-3.8-flash` has no
+  entry on purpose. Check that map before assuming a quota problem needs more retries.
+- **Last resort:** a local Ollama model, used only where one is running, then one cloud retry
+  after a cooldown, then the section's deterministic fallback. Where a local model exists but
+  no email is on file, `/validate` returns `needsEmailForDeepAnalysis`; the run then goes to
+  the background and the report is emailed.
+- **Caching:** `main.py` caches identical `/validate` requests for 30 minutes and never caches
+  a response that has any `errors`, so a cached result is never a hidden failure.
 
 ## Local setup
 
 ```bash
 cd backend
 pip install -r requirements.txt
-cp .env.example .env   # then fill in GROQ_API_KEY (and TAVILY_API_KEY if you have one)
-uvicorn main:app --reload --port 8000
+python -m spacy download en_core_web_sm   # required by competitor discovery
+cp .env.example .env                      # set GROQ_API_KEY; TAVILY_API_KEY optional
+uvicorn main:app --host 127.0.0.1 --port 8000
 ```
+
+Notes:
+
+- `--reload` restarts the server on every code edit and kills any run in progress, so use it
+  only while editing.
+- Optional keys enable more: `GEMINI_API_KEY` (fallback models and the advisor),
+  `TAVILY_API_KEY` (and `TAVILY_DEEP=0` to skip the deeper, costlier calls),
+  `SENDGRID_API_KEY` and `SENDGRID_FROM_EMAIL` (report email), `GOOGLE_OAUTH_CLIENT_ID`
+  (Google sign-in), `ADMIN_EMAILS` (admin access), `DATABASE_URL` (Postgres; SQLite is the
+  local default). See `.env.example` and [`DEPLOYMENT.md`](../DEPLOYMENT.md).
+- Run the tests with `python scripts/run_tests.py` (about 40 seconds, all passing). It runs the suite
+  without API keys: `main.py` and `litellm` both load `backend/.env` on import, so a plain
+  `python -m unittest discover -s tests` puts your real Groq and Gemini keys into the tests, and any
+  test that reaches an LLM step then spends the free quota (about 90 real calls per run were measured).
+  CI has no keys, so its plain command is already safe.
 
 ## Files
 
-- `main.py` — FastAPI app, CORS config, `/validate` route (invokes the LangGraph
-  pipeline, with an in-memory cache for identical requests)
-- `agent/graph.py` — LangGraph `StateGraph`: pipeline state + node wiring; also builds
-  the Web Search summary from a plain template (`_build_summary`) - no LLM call
-- `agent/market_agent.py` — Market Opportunity & Customer Segmentation Agent
-  (Milestone 2) — market size/trends + per-segment pain points/motivations/buying
-  behavior.
-- `agent/competitor_agent.py` — Competitor Discovery (Milestone 2) — competitors with
-  offering/url/gap/estimated price/feature breadth, identified via **local spaCy NER
-  over the search results, no LLM call**
-- `agent/opportunity_score.py` — Opportunity Score post-processing node (Milestone 2
-  stretch) — combines the two agents' output into a 0–100 score, with a raw
-  search-signal fallback if both upstream agents failed
-- `agent/white_space.py` — evidence-backed opportunity-gap analysis that reuses market,
-  competitor, and source artifacts without another search or LLM call
-- `agent/swot_agent.py` — bounded SWOT and structured risk analysis
-- `agent/mvp_agent.py` — prioritized MVP features with impact/effort estimates
-- `agent/gtm_agent.py` — positioning, acquisition channels, and early-customer approach
-- `agent/session_store.py` — bounded in-memory validation context and recent chat turns
-- `agent/chat_graph.py` — separate per-message advisor graph with optional scoped search
-- `agent/structured_output.py` — shared compact-context and strict JSON parsing helpers
+**Entry point and pipeline**
+- `main.py`: FastAPI app, CORS, rate limits, request cache, all 21 routes
+- `agent/graph.py`: the LangGraph pipeline, state and node wiring
+- `agent/chat_graph.py`: the advisor's own small graph (optional scoped search, section routing)
 
-`POST /chat` accepts `{ "sessionId": "...", "message": "..." }`. Sessions expire,
-are capped in memory, and are not durable across server restarts or multiple instances.
-- `agent/output_guard.py` — `strip_reasoning()`, used by the Market Opportunity agent
-  before its own JSON-shape validation
-- `agent/retrieval.py` — expands one idea into 5 search angles, filters out academic
-  sources, dedupes, and ranks results across all of them
-- `agent/tools.py` — Tavily search (primary) with a DuckDuckGo/Wikipedia/Hacker News
-  fallback chain
-- `agent/llm.py` — reasoning LLM model selection (Groq, incl. per-model
-  `reasoning_effort`) and `kickoff_with_fallback()`, which chains through the fallback
-  models immediately on a rate limit or a `model_not_found` response rather than
-  retrying the same exhausted/missing one
+**Retrieval**
+- `agent/retrieval.py`: five-angle expansion, product-first competitor queries, App Store layer, dedupe and ranking
+- `agent/web_cache.py`: shared cache for search, extract, App Store and company lookups
+- `agent/tools.py`: Tavily and DuckDuckGo blend, free fallbacks
+
+**LLM agents**
+- `agent/market_agent.py`: market size, TAM/SAM/SOM (sourced, or a labelled estimate), trends, segments
+- `agent/competitor_agent.py`: multi-source competitor discovery, enrichment, direct/indirect labels
+- `agent/swot_agent.py`, `mvp_agent.py`, `gtm_agent.py`, `assumption_agent.py`, `revenue_agent.py`
+- `agent/verification.py`: checks that a cited source supports the claim
+- `agent/llm.py`: model chain, `reasoning_effort`, `kickoff_with_fallback()`
+- `agent/prompts/`: every prompt, as `<name>_system.md`, `_task.md` and `_output.md`
+
+**Rule-based engines**
+- `agent/opportunity_score.py`, `viability_score.py`, `verdict.py`
+- `agent/white_space.py`, `strategic_wedge.py`, `voice_of_market.py`
+- `agent/contradiction_detector.py`; the two confidence steps (`confidence_node`, `confidence_dashboard_node`) live in `agent/graph.py`
+- `agent/experiment_generator.py`, `action_plan.py`, `delivery_roadmap.py`, `commercial_model.py`
+- `agent/deterministic_fallback.py`: evidence-based fallbacks when a model call fails
+
+**Output and delivery**
+- `agent/report_assembler.py`: the canonical saved report
+- `agent/pdf_exporter.py`: ReportLab PDF
+- `agent/email_delivery.py`: SendGrid HTTP API email
+- `agent/job_store.py`: background validation jobs
+
+**Accounts, storage and telemetry**
+- `agent/db.py`, `session_store.py`, `decision_history.py`
+- `agent/auth.py`, `google_auth.py`
+- `agent/events.py`, `metrics.py`, `platform_metrics.py`, `user_analytics.py`
+
+**Helpers:** `structured_output.py` (compact context and strict JSON parsing),
+`output_guard.py` (strips model reasoning text), `idea_category.py`, `pricing.py`.
+
+`scripts/` holds `latency_token_measurement.py` (re-measure latency and token use),
+`measure_verification_impact.py`, `smoke_test.py`, `render_deployment_check.py` and
+`copy_database.py`.

@@ -37,8 +37,8 @@ import logging
 from crewai import Agent, Crew, Process, Task
 
 from .deterministic_fallback import deterministic_market_opportunity
-from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback
-from .verification import strip_unsupported, verify_claims
+from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback, primary_for, AGENT_MAX_EXECUTION_SECONDS, AGENT_MAX_ITER
+from .verification import audit, strip_unsupported, verify_claims
 from .prompts.loader import load_prompt
 from .structured_output import (
     compact_sources,
@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 # its source-relevance lookup covers the same citation window market's
 # trends/segments can actually cite (see _source_relevance_by_id).
 MAX_SOURCES_IN_CONTEXT = 10
-_MAX_SNIPPET_LEN = 300
+_MAX_SNIPPET_LEN = 600  # was 300; advanced Tavily search returns longer, more relevant content
 _MAX_SEGMENTS = 4
 _MAX_TRENDS = 4
 
@@ -107,6 +107,8 @@ def _build_market_crew(idea: str, target_customer: str, problem: str, context: s
         # primary model - the model-fallback chain (see llm.py) is the
         # actual safety net for whichever call(s) exceed the shared budget.
         llm=get_llm(max_tokens=750, model=model),
+        max_execution_time=AGENT_MAX_EXECUTION_SECONDS,
+        max_iter=AGENT_MAX_ITER,
         verbose=False,
     )
 
@@ -147,12 +149,48 @@ def _is_valid_tier(value) -> bool:
     """
     if value is None:
         return True
-    return (
+    if not (
         isinstance(value, dict)
         and isinstance(value.get("text"), str)
         and bool(value["text"].strip())
         and valid_source_ids(value.get("sourceIds", []))
-    )
+    ):
+        return False
+    # An estimated tier (SAM/SOM only - see _clean_tier) is allowed so long
+    # as it states the assumption behind the number.
+    if value.get("estimated") is True:
+        assumptions = value.get("assumptions")
+        return isinstance(assumptions, str) and bool(assumptions.strip())
+    return True
+
+
+_MAX_ASSUMPTION_CHARS = 220
+
+
+def _clean_tier(name: str, value, valid_ids: set, tam_present: bool):
+    """Normalise one tier. A sourced tier keeps its citations. An estimated
+    tier (the model's own working from the TAM, no source states it) is kept
+    only for SAM/SOM and only when a sourced-or-present TAM exists to work
+    from; it carries no citations (it must never look grounded) and always
+    keeps its stated assumption so the UI can show how the number was reached.
+    TAM itself is never allowed to be an estimate.
+    """
+    if not isinstance(value, dict):
+        return None
+    if value.get("estimated") is True:
+        assumptions = (value.get("assumptions") or "").strip()
+        if name == "tam" or not tam_present or not assumptions:
+            return None
+        return {
+            "text": value["text"].strip(),
+            "sourceIds": [],
+            "estimated": True,
+            "assumptions": assumptions[:_MAX_ASSUMPTION_CHARS],
+        }
+    return {
+        "text": value["text"].strip(),
+        "sourceIds": sanitize_source_ids(value.get("sourceIds"), valid_ids),
+    }
 
 
 def _is_valid_segment(item) -> bool:
@@ -198,6 +236,7 @@ def analyze_market_opportunity(
     try:
         crew_output = kickoff_with_fallback(
             lambda model: _build_market_crew(idea, target_customer, problem, context, model),
+            primary=primary_for("market"),
             allow_local=allow_local,
             validate=lambda output: extract_json_object(output.raw, _is_valid_shape) is not None,
         )
@@ -225,15 +264,9 @@ def analyze_market_opportunity(
             [*(data.get("marketSizeSourceIds") if valid_source_ids(data.get("marketSizeSourceIds")) else []), *inline_ids],
             valid_ids,
         )
-        for tier in ("tam", "sam", "som"):
-            value = data.get(tier)
-            if isinstance(value, dict):
-                data[tier] = {
-                    "text": value["text"].strip(),
-                    "sourceIds": sanitize_source_ids(value.get("sourceIds"), valid_ids),
-                }
-            else:
-                data[tier] = None
+        data["tam"] = _clean_tier("tam", data.get("tam"), valid_ids, tam_present=True)
+        for tier in ("sam", "som"):
+            data[tier] = _clean_tier(tier, data.get(tier), valid_ids, tam_present=data["tam"] is not None)
         data["trends"] = [
             {"text": item["text"].strip(), "sourceIds": sanitize_source_ids(item.get("sourceIds"), valid_ids)}
             for item in data["trends"][:_MAX_TRENDS]
@@ -258,6 +291,7 @@ def analyze_market_opportunity(
         )
         supported = verify_claims(idea, flat, snippets, allow_local=allow_local)
         verified = strip_unsupported(flat, supported)
+        data["verification"] = audit(flat, supported)
         data["marketSizeSourceIds"] = verified[0]["sourceIds"]
         cursor = 1
         for tier in ("tam", "sam", "som"):

@@ -1,1 +1,0 @@
-One JSON object only: {"profiles":{"CompetitorName":{"classification":"direct|indirect|unknown","pricing":"...","businessModel":"...","strengths":["..."],"weaknesses":["..."],"gap":"..."}},"comparisonMatrix":[{"dimension":"...","idea":"...","competitors":{"CompetitorName":"..."}}]}.

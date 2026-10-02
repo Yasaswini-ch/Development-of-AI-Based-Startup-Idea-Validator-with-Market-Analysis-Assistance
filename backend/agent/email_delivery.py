@@ -458,6 +458,27 @@ def _send_via_sendgrid(to_email: str, subject: str, html: str, text: str | None 
         return False
 
 
+def send_password_reset_email(to_email: str, reset_url: str) -> bool:
+    """Email a password-reset link. Same never-raises contract as the other
+    senders. Neither the address nor the link is logged."""
+    subject = "Reset your Affinity password"
+    text = (
+        "Someone asked to reset the password for your Affinity account.\n\n"
+        f"Choose a new password here (the link works once and expires in 30 minutes):\n{reset_url}\n\n"
+        "If you did not ask for this, you can ignore this email. Your password has not changed."
+    )
+    html = (
+        '<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;color:#1f1a17">'
+        '<h2 style="font-weight:600">Reset your password</h2>'
+        "<p>Someone asked to reset the password for your Affinity account.</p>"
+        f'<p><a href="{_escape(reset_url)}" style="display:inline-block;background:#e0654b;color:#fff;'
+        'padding:10px 20px;border-radius:999px;text-decoration:none">Choose a new password</a></p>'
+        '<p style="font-size:13px;color:#6b625b">The link works once and expires in 30 minutes. '
+        "If you did not ask for this, ignore this email. Your password has not changed.</p></div>"
+    )
+    return _send_via_sendgrid(to_email, subject, html, text)
+
+
 def send_canonical_report_email(to_email: str, report: dict, report_url: str | None = None) -> bool:
     """Send the Track D canonical report object (report_assembler.py) as a
     plain-text and HTML body summary. Distinct from send_report_email

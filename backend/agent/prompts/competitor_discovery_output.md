@@ -1,0 +1,1 @@
+One JSON object only: {"competitors":[{"name":"...","sourceIds":["src-1"],"offering":"...","classification":"direct|indirect|unknown","pricing":"...","businessModel":"...","strengths":["..."],"weaknesses":["..."],"gap":"..."}],"comparisonMatrix":[{"dimension":"...","idea":"...","competitors":{"CompetitorName":"..."}}]}.

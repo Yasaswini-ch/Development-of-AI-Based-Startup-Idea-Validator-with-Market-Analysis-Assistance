@@ -92,20 +92,59 @@ def _growth_score(trends: list) -> int:
     return 6
 
 
-def _competition_score(competitors: list) -> int:
-    """Lower competitor density gives a higher opportunity score."""
-    count = len(competitors or [])
+# Below this many Competitors-angle search results, zero found competitors
+# is read as thin detection input rather than a confirmed empty market -
+# see _competition_score.
+_MIN_SEARCH_RESULTS_FOR_CONFIDENT_ZERO = 3
+
+# Zero found competitors used to score a perfect 30/30 ("no competition!"),
+# which rewards a detection MISS exactly as much as a genuine blue-ocean
+# market - the single biggest issue flagged in
+# docs/competitor-detection-and-confidence-scoring-proposal.md §2.2. When
+# there wasn't much source material to have found a competitor in, this
+# uncertain-neutral score is used instead (same reasoning as
+# viability_score.py's _NO_COMPETITOR_DATA_SCORE).
+_UNKNOWN_COMPETITION_SCORE = 15
+
+
+def _competition_score(competitor_data: dict) -> int:
+    """Lower, and less direct, competitor density gives a higher
+    opportunity score.
+
+    `competitor_data` is competitor_agent.analyze_competitors()'s own
+    output dict (not just its "competitors" list), so this can tell a
+    genuinely competitor-free market apart from one where detection simply
+    had little to work with (see _UNKNOWN_COMPETITION_SCORE), and can
+    weigh a direct competitor more heavily than an indirect one now that
+    competitors can carry that classification (from the grounded LLM
+    discovery pass, when it ran).
+    """
+    competitor_data = competitor_data or {}
+    competitors = [c for c in (competitor_data.get("competitors") or []) if isinstance(c, dict)]
+    count = len(competitors)
 
     if count == 0:
-        return 30
-    if count == 1:
-        return 24
-    if count == 2:
-        return 18
-    if count == 3:
-        return 12
+        search_result_count = competitor_data.get("searchResultCount", 0)
+        if search_result_count >= _MIN_SEARCH_RESULTS_FOR_CONFIDENT_ZERO:
+            return 30
+        return _UNKNOWN_COMPETITION_SCORE
 
-    return 6
+    # A competitor with no classification (NER-only, or quick mode, where
+    # no LLM profiling ran) counts fully, same as the old count-only
+    # scoring - there's no basis to discount it. "indirect" (a different
+    # product/customer that still competes for the same underlying need)
+    # counts for half a direct competitor, since it's a weaker constraint
+    # on this specific idea's opportunity.
+    weighted = sum(0.5 if c.get("classification") == "indirect" else 1 for c in competitors)
+
+    # A continuous scale (rather than the old fixed 24/18/12/6 buckets) so
+    # a half-weighted indirect competitor actually scores between a full
+    # direct one and two full direct ones, instead of rounding down into
+    # the same bucket - the exact gap the classification field exists to
+    # close. Anchored to the same values the old per-count buckets used:
+    # 1 -> 24, 2 -> 18, 3 -> 12, 4+ -> 6, clamped so this branch can never
+    # reach the zero-competitors score (30).
+    return max(6, min(24, round(30 - 6 * weighted)))
 
 
 def _has_no_grounded_data(market_data: dict, competitor_data: dict) -> bool:
@@ -179,9 +218,7 @@ def calculate_opportunity_score(
         market_data.get("trends", [])
     )
 
-    competition_score = _competition_score(
-        competitor_data.get("competitors", [])
-    )
+    competition_score = _competition_score(competitor_data)
 
     total = market_score + growth_score + competition_score
 

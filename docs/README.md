@@ -9,21 +9,24 @@
 
 Welcome to the central documentation hub for **Affinity**.
 
-> **Two doc sets, one system.** This folder has a numbered set (`01`–`23`, written as a
-> formal report) and a lowercase set (`architecture.md`, `api-reference.md`, ...) that
-> engineers update alongside code. They overlap. Both were reconciled against the
-> `staging` code on 2026-09-26. **Where they disagree, the lowercase doc and the code
-> win.** Dated logs (`milestone*-plan.md`, `milestone*-status.md`,
-> `milestone*-verification.md`, `track-f-*`, doc 08) record what was true at the time
-> and are intentionally not updated. See
+> **Start with [`00_AFFINITY_FINAL_PROJECT_DOCUMENT.md`](00_AFFINITY_FINAL_PROJECT_DOCUMENT.md)**,
+> the single document that describes the whole project as it stands (updated 2026-10-02).
+>
+> **Two doc sets, one system.** This folder has a numbered set (`00`–`23`, written as a
+> formal report) and a lowercase set (`architecture.md`, `frontend-spec.md`, ...) that
+> engineers update alongside code. They overlap. **Where they disagree, the lowercase doc
+> and the code win.** The API reference now lives only in doc 07 (the former
+> `api-reference.md` was a duplicate with the same gaps and was removed), and the
+> runbook only in doc 09. Dated logs (`milestone*-verification.md`, `track-f-*`, doc 08)
+> record what was true at the time and are intentionally not updated. See
 > [Known Limitations §5](known-limitations-and-future-work.md#5-documentation-two-overlapping-doc-sets-process-lesson).
 >
 > | Numbered doc | Lowercase counterpart (authoritative) |
 > |---|---|
 > | 04 System topology, 12 Diagrams | [`architecture.md`](architecture.md) |
 > | 05 AI/ML engine | [`prompt-engineering-agent-design.md`](prompt-engineering-agent-design.md), [`architecture.md` §2](architecture.md#2-agent-breakdown) |
-> | 06 Data models, 07 REST API | [`api-reference.md`](api-reference.md), [`architecture.md` §4](architecture.md#4-api-contract) |
-> | 09 Deployment runbooks | [`../DEPLOYMENT.md`](../DEPLOYMENT.md), [`ops-runbook-troubleshooting.md`](ops-runbook-troubleshooting.md) |
+> | 06 Data models, 07 REST API | [`architecture.md` §4](architecture.md#4-api-contract) (07 is authoritative for the route list) |
+> | 09 Deployment runbooks | [`../DEPLOYMENT.md`](../DEPLOYMENT.md) |
 > | 10 User manual | [`frontend-spec.md`](frontend-spec.md) (UI), doc 22 (dashboards) |
 > | 13 Unit economics | [`api-cost-accuracy-performance-metrics.md`](api-cost-accuracy-performance-metrics.md) |
 > | 17 Roadmap | [`product-strategy-and-personas.md`](product-strategy-and-personas.md), [`known-limitations-and-future-work.md`](known-limitations-and-future-work.md) |
@@ -56,6 +59,7 @@ flowchart TD
 
 | # | Document | Target Audience | Primary Focus |
 |---|---|---|---|
+| **00** | [`00_AFFINITY_FINAL_PROJECT_DOCUMENT.md`](00_AFFINITY_FINAL_PROJECT_DOCUMENT.md) | Everyone | The single final document for the whole project: features, pipeline, agents, tools, reliability, open items, how to run. Start here. |
 | **01** | [`01_AFFINITY_EXECUTIVE_OVERVIEW_AND_VISION.md`](01_AFFINITY_EXECUTIVE_OVERVIEW_AND_VISION.md) | Executive / All | Core mission, value proposition, key stakeholders, and system highlights. |
 | **02** | [`02_AFFINITY_PROBLEM_STATEMENT_AND_CORE_OBJECTIVES.md`](02_AFFINITY_PROBLEM_STATEMENT_AND_CORE_OBJECTIVES.md) | Evaluators / Mentors | Founder validation dilemma, market risks, research questions (RQs), and KPIs. |
 | **03** | [`03_AFFINITY_SOFTWARE_REQUIREMENTS_SPECIFICATION.md`](03_AFFINITY_SOFTWARE_REQUIREMENTS_SPECIFICATION.md) | Software Engineers | Functional requirements (FR-01 to FR-10), NFRs, user stories, boundary contracts. |
@@ -73,7 +77,7 @@ flowchart TD
 | **15** | [`15_AFFINITY_OPPORTUNITY_SCORE_MATHEMATICAL_MODEL.md`](15_AFFINITY_OPPORTUNITY_SCORE_MATHEMATICAL_MODEL.md) | Data Engineers | Opportunity Score mathematical derivation ($\text{Score} = \text{Clamp}(50 + S_{\text{mkt}} + S_{\text{growth}} - S_{\text{den}} + S_{\text{gaps}})$, 0-100 bounds). |
 | **16** | [`16_AFFINITY_SEARCH_RETRIEVAL_AND_DOMAIN_FILTER.md`](16_AFFINITY_SEARCH_RETRIEVAL_AND_DOMAIN_FILTER.md) | Backend Engineers | 5-angle query expansion, domain exclusion (`_EXCLUDED_DOMAINS`), zero-cost search fallback chain. |
 | **17** | [`17_AFFINITY_MILESTONE_3_4_TECHNICAL_ROADMAP.md`](17_AFFINITY_MILESTONE_3_4_TECHNICAL_ROADMAP.md) | Product / DevOps | Technical spec for Milestones 3 & 4 (PDF export, comparison matrix, user accounts, webhooks). |
-| **18** | [`18_AFFINITY_ACADEMIC_VIVA_SLIDE_DECK_OUTLINE.md`](18_AFFINITY_ACADEMIC_VIVA_SLIDE_DECK_OUTLINE.md) | Presenters / Evaluators | 17-slide presentation deck outline, speaker notes, and capstone defense Q&A. |
+| **18** | [`18_AFFINITY_ACADEMIC_VIVA_SLIDE_DECK_OUTLINE.md`](18_AFFINITY_ACADEMIC_VIVA_SLIDE_DECK_OUTLINE.md) | Presenters / Evaluators | 20-slide presentation deck outline, speaker notes, and capstone defense Q&A. |
 | **19** | [`19_AFFINITY_MILESTONE_3_POSTGRESQL_AUTH_AND_DATA_PERSISTENCE.md`](19_AFFINITY_MILESTONE_3_POSTGRESQL_AUTH_AND_DATA_PERSISTENCE.md) | Database / Security | Postgres/SQLite persistence (`agent/db.py`), optional JWT accounts, the `is_admin` flag and `ADMIN_EMAILS`, retention/TTL, and the free-tier 30-day expiry. No team workspaces. |
 | **20** | [`20_AFFINITY_MILESTONE_3_PDF_DOSSIER_EXPORTER_AND_REPORTS.md`](20_AFFINITY_MILESTONE_3_PDF_DOSSIER_EXPORTER_AND_REPORTS.md) | Backend | The ReportLab-only PDF exporter (`agent/pdf_exporter.py`) and its two endpoints, which take no auth header (session ids act as share links). |
 | **21** | [`21_AFFINITY_MILESTONE_3_DEAL_SCREENING_AND_COMPARISON_MATRIX.md`](21_AFFINITY_MILESTONE_3_DEAL_SCREENING_AND_COMPARISON_MATRIX.md) | Product | Multi-idea comparison: `POST /reports/compare`, the Compare Ideas view, and the Dashboard's Comparison matrix tab. |
@@ -87,7 +91,7 @@ flowchart TD
 In addition to the 23 numbered modules above, the following detailed reference specifications are maintained in this directory:
 
 - [`confidence-and-evidence-scoring-methodology.md`](confidence-and-evidence-scoring-methodology.md) — How the headline confidence % and each evidence tile are computed, and which population each measures.
-- [`known-limitations-and-future-work.md`](known-limitations-and-future-work.md) — Retention TTLs, free-tier Postgres expiry, missing password reset, local-model hardware needs, the duplicate-doc-set lesson, and the five-pillar gaps (PDF/email don't include the new sections, template economics, Google sign-in edge cases).
+- [`known-limitations-and-future-work.md`](known-limitations-and-future-work.md) — Retention TTLs, free-tier Postgres expiry, missing email verification, local-model hardware needs, the duplicate-doc-set lesson, and the five-pillar gaps (PDF/email don't include the new sections, template economics, Google sign-in edge cases).
 - [`competitor-detection-and-confidence-scoring-proposal.md`](competitor-detection-and-confidence-scoring-proposal.md) — Proposal (not built): grounded LLM competitor extraction vs. NER vs. company APIs, and a more defensible confidence and competition score.
 - [`load-testing-plan.md`](load-testing-plan.md) — How to load-test 5–6 concurrent users, what to measure, and the expected bottlenecks.
 - [`scaling-options.md`](scaling-options.md) — The types of scaling the load test can check and the options for each (instance size, workers/queue, LLM quota, database).
@@ -95,9 +99,5 @@ In addition to the 23 numbered modules above, the following detailed reference s
 - [`architecture.md`](architecture.md) — Technical system specification & data contracts.
 - [`prompt-engineering-agent-design.md`](prompt-engineering-agent-design.md) — Deep dive into LLM prompt engineering, `reasoning_effort` tuning, and JSON repair.
 - [`security-privacy-ethics.md`](security-privacy-ethics.md) — Information security, cryptographic caching, and AI hallucination safeguards.
-- [`api-reference.md`](api-reference.md) — OpenAPI specs and TypeScript response interface contracts.
 - [`product-strategy-and-personas.md`](product-strategy-and-personas.md) — Detailed persona profiles, JTBD framework, and GTM strategy.
-- [`ops-runbook-troubleshooting.md`](ops-runbook-troubleshooting.md) — Operational incident playbooks and diagnostic commands.
 - [`milestone2-verification.md`](milestone2-verification.md) — Live empirical verification log across 7 distinct startup domains.
-- [`milestone2-status.md`](milestone2-status.md) — Milestone 2 task tracking and timeline.
-- [`milestone1-plan.md`](milestone1-plan.md), [`milestone3-plan.md`](milestone3-plan.md) — Historical milestone engineering plans (point-in-time, not updated).

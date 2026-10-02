@@ -73,11 +73,22 @@ function adaptReportToValidation(report) {
 
 export default function App() {
   const [persisted] = useState(loadPersisted)
+  // Arriving from a password-reset email (?reset=<token>): remember the token
+  // and take it out of the address bar and browser history straight away.
+  const [resetToken] = useState(() => {
+    try {
+      const token = new URLSearchParams(window.location.search).get('reset')
+      if (token) window.history.replaceState({}, '', window.location.pathname)
+      return token
+    } catch {
+      return null
+    }
+  })
   // Skip the landing page when a session is already mid-flow (a persisted
   // result from before a tab reload, per loadPersisted's own reasoning) -
   // it should only greet a genuinely fresh visitor, not interrupt someone
   // returning to their own results.
-  const [view, setView] = useState(persisted?.validation ? 'form' : 'landing')
+  const [view, setView] = useState(resetToken ? 'account' : persisted?.validation ? 'form' : 'landing')
   const [isLoading, setIsLoading] = useState(false)
   // The button already disables mid-request, but re-enables the instant a
   // response lands - nothing stopped someone from immediately firing another
@@ -86,6 +97,8 @@ export default function App() {
   // finishes (success or failure) spaces that out.
   const [cooldown, setCooldown] = useState(false)
   const [validation, setValidation] = useState(persisted?.validation ?? null)
+  // The idea typed into the landing hero, carried into the form (see IdeaForm's `initial`).
+  const [prefill, setPrefill] = useState(null)
   const [errorMessage, setErrorMessage] = useState('')
   const [processingMessage, setProcessingMessage] = useState('')
   const [deepAnalysisMessage, setDeepAnalysisMessage] = useState('')
@@ -421,7 +434,10 @@ export default function App() {
   if (view === 'landing') {
     return (
       <LandingPage
-        onStart={() => setView('form')}
+        onStart={(idea) => {
+          if (idea) setPrefill({ idea, key: Date.now() })
+          setView('form')
+        }}
         currentUser={currentUser}
         onSignIn={() => {
           setPreAuthView('landing')
@@ -517,7 +533,7 @@ export default function App() {
   if (view === 'account') {
     return (
       <div className="min-h-screen bg-surface px-4 py-10">
-        <AuthPanel apiUrl={API_URL} onAuthenticated={handleAuthenticated} onBack={() => setView(preAuthView)} />
+        <AuthPanel apiUrl={API_URL} onAuthenticated={handleAuthenticated} onBack={() => setView(preAuthView)} resetToken={resetToken} />
       </div>
     )
   }
@@ -566,7 +582,7 @@ export default function App() {
             </p>
           </header>
 
-          <IdeaForm onSubmit={validateIdea} isLoading={isLoading} loadingProgress={loadingProgress} disabled={cooldown} />
+          <IdeaForm key={prefill?.key ?? 'blank'} initial={prefill} onSubmit={validateIdea} isLoading={isLoading} loadingProgress={loadingProgress} disabled={cooldown} />
 
           {deepAnalysisMessage && (
             <DeepAnalysisPrompt
@@ -614,6 +630,7 @@ export default function App() {
               assumptions={validation.assumptions}
               revenueModels={validation.revenueModels}
               verdict={validation.verdict}
+              marketViability={validation.marketViability}
               sessionId={validation.sessionId}
               apiUrl={API_URL}
               errors={validation.errors}

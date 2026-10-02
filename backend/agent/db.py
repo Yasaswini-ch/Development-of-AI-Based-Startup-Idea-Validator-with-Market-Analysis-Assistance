@@ -83,6 +83,17 @@ users_table = Table(
     Column("avatar_url", String, nullable=True),
 )
 
+# One row per issued password-reset link. Only a SHA-256 hash of the token is
+# stored, so a database leak does not hand out working reset links. A row is
+# single-use (deleted on success) and short-lived (expires_at).
+password_resets_table = Table(
+    "password_resets",
+    metadata,
+    Column("token_hash", String, primary_key=True),
+    Column("user_id", String, nullable=False, index=True),
+    Column("expires_at", Float, nullable=False),
+)
+
 jobs_table = Table(
     "jobs",
     metadata,
@@ -98,6 +109,17 @@ cache_table = Table(
     "validation_cache",
     metadata,
     Column("cache_key", String, primary_key=True),
+    Column("data", JSON, nullable=False),
+    Column("cached_at", Float, nullable=False, index=True),
+)
+
+# Public web lookups reused across runs - see agent/web_cache.py. Distinct from
+# validation_cache above, which holds whole reports for 30 minutes.
+web_cache_table = Table(
+    "web_cache",
+    metadata,
+    Column("cache_key", String, primary_key=True),
+    Column("kind", String, nullable=False, index=True),
     Column("data", JSON, nullable=False),
     Column("cached_at", Float, nullable=False, index=True),
 )
@@ -329,7 +351,9 @@ __all__ = [
     "get_engine",
     "jobs_table",
     "now",
+    "password_resets_table",
     "reset_engine",
     "sessions_table",
     "users_table",
+    "web_cache_table",
 ]

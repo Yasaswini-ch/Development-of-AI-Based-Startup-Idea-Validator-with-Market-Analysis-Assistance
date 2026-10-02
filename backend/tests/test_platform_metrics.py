@@ -62,6 +62,48 @@ class PlatformMetricsAggregationTests(unittest.TestCase):
         self.assertAlmostEqual(result["kpis"]["apiSuccessRate"], 66.7, places=1)
         self.assertEqual(result["nodeSuccessRates"]["competitor_discovery"], 0.0)
 
+    def test_node_success_rate_comes_from_the_durable_log_not_process_counters(self):
+        # Counters reset on every restart; the events table does not.
+        from agent import metrics
+        metrics.reset()
+        for _ in range(4):
+            events.record("node_latency", node="white_space", detail={"seconds": 0.1})
+        events.record("pipeline_error", node="white_space", detail={"errorType": "ValueError"})
+        result = get_platform_metrics()
+        self.assertEqual(result["nodeSuccessRates"]["white_space"], 75.0)
+
+    def test_graph_names_and_short_names_are_counted_together(self):
+        # The graph times "swot_analysis" but failures are recorded as "swot".
+        from agent import metrics
+        metrics.reset()
+        for _ in range(2):
+            events.record("node_latency", node="swot_analysis", detail={"seconds": 2.0})
+        events.record("pipeline_error", node="swot", detail={"errorType": "RateLimitError"})
+        result = get_platform_metrics()
+        self.assertEqual(result["nodeSuccessRates"]["swot"], 50.0)
+        self.assertEqual(result["latencyByNode"]["swot"], 2.0)
+
+    def test_falls_back_to_process_counters_when_no_durable_runs_exist(self):
+        from agent import metrics
+        metrics.reset()
+        metrics.increment("node.white_space.success")
+        result = get_platform_metrics()
+        self.assertEqual(result["nodeSuccessRates"]["white_space"], 100.0)
+
+    def test_api_success_rate_uses_the_durable_log_and_agrees_with_failures(self):
+        # Counters say "all fine" (a fresh process); the durable log says
+        # 1 of 4 LLM-node runs failed. The headline must follow the log.
+        from agent import metrics
+        metrics.reset()
+        metrics.increment("node.swot.success")
+        for _ in range(3):
+            events.record("node_latency", node="swot_analysis", detail={"seconds": 1.0})
+        events.record("node_latency", node="mvp_recommendation", detail={"seconds": 1.0})
+        events.record("pipeline_error", node="mvp", detail={"errorType": "NeedsDeepAnalysisError"})
+        result = get_platform_metrics()
+        self.assertEqual(result["kpis"]["apiSuccessRate"], 75.0)
+        self.assertEqual(result["nodeSuccessRates"]["mvp"], 0.0)
+
     def test_deep_analysis_rate(self):
         events.record("cache_miss")
         events.record("cache_miss")

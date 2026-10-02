@@ -5,8 +5,8 @@ import logging
 from crewai import Agent, Crew, Process, Task
 
 from .deterministic_fallback import deterministic_mvp
-from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback
-from .verification import strip_unsupported, verify_claims
+from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback, primary_for, AGENT_MAX_EXECUTION_SECONDS, AGENT_MAX_ITER
+from .verification import audit, strip_unsupported, verify_claims
 from .prompts.loader import load_prompt
 from .structured_output import (
     compact_json,
@@ -67,6 +67,8 @@ def _build_crew(idea: str, problem: str, context: str, model: str) -> Crew:
         # arrays added to the MVP prompt. 450 was the confirmed safe floor for
         # JSON completeness; 600 leaves headroom for the extra feature lists.
         llm=get_llm(max_tokens=600, model=model),
+        max_execution_time=AGENT_MAX_EXECUTION_SECONDS,
+        max_iter=AGENT_MAX_ITER,
         verbose=False,
     )
     task = Task(
@@ -98,6 +100,7 @@ def analyze_mvp(
     try:
         output = kickoff_with_fallback(
             lambda model: _build_crew(idea, problem, context, model),
+            primary=primary_for("mvp"),
             allow_local=allow_local,
             validate=lambda o: extract_json_object(o.raw, _valid_shape) is not None,
         )
@@ -123,6 +126,7 @@ def analyze_mvp(
         flat = [{"text": item["rationale"], "sourceIds": item["sourceIds"]} for item in data["features"]]
         supported = verify_claims(idea, flat, snippets, allow_local=allow_local)
         verified = strip_unsupported(flat, supported)
+        data["verification"] = audit(flat, supported)
         for item, result in zip(data["features"], verified):
             item["sourceIds"] = result["sourceIds"]
 
