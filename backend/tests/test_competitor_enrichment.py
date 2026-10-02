@@ -131,6 +131,45 @@ class ProductHuntLookupTests(unittest.TestCase):
         self.assertIsNone(competitor_agent._producthunt_lookup("HelloFresh"))
 
 
+class ItunesLookupTests(unittest.TestCase):
+    """The keyless App Store lookup. iTunes' search always returns its
+    closest fuzzy hits, even for a name no app has, so a result is only
+    accepted when its own name contains the name we asked about."""
+
+    @patch("agent.competitor_agent.urllib.request.urlopen")
+    def test_returns_rating_price_and_artwork_for_a_name_match(self, mock_urlopen):
+        mock_urlopen.return_value = _fake_response(
+            {
+                "results": [
+                    {
+                        "trackName": "Rocket Money - Bills & Budgets",
+                        "formattedPrice": "Free",
+                        "averageUserRating": 4.4756,
+                        "userRatingCount": 394173,
+                        "artworkUrl100": "https://img.example/rocket.png",
+                        "trackViewUrl": "https://apps.apple.com/app/rocket",
+                    }
+                ]
+            }
+        )
+        result = competitor_agent._itunes_lookup("Rocket Money")
+        self.assertEqual(result["source"], "itunes")
+        self.assertEqual(result["ratingCount"], 394173)
+        self.assertEqual(result["price"], "Free")
+        self.assertEqual(result["artworkUrl"], "https://img.example/rocket.png")
+
+    @patch("agent.competitor_agent.urllib.request.urlopen")
+    def test_rejects_an_unrelated_fuzzy_hit(self, mock_urlopen):
+        # A nonsense query still gets "closest" results back from iTunes;
+        # attaching one of them would give the wrong app's rating.
+        mock_urlopen.return_value = _fake_response({"results": [{"trackName": "Some Unrelated App"}]})
+        self.assertIsNone(competitor_agent._itunes_lookup("ZzzNotARealAppXYZ"))
+
+    @patch("agent.competitor_agent.urllib.request.urlopen", side_effect=TimeoutError("boom"))
+    def test_returns_none_on_network_failure(self, _mock):
+        self.assertIsNone(competitor_agent._itunes_lookup("Notion"))
+
+
 class WikidataLookupTests(unittest.TestCase):
     @patch("agent.competitor_agent.urllib.request.urlopen")
     def test_returns_none_on_no_hits(self, mock_urlopen):

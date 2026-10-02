@@ -1,4 +1,4 @@
-import { Fragment } from 'react'
+import { Fragment, useState } from 'react'
 import { IconAlertTriangle } from './icons'
 
 // Mirrors backend/agent/competitor_agent.py's _GAP_DISCLOSURE exactly - the
@@ -79,6 +79,67 @@ function TraitList({ title, items, tone }) {
   )
 }
 
+function formatCount(n) {
+  return new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(n)
+}
+
+// Logo beside the name. Only an image we know belongs to the competitor
+// itself is shown: the App Store icon when the iTunes lookup matched it, or
+// the favicon of its own website when we have one. The card's `url` is
+// usually the *article* the name was found in, so its favicon would show the
+// publisher's logo instead - everything else falls back to the initial.
+function CompetitorLogo({ name, enrichment }) {
+  const [failed, setFailed] = useState(false)
+  let src = null
+  if (enrichment?.artworkUrl) {
+    src = enrichment.artworkUrl
+  } else if (enrichment?.website) {
+    const host = hostnameOf(enrichment.website)
+    if (host) src = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`
+  }
+  if (src && !failed) {
+    return (
+      <img
+        src={src}
+        alt=""
+        width="32"
+        height="32"
+        loading="lazy"
+        onError={() => setFailed(true)}
+        className="h-8 w-8 shrink-0 rounded-lg border border-border object-cover"
+      />
+    )
+  }
+  return (
+    <span
+      aria-hidden="true"
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/10 font-serif text-sm font-semibold text-accent"
+    >
+      {name?.trim().charAt(0).toUpperCase() || '?'}
+    </span>
+  )
+}
+
+// One quiet line of real data from the enrichment lookups: rating, review
+// count and price for an App Store match; description and founding year for
+// a Wikidata match. Shows nothing when the fields aren't there.
+function EnrichmentStrip({ enrichment }) {
+  if (!enrichment) return null
+  const parts = []
+  if (enrichment.source === 'itunes') {
+    if (typeof enrichment.averageRating === 'number') parts.push(`★ ${enrichment.averageRating.toFixed(1)}`)
+    if (enrichment.ratingCount) parts.push(`${formatCount(enrichment.ratingCount)} ratings`)
+    if (enrichment.price) parts.push(enrichment.price)
+  } else if (enrichment.source === 'wikidata') {
+    if (enrichment.description) {
+      parts.push(enrichment.description.charAt(0).toUpperCase() + enrichment.description.slice(1))
+    }
+    if (enrichment.foundedYear) parts.push(`Founded ${enrichment.foundedYear}`)
+  }
+  if (parts.length === 0) return null
+  return <p className="mt-1.5 text-xs font-medium text-muted-strong">{parts.join(' · ')}</p>
+}
+
 function CompetitorCard({ competitor }) {
   const { name, offering, url, gap, estimatedPrice, featureBreadth } = competitor
   const enrichment = competitor.enrichment || null
@@ -100,13 +161,17 @@ function CompetitorCard({ competitor }) {
       rel="noreferrer"
       className={`block rounded-2xl border-[1.5px] bg-panel p-5 transition-shadow duration-200 hover:shadow-md hover:shadow-black/5 ${CONFIDENCE_STYLES[confidence]}`}
     >
-      <h4 className="font-serif text-base font-semibold text-text">{name}</h4>
+      <div className="flex items-center gap-2.5">
+        <CompetitorLogo name={name} enrichment={enrichment} />
+        <h4 className="font-serif text-base font-semibold text-text">{name}</h4>
+      </div>
 
       {/* Show PH tagline if it's more informative than the scraped offering */}
       {enrichment?.tagline && (
         <p className="mt-1 text-xs font-medium text-accent/80 leading-snug">{enrichment.tagline}</p>
       )}
       <p className="mt-1.5 text-sm text-muted leading-relaxed">{offering}</p>
+      <EnrichmentStrip enrichment={enrichment} />
 
       <div className="mt-3 flex flex-wrap gap-1.5">
         {classification && (

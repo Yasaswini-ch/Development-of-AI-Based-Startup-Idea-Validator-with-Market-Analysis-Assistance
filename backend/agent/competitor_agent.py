@@ -787,6 +787,7 @@ def _itunes_lookup(name: str) -> dict | None:
             "price": match.get("formattedPrice") or ("Free" if match.get("price") == 0 else None),
             "averageRating": match.get("averageUserRating"),
             "ratingCount": match.get("userRatingCount"),
+            "artworkUrl": match.get("artworkUrl100"),
             "url": match.get("trackViewUrl"),
         }
     except Exception:
