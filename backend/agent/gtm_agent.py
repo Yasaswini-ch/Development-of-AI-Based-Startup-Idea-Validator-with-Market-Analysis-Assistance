@@ -5,7 +5,7 @@ import logging
 from crewai import Agent, Crew, Process, Task
 
 from .deterministic_fallback import deterministic_gtm
-from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback, primary_for
+from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback, primary_for, AGENT_MAX_EXECUTION_SECONDS, AGENT_MAX_ITER
 from .verification import strip_unsupported, verify_claims
 from .prompts.loader import load_prompt
 from .structured_output import (
@@ -64,6 +64,8 @@ def _build_crew(idea: str, target_customer: str, context: str, model: str) -> Cr
         # JSON completeness; 600 leaves headroom for 2-3 tactics per channel
         # without risk of truncation.
         llm=get_llm(max_tokens=600, model=model),
+        max_execution_time=AGENT_MAX_EXECUTION_SECONDS,
+        max_iter=AGENT_MAX_ITER,
         verbose=False,
     )
     task = Task(

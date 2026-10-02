@@ -1,4 +1,5 @@
 import logging
+import contextvars
 import os
 import re
 import threading
@@ -42,6 +43,14 @@ DEFAULT_MODEL = "groq/qwen/qwen3.8-27b"
 # call capped well under that keeps the synchronous path from hanging past
 # what the rest of the system already assumes is possible.
 _LLM_CALL_TIMEOUT_SECONDS = float(os.environ.get("LLM_CALL_TIMEOUT_SECONDS", "30"))
+
+# Ceilings applied to every CrewAI agent (see each agent's Agent(...)). The per-call timeout
+# above bounds ONE request; these bound the whole agent: max_execution_time stops a run that
+# keeps retrying slow calls, and max_iter caps how often CrewAI re-prompts when an answer is
+# not in the format it expects (default 20, each re-prompt a paid call). Our agents answer
+# in one call, so 4 leaves room for a retry without allowing a runaway.
+AGENT_MAX_EXECUTION_SECONDS = int(os.environ.get("AGENT_MAX_EXECUTION_SECONDS", "75"))
+AGENT_MAX_ITER = int(os.environ.get("AGENT_MAX_ITER", "4"))
 
 # Two models hosted on the *same* Groq account, each with its own rate-limit
 # bucket - confirmed via `GET /openai/v1/models` against our own key and a
@@ -162,6 +171,49 @@ _REASONING_EFFORT = {
 }
 
 
+# ---------------------------------------------------------------------------
+# API key pool. A provider limit applies to the ACCOUNT (Groq: the organisation;
+# Gemini: the Google Cloud project), not to a key, so a second key only adds
+# capacity when it belongs to a different account or project. Set
+# GROQ_API_KEYS / GEMINI_API_KEYS to a comma-separated list; the single
+# GROQ_API_KEY / GEMINI_API_KEY keeps working and with one key nothing changes.
+# Calls alternate between keys, and a rate limit on one key retries the SAME
+# model on the next key before the chain falls to a weaker model. Keys are never
+# logged, only "key 2 of 3".
+# ---------------------------------------------------------------------------
+_active_key: contextvars.ContextVar = contextvars.ContextVar("llm_active_key", default=None)
+_key_counters: dict[str, int] = {}
+_key_counter_lock = threading.Lock()
+
+
+def _provider_of(model: str) -> str:
+    return model.split("/", 1)[0].lower()
+
+
+def _keys_for(provider: str) -> list[str]:
+    """Every configured key for a provider: the comma-separated *_API_KEYS list,
+    plus the single *_API_KEY if it is not already in it."""
+    name = provider.upper()
+    keys = [k.strip() for k in (os.environ.get(f"{name}_API_KEYS") or "").split(",") if k.strip()]
+    single = (os.environ.get(f"{name}_API_KEY") or "").strip()
+    if single and single not in keys:
+        keys.append(single)
+    return keys
+
+
+def _key_order(provider: str) -> list[str]:
+    """The provider's keys starting from a rotating position, so consecutive
+    calls spread across keys instead of always draining the first one."""
+    keys = _keys_for(provider)
+    if len(keys) <= 1:
+        return keys
+    with _key_counter_lock:
+        start = _key_counters.get(provider, 0)
+        _key_counters[provider] = start + 1
+    start %= len(keys)
+    return keys[start:] + keys[:start]
+
+
 def get_llm(max_tokens: int | None = None, model: str | None = None):
     """LLM used by every CrewAI agent, via LiteLLM.
 
@@ -203,6 +255,9 @@ def get_llm(max_tokens: int | None = None, model: str | None = None):
     reasoning_effort = _REASONING_EFFORT.get(model)
     if reasoning_effort is not None:
         kwargs["reasoning_effort"] = reasoning_effort
+    active = _active_key.get()
+    if active and active[0] == _provider_of(model):
+        kwargs["api_key"] = active[1]  # the key chosen by the pool for this attempt
     return LLM(model=model, **kwargs)
 
 
@@ -489,11 +544,32 @@ def _kickoff_cloud_chain(build_crew, primary: str | None = None, validate=None):
         if m not in models:
             models.append(m)
 
-    def run(model):
+    def run_once(model):
         output = _kickoff_with_metrics(model, build_crew)
         if validate is not None and not validate(output):
             raise _ShapeValidationError(f"{model} response failed validation (unparseable or wrong shape).")
         return output
+
+    def run(model):
+        provider = _provider_of(model)
+        order = _key_order(provider)
+        if len(order) <= 1:
+            return run_once(model)
+        for position, key in enumerate(order, start=1):
+            token = _active_key.set((provider, key))
+            try:
+                return run_once(model)
+            except Exception as exc:
+                # Only a rate limit is a key problem; a bad answer or an outage
+                # would fail the same on any key, so it goes to the next model.
+                if position == len(order) or not _is_rate_limit_error(exc):
+                    raise
+                logger.warning(
+                    "Rate limited on %s with %s key %d of %d; retrying the same model on the next key",
+                    model, provider, position, len(order),
+                )
+            finally:
+                _active_key.reset(token)
 
     last_exc = None
     for i, model in enumerate(models):

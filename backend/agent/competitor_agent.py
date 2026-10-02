@@ -1172,7 +1172,7 @@ def _discover_with_llm(
     try:
         from crewai import Agent, Crew, Process, Task
 
-        from .llm import get_llm, kickoff_with_fallback, primary_for
+        from .llm import AGENT_MAX_EXECUTION_SECONDS, AGENT_MAX_ITER, get_llm, kickoff_with_fallback, primary_for
         from .prompts.loader import load_prompt
     except Exception:
         logger.warning("Competitor discovery unavailable (LLM stack not importable)", exc_info=True)
@@ -1208,6 +1208,8 @@ def _discover_with_llm(
             # higher per-minute budgets so this doesn't meaningfully
             # constrain them.
             llm=get_llm(max_tokens=950, model=model),
+            max_execution_time=AGENT_MAX_EXECUTION_SECONDS,
+            max_iter=AGENT_MAX_ITER,
             verbose=False,
         )
         task = Task(

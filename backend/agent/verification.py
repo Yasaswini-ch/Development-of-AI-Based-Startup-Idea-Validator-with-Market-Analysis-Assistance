@@ -22,7 +22,7 @@ import logging
 
 from crewai import Agent, Crew, Process, Task
 
-from .llm import get_llm, kickoff_with_fallback, primary_for
+from .llm import get_llm, kickoff_with_fallback, primary_for, AGENT_MAX_EXECUTION_SECONDS, AGENT_MAX_ITER
 from .prompts.loader import load_prompt
 from .structured_output import compact_json, extract_json_object
 
@@ -47,6 +47,8 @@ def _build_crew(idea: str, claims_text: str, model: str) -> Crew:
         goal="Confirm or reject each claim strictly against its own cited source text.",
         backstory=load_prompt("verification_system"),
         llm=get_llm(max_tokens=400, model=model),
+        max_execution_time=AGENT_MAX_EXECUTION_SECONDS,
+        max_iter=AGENT_MAX_ITER,
         verbose=False,
     )
     task = Task(

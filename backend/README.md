@@ -81,6 +81,16 @@ model, a provider error, or a response whose JSON fails the caller's shape check
   | SWOT, go-to-market | Groq `gpt-oss-120b` | its own 8,000 tokens/min bucket |
   | Revenue models | Gemini 3.8 flash | one call per run, and its own bucket |
   | Advisor | Gemini 3.6 flash | one call per chat message |
+- **Several keys per provider.** `GROQ_API_KEYS` and `GEMINI_API_KEYS` take a comma-separated list
+  (the single `GROQ_API_KEY` / `GEMINI_API_KEY` still works, and with one key nothing changes). Calls
+  alternate between keys, and a rate limit on one key retries the *same* model on the next key before
+  falling to a weaker model. **A provider limit belongs to the account, not the key**: Groq's error
+  names the organization, and Gemini's limit is per Google Cloud project, so a second key only adds
+  capacity when it comes from a different account or project. Check each provider's terms before
+  pooling keys; one key per team member's own account is the plain case. Keys are never logged.
+- **Per-agent ceilings.** Every CrewAI agent gets `max_execution_time` (75 s, `AGENT_MAX_EXECUTION_SECONDS`)
+  and `max_iter` (4, `AGENT_MAX_ITER`; CrewAI's default is 20 and each extra iteration is a paid call),
+  on top of the 30 s per-request timeout.
 - **Provider limits that shape this:** Qwen has a hard 1,000 output-tokens-per-minute cap, so
   its calls stay under about 950 tokens; the `gpt-oss` models allow 8,000 tokens per minute
   plus a daily cap; Gemini's free tier allows about 20 requests a day per model.

@@ -5,7 +5,7 @@ import logging
 from crewai import Agent, Crew, Process, Task
 
 from .deterministic_fallback import deterministic_mvp
-from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback, primary_for
+from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback, primary_for, AGENT_MAX_EXECUTION_SECONDS, AGENT_MAX_ITER
 from .verification import strip_unsupported, verify_claims
 from .prompts.loader import load_prompt
 from .structured_output import (
@@ -67,6 +67,8 @@ def _build_crew(idea: str, problem: str, context: str, model: str) -> Crew:
         # arrays added to the MVP prompt. 450 was the confirmed safe floor for
         # JSON completeness; 600 leaves headroom for the extra feature lists.
         llm=get_llm(max_tokens=600, model=model),
+        max_execution_time=AGENT_MAX_EXECUTION_SECONDS,
+        max_iter=AGENT_MAX_ITER,
         verbose=False,
     )
     task = Task(

@@ -8,7 +8,7 @@ from langgraph.graph import END, START, StateGraph
 
 from . import retrieval
 from .decision_history import summarize_decisions
-from .llm import get_llm, kickoff_with_fallback, primary_for
+from .llm import get_llm, kickoff_with_fallback, primary_for, AGENT_MAX_EXECUTION_SECONDS, AGENT_MAX_ITER
 from .output_guard import strip_reasoning
 from .prompts.loader import load_prompt
 from .session_store import append_turn, get_session, reserve_chat_request
@@ -141,6 +141,8 @@ def _build_response_crew(message: str, context: str, history: str, decisions: st
         goal="Answer founder follow-up questions using validated session evidence and clearly label uncertainty.",
         backstory=load_prompt("chat_advisor_system"),
         llm=get_llm(max_tokens=550, model=model),
+        max_execution_time=AGENT_MAX_EXECUTION_SECONDS,
+        max_iter=AGENT_MAX_ITER,
         verbose=False,
     )
     task = Task(

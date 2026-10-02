@@ -248,6 +248,11 @@ Affinity runs on free tiers, so rate limits are the main operational risk.
   one call a minute, so most of them waited on rate limits before falling back. The split is
   reasoned from each agent's tokens and timing, was only partly checked live (quotas were
   exhausted), and any agent can be re-pointed with `AGENT_MODEL_<NAME>`.
+- **Key pooling and ceilings.** `GROQ_API_KEYS` / `GEMINI_API_KEYS` accept several keys; calls
+  alternate between them and a rate limit retries the same model on the next key before downgrading.
+  A provider limit belongs to the account (Groq's organization, Gemini's Cloud project), so extra keys
+  help only if they come from different accounts, and the provider's terms should be checked first.
+  Every agent also has an execution ceiling (75 s) and an iteration cap (4, down from CrewAI's 20).
 - **Provider limits that shaped the design:** the Qwen model has a hard 1,000 output-token
   per-minute cap, so its calls are kept under about 950 tokens; the `gpt-oss` models have an
   8,000 tokens-per-minute and a daily cap; Gemini's free tier allows about 20 requests a day

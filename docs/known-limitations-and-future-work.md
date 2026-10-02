@@ -253,6 +253,14 @@ Findings from live use and a five-person informal test. The final project docume
 - `gpt-oss-20b` and `gpt-oss-120b` may format JSON differently from Qwen; the shape check and the
   fallback chain catch a bad answer, at the cost of an extra call.
 
-### 8.6 Not built
+### 8.6 Key pooling depends on separate accounts
+- Several keys help only when they belong to different Groq organizations or Google Cloud projects:
+  the limit is per account. Keys from one account share one bucket and the retry on the next key
+  fails the same way, costing a call. Using several accounts may be restricted by a provider's terms,
+  which are the operator's responsibility to check.
+- Pooling was tested with mocks only (the free quotas were exhausted and there was one real account),
+  so its behaviour against two real accounts is unproven.
+
+### 8.7 Not built
 - PDF charts, a calibration of score weights, a measured competitor-recall figure, a written
   scaling plan, progressive rendering, and a saved real example report for the landing page.

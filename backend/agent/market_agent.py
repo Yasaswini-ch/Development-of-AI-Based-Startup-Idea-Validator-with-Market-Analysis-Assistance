@@ -37,7 +37,7 @@ import logging
 from crewai import Agent, Crew, Process, Task
 
 from .deterministic_fallback import deterministic_market_opportunity
-from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback, primary_for
+from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback, primary_for, AGENT_MAX_EXECUTION_SECONDS, AGENT_MAX_ITER
 from .verification import strip_unsupported, verify_claims
 from .prompts.loader import load_prompt
 from .structured_output import (
@@ -107,6 +107,8 @@ def _build_market_crew(idea: str, target_customer: str, problem: str, context: s
         # primary model - the model-fallback chain (see llm.py) is the
         # actual safety net for whichever call(s) exceed the shared budget.
         llm=get_llm(max_tokens=750, model=model),
+        max_execution_time=AGENT_MAX_EXECUTION_SECONDS,
+        max_iter=AGENT_MAX_ITER,
         verbose=False,
     )
 
