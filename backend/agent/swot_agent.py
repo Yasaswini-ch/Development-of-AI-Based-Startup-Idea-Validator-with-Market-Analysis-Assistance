@@ -6,7 +6,7 @@ from crewai import Agent, Crew, Process, Task
 
 from .deterministic_fallback import deterministic_swot
 from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback, primary_for, AGENT_MAX_EXECUTION_SECONDS, AGENT_MAX_ITER
-from .verification import strip_unsupported, verify_claims
+from .verification import audit, strip_unsupported, verify_claims
 from .prompts.loader import load_prompt
 from .structured_output import (
     compact_json,
@@ -140,6 +140,7 @@ def analyze_swot(
         )
         supported = verify_claims(idea, flat, snippets, allow_local=allow_local)
         verified = strip_unsupported(flat, supported)
+        data["verification"] = audit(flat, supported)
         cursor = 0
         for key in _SWOT_KEYS:
             for item in data[key]:

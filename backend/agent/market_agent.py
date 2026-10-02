@@ -38,7 +38,7 @@ from crewai import Agent, Crew, Process, Task
 
 from .deterministic_fallback import deterministic_market_opportunity
 from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback, primary_for, AGENT_MAX_EXECUTION_SECONDS, AGENT_MAX_ITER
-from .verification import strip_unsupported, verify_claims
+from .verification import audit, strip_unsupported, verify_claims
 from .prompts.loader import load_prompt
 from .structured_output import (
     compact_sources,
@@ -291,6 +291,7 @@ def analyze_market_opportunity(
         )
         supported = verify_claims(idea, flat, snippets, allow_local=allow_local)
         verified = strip_unsupported(flat, supported)
+        data["verification"] = audit(flat, supported)
         data["marketSizeSourceIds"] = verified[0]["sourceIds"]
         cursor = 1
         for tier in ("tam", "sam", "som"):

@@ -9,6 +9,7 @@ import MvpRecommendations from './MvpRecommendations'
 import GtmStrategy from './GtmStrategy'
 import ChatAdvisor from './ChatAdvisor'
 import ConfidenceDashboard from './ConfidenceDashboard'
+import EvidenceAudit from './EvidenceAudit'
 import ContradictionsBanner from './ContradictionsBanner'
 import ExperimentsActionPlan from './ExperimentsActionPlan'
 import { buildSourceMap } from '../lib/sources'
@@ -396,6 +397,8 @@ export default function ValidationResults({
       <div>
         <ConfidenceDashboard data={confidence} />
       </div>
+
+      <EvidenceAudit marketOpportunity={marketOpportunity} swot={swot} mvp={mvp} gtm={gtm} />
 
       {veryThinData && (
         <GroundingNotice message="Fewer than 4 sources were retrieved for this idea — some sections may be inferred rather than grounded in real market data. Try rephrasing the idea or problem statement for a deeper result." />

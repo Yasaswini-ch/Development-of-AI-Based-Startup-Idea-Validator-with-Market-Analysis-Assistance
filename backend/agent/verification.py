@@ -59,6 +59,31 @@ def _build_crew(idea: str, claims_text: str, model: str) -> Crew:
     return Crew(agents=[checker], tasks=[task], process=Process.sequential, verbose=False)
 
 
+class Verdicts(list):
+    """The per-claim supported flags, plus whether the check actually ran.
+
+    A plain list of booleans cannot tell "every claim was supported" from "the
+    verification call failed and everything was kept as cited", and the evidence
+    audit must not claim a check that never happened. Still a list, so existing
+    callers are unchanged."""
+
+    ran: bool = False
+    checked: int = 0
+
+
+def audit(claims: list[dict], supported: list[bool]) -> dict:
+    """What the verification pass did to one section, for the evidence audit:
+    how many cited claims it examined, and which ones lost their citation (the
+    claim stays in the report, now labelled inferred)."""
+    ran = bool(getattr(supported, "ran", False))
+    removed = [
+        {"text": str(claim.get("text") or "")[:240], "sourceIds": list(claim.get("sourceIds") or [])}
+        for claim, ok in zip(claims, supported)
+        if not ok
+    ]
+    return {"ran": ran, "checked": int(getattr(supported, "checked", 0)), "removed": removed}
+
+
 def verify_claims(
     idea: str,
     claims: list[dict],
@@ -77,7 +102,7 @@ def verify_claims(
     """
     indices_to_check = [i for i, claim in enumerate(claims) if claim.get("sourceIds")]
     if not indices_to_check:
-        return [True] * len(claims)
+        return Verdicts([True] * len(claims))
 
     checked = indices_to_check[:_MAX_CLAIMS_PER_PASS]
     payload = [
@@ -104,11 +129,14 @@ def verify_claims(
         supported_by_index = {item["index"]: item["supported"] for item in data["results"]}
     except Exception:
         logger.warning("Verification pass unavailable, keeping claims as originally cited", exc_info=True)
-        return [True] * len(claims)
+        return Verdicts([True] * len(claims))
 
     # Unchecked claims (no sourceIds, or beyond _MAX_CLAIMS_PER_PASS) default
     # to True - "not checked" is not the same as "unsupported".
-    return [supported_by_index.get(i, True) for i in range(len(claims))]
+    verdicts = Verdicts(supported_by_index.get(i, True) for i in range(len(claims)))
+    verdicts.ran = True
+    verdicts.checked = len(checked)
+    return verdicts
 
 
 def strip_unsupported(claims: list[dict], supported: list[bool]) -> list[dict]:

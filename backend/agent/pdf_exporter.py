@@ -1819,6 +1819,32 @@ def _evidence_log(story, d, s, sections):
         story.append(Paragraph(f"{len(results) - 120} further sources are not listed here.", s["body_muted"]))
 
 
+def _evidence_audit(story, d, s):
+    """What the source check did: cited claims examined and citations removed."""
+    rows = []
+    for key, label in (("marketOpportunity", "Market"), ("swot", "SWOT"), ("mvp", "MVP"), ("gtm", "Go-to-market")):
+        v = (d.get(key) or {}).get("verification") if isinstance(d.get(key), dict) else None
+        if isinstance(v, dict):
+            rows.append((label, v))
+    if not rows:
+        return
+    ran = [(label, v) for label, v in rows if v.get("ran")]
+    checked = sum(int(v.get("checked") or 0) for _, v in ran)
+    removed = [c for _, v in ran for c in v.get("removed") or []]
+    story.append(Spacer(1, 10))
+    story.append(Paragraph("Evidence audit", s["h3"]))
+    story.append(Spacer(1, 4))
+    if not ran:
+        story.append(Paragraph("The source check did not run for this report, so citations are shown as the writing step gave them.", s["body_muted"]))
+        return
+    story.append(Paragraph(
+        f"{checked} cited claims were checked against their source text: {checked - len(removed)} held up"
+        + (f", {len(removed)} lost their citation because the source did not support them." if removed else "."), s["body"]))
+    for label, v in ran:
+        for c in v.get("removed") or []:
+            story.append(Paragraph(f"<b>{_e(label)}</b>: {_e(c.get('text') or '')}", s["body_muted"]))
+
+
 def build_story(dossier_data: Dict[str, Any], generated: str) -> list:
     """The report's flowables in reading order: idea context, verdict,
     summary + KPI strip, evidence confidence, then the numbered analysis sections (each skipped
@@ -1834,6 +1860,7 @@ def build_story(dossier_data: Dict[str, Any], generated: str) -> list:
     _angle_agreement(story, d.get("confidence") or {}, s)
     _angle_mix(story, d.get("results"), s)
     _report_notes(story, d, s)
+    _evidence_audit(story, d, s)
 
     sections = _Sections(story, s)
     _market(story, d, s, sections)

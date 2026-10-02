@@ -6,7 +6,7 @@ from crewai import Agent, Crew, Process, Task
 
 from .deterministic_fallback import deterministic_mvp
 from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback, primary_for, AGENT_MAX_EXECUTION_SECONDS, AGENT_MAX_ITER
-from .verification import strip_unsupported, verify_claims
+from .verification import audit, strip_unsupported, verify_claims
 from .prompts.loader import load_prompt
 from .structured_output import (
     compact_json,
@@ -126,6 +126,7 @@ def analyze_mvp(
         flat = [{"text": item["rationale"], "sourceIds": item["sourceIds"]} for item in data["features"]]
         supported = verify_claims(idea, flat, snippets, allow_local=allow_local)
         verified = strip_unsupported(flat, supported)
+        data["verification"] = audit(flat, supported)
         for item, result in zip(data["features"], verified):
             item["sourceIds"] = result["sourceIds"]
 
