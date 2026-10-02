@@ -84,7 +84,9 @@ model, a provider error, or a response whose JSON fails the caller's shape check
 - **Several keys per provider.** `GROQ_API_KEYS` and `GEMINI_API_KEYS` take a comma-separated list
   (the single `GROQ_API_KEY` / `GEMINI_API_KEY` still works, and with one key nothing changes). Calls
   alternate between keys, and a rate limit on one key retries the *same* model on the next key before
-  falling to a weaker model. **A provider limit belongs to the account, not the key**: Groq's error
+  falling to a weaker model. A key that reports a rate limit is skipped for that model until the
+  provider's own "try again in ..." time passes (capped at 15 minutes), so an exhausted key costs one
+  failed request, not one per call. **A provider limit belongs to the account, not the key**: Groq's error
   names the organization, and Gemini's limit is per Google Cloud project, so a second key only adds
   capacity when it comes from a different account or project. Check each provider's terms before
   pooling keys; one key per team member's own account is the plain case. Keys are never logged.

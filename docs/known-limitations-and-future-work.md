@@ -258,8 +258,11 @@ Findings from live use and a five-person informal test. The final project docume
   the limit is per account. Keys from one account share one bucket and the retry on the next key
   fails the same way, costing a call. Using several accounts may be restricted by a provider's terms,
   which are the operator's responsibility to check.
-- Pooling was tested with mocks only (the free quotas were exhausted and there was one real account),
-  so its behaviour against two real accounts is unproven.
+- Verified live (2026-10-02): the two local Groq keys have independent buckets (spending about 3,000
+  tokens on one left the other's per-minute headroom untouched), both work on all three Groq models,
+  and three real calls through the pooled chain succeeded. Not verified live: skipping a key that is
+  actually rate limited, because the key near its daily limit still had room for small calls. That
+  path (including the retry-after cooldown) is covered by tests with mocks only.
 
 ### 8.7 Not built
 - PDF charts, a calibration of score weights, a measured competitor-recall figure, a written

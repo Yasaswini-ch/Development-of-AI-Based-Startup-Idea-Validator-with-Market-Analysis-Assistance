@@ -201,17 +201,50 @@ def _keys_for(provider: str) -> list[str]:
     return keys
 
 
-def _key_order(provider: str) -> list[str]:
+# (model, key) -> time until which that key is known to be rate limited for that
+# model. Groq's error says how long ("try again in 2m9.1s"), and a key that has
+# spent its daily tokens on one model would otherwise cost a failed request on
+# every call that happens to try it first.
+_key_cooldowns: dict[tuple[str, str], float] = {}
+_DEFAULT_KEY_COOLDOWN_SECONDS = 30.0
+_MAX_KEY_COOLDOWN_SECONDS = 15 * 60.0
+_RETRY_AFTER = re.compile(r"try again in\s+(?:(\d+)h)?(?:(\d+)m)?(\d+(?:\.\d+)?)s", re.IGNORECASE)
+
+
+def _key_cooldown_seconds(exc: Exception) -> float:
+    """How long the provider says to wait, from its error text; a short default
+    when the message has no hint. Capped so one odd value cannot park a key."""
+    match = _RETRY_AFTER.search(str(exc))
+    if not match:
+        return _DEFAULT_KEY_COOLDOWN_SECONDS
+    hours, minutes, seconds = match.groups()
+    total = int(hours or 0) * 3600 + int(minutes or 0) * 60 + float(seconds)
+    return min(max(total, 1.0), _MAX_KEY_COOLDOWN_SECONDS)
+
+
+def _mark_key_limited(model: str, key: str, exc: Exception) -> None:
+    with _key_counter_lock:
+        _key_cooldowns[(model, key)] = time.time() + _key_cooldown_seconds(exc)
+
+
+def _key_order(provider: str, model: str | None = None) -> list[str]:
     """The provider's keys starting from a rotating position, so consecutive
-    calls spread across keys instead of always draining the first one."""
+    calls spread across keys instead of always draining the first one. Keys
+    known to be rate limited for this model go last (never dropped: if every
+    key is limited they are all still tried, soonest-to-recover first)."""
     keys = _keys_for(provider)
     if len(keys) <= 1:
         return keys
     with _key_counter_lock:
         start = _key_counters.get(provider, 0)
         _key_counters[provider] = start + 1
+        until = {k: _key_cooldowns.get((model, k), 0.0) for k in keys} if model else {}
     start %= len(keys)
-    return keys[start:] + keys[:start]
+    order = keys[start:] + keys[:start]
+    now = time.time()
+    ready = [k for k in order if until.get(k, 0.0) <= now]
+    cooling = sorted((k for k in order if until.get(k, 0.0) > now), key=lambda k: until[k])
+    return ready + cooling
 
 
 def get_llm(max_tokens: int | None = None, model: str | None = None):
@@ -552,7 +585,7 @@ def _kickoff_cloud_chain(build_crew, primary: str | None = None, validate=None):
 
     def run(model):
         provider = _provider_of(model)
-        order = _key_order(provider)
+        order = _key_order(provider, model)
         if len(order) <= 1:
             return run_once(model)
         for position, key in enumerate(order, start=1):
@@ -562,7 +595,10 @@ def _kickoff_cloud_chain(build_crew, primary: str | None = None, validate=None):
             except Exception as exc:
                 # Only a rate limit is a key problem; a bad answer or an outage
                 # would fail the same on any key, so it goes to the next model.
-                if position == len(order) or not _is_rate_limit_error(exc):
+                if not _is_rate_limit_error(exc):
+                    raise
+                _mark_key_limited(model, key, exc)
+                if position == len(order):
                     raise
                 logger.warning(
                     "Rate limited on %s with %s key %d of %d; retrying the same model on the next key",
