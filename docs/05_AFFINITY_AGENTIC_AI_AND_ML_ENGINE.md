@@ -44,7 +44,7 @@ flowchart TD
 
 ## 2. LangGraph Pipeline State Machine
 
-The orchestration pipeline in [`backend/agent/graph.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/graph.py) maintains a shared `PipelineState`:
+The orchestration pipeline in [`backend/agent/graph.py`](../backend/agent/graph.py) maintains a shared `PipelineState`:
 
 ```python
 class PipelineState(TypedDict, total=False):
@@ -88,7 +88,7 @@ def build_pipeline():
 
 ## 3. Market Opportunity Agent (Groq LLM)
 
-Defined in [`backend/agent/market_agent.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/market_agent.py), the Market Opportunity agent evaluates the startup concept against condensed web context.
+Defined in [`backend/agent/market_agent.py`](../backend/agent/market_agent.py), the Market Opportunity agent evaluates the startup concept against condensed web context.
 
 ### Context Structuring
 `_build_context()` prioritizes results from the `"Market size & trends"` search angle, capping context snippets to 300 characters per source across at most 10 items.
@@ -118,7 +118,7 @@ Output strict JSON only: within JSON strings, never escape an apostrophe with a 
 ### 4.1 Token Optimization (`reasoning_effort`)
 Groq's `qwen3.8-27b` model defaults to internal hidden reasoning, consuming 1,000+ hidden tokens per request and exhausting Groq's output-tokens-per-minute free-tier cap.
 
-In [`backend/agent/llm.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/llm.py), explicit token configuration disables this overhead:
+In [`backend/agent/llm.py`](../backend/agent/llm.py), explicit token configuration disables this overhead:
 
 ```python
 _REASONING_EFFORT = {
@@ -168,7 +168,7 @@ loudly, with no retry. Regression tests: `backend/tests/test_llm_fallback_valida
 
 ## 5. Competitor Discovery Engine (spaCy NER)
 
-In [`backend/agent/competitor_agent.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/competitor_agent.py), competitor discovery executes locally using spaCy's `en_core_web_sm` model:
+In [`backend/agent/competitor_agent.py`](../backend/agent/competitor_agent.py), competitor discovery executes locally using spaCy's `en_core_web_sm` model:
 
 ```mermaid
 flowchart LR
@@ -198,7 +198,7 @@ def _has_product_context(name: str, doc) -> bool:
 ## 6. White-Space Synthesis & Opportunity Score Formulation
 
 ### 6.1 White-Space Gap Triangulation
-[`backend/agent/white_space.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/white_space.py) synthesizes unaddressed feature gaps by cross-referencing customer pain points from `marketOpportunity` against competitor density:
+[`backend/agent/white_space.py`](../backend/agent/white_space.py) synthesizes unaddressed feature gaps by cross-referencing customer pain points from `marketOpportunity` against competitor density:
 - High competitor density + repeated customer complaints = **High-Value Gap**.
 
 ### 6.2 Opportunity Score Formula

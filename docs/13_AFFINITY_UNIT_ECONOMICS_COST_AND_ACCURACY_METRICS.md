@@ -97,7 +97,7 @@ flowchart LR
 
 ## 6. Factual Grounding & Accuracy Metrics
 
-Verified across 7-industry validation benchmark runs ([`docs/08_TESTING_DOCUMENTATION.md`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/docs/08_TESTING_DOCUMENTATION.md)):
+Verified across 7-industry validation benchmark runs ([`docs/08_TESTING_DOCUMENTATION.md`](08_AFFINITY_LIVE_VERIFICATION_AND_TEST_PROTOCOL.md)):
 
 - **Factual Metric Grounding Rate:** **100%** (Zero fabricated TAM/SAM statistics emitted).
 - **Competitor Entity Precision:** **94.2%** (spaCy NER correctly extracted real companies while filtering platform terms).

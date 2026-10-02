@@ -77,8 +77,8 @@ Using LLMs to discover competitors often returns platform terms (e.g., "Android"
 
 | Objective / KPI | Target Metric | Achieved Result | Verification File |
 |---|---|---|---|
-| **LLM Call Count** | $\le 1$ call / request | **1 call** (`market_agent.py`) | [`docs/05_AI_ML_ARCHITECTURE.md`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/docs/05_AI_ML_ARCHITECTURE.md) |
-| **Competitor API Cost** | $0.00 / call | **$0.00** (spaCy NER) | [`docs/13_API_COST_ACCURACY_AND_SYSTEM_METRICS.md`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/docs/13_API_COST_ACCURACY_AND_SYSTEM_METRICS.md) |
-| **Average Response Latency** | $< 15.0$ seconds | **~10.2 seconds** | [`docs/13_API_COST_ACCURACY_AND_SYSTEM_METRICS.md`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/docs/13_API_COST_ACCURACY_AND_SYSTEM_METRICS.md) |
-| **Hallucinated TAM Rate** | 0.0% | **0.0%** (Strict negative prompts) | [`docs/08_TESTING_DOCUMENTATION.md`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/docs/08_TESTING_DOCUMENTATION.md) |
-| **Partial Failure Isolation** | 100% UI stability | **100%** (Inline `UnavailableCard`) | [`docs/08_TESTING_DOCUMENTATION.md`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/docs/08_TESTING_DOCUMENTATION.md) |
+| **LLM Call Count** | $\le 1$ call / request | **1 call** (`market_agent.py`) | [`docs/05_AI_ML_ARCHITECTURE.md`](05_AFFINITY_AGENTIC_AI_AND_ML_ENGINE.md) |
+| **Competitor API Cost** | $0.00 / call | **$0.00** (spaCy NER) | [`docs/13_API_COST_ACCURACY_AND_SYSTEM_METRICS.md`](13_AFFINITY_UNIT_ECONOMICS_COST_AND_ACCURACY_METRICS.md) |
+| **Average Response Latency** | $< 15.0$ seconds | **~10.2 seconds** | [`docs/13_API_COST_ACCURACY_AND_SYSTEM_METRICS.md`](13_AFFINITY_UNIT_ECONOMICS_COST_AND_ACCURACY_METRICS.md) |
+| **Hallucinated TAM Rate** | 0.0% | **0.0%** (Strict negative prompts) | [`docs/08_TESTING_DOCUMENTATION.md`](08_AFFINITY_LIVE_VERIFICATION_AND_TEST_PROTOCOL.md) |
+| **Partial Failure Isolation** | 100% UI stability | **100%** (Inline `UnavailableCard`) | [`docs/08_TESTING_DOCUMENTATION.md`](08_AFFINITY_LIVE_VERIFICATION_AND_TEST_PROTOCOL.md) |

@@ -9,21 +9,24 @@
 
 Welcome to the central documentation hub for **Affinity**.
 
-> **Two doc sets, one system.** This folder has a numbered set (`01`–`23`, written as a
-> formal report) and a lowercase set (`architecture.md`, `api-reference.md`, ...) that
-> engineers update alongside code. They overlap. Both were reconciled against the
-> `staging` code on 2026-09-26. **Where they disagree, the lowercase doc and the code
-> win.** Dated logs (`milestone*-plan.md`, `milestone*-status.md`,
-> `milestone*-verification.md`, `track-f-*`, doc 08) record what was true at the time
-> and are intentionally not updated. See
+> **Start with [`00_AFFINITY_FINAL_PROJECT_DOCUMENT.md`](00_AFFINITY_FINAL_PROJECT_DOCUMENT.md)**,
+> the single document that describes the whole project as it stands (updated 2026-10-02).
+>
+> **Two doc sets, one system.** This folder has a numbered set (`00`–`23`, written as a
+> formal report) and a lowercase set (`architecture.md`, `frontend-spec.md`, ...) that
+> engineers update alongside code. They overlap. **Where they disagree, the lowercase doc
+> and the code win.** The API reference now lives only in doc 07 (the former
+> `api-reference.md` was a duplicate with the same gaps and was removed), and the
+> runbook only in doc 09. Dated logs (`milestone*-verification.md`, `track-f-*`, doc 08)
+> record what was true at the time and are intentionally not updated. See
 > [Known Limitations §5](known-limitations-and-future-work.md#5-documentation-two-overlapping-doc-sets-process-lesson).
 >
 > | Numbered doc | Lowercase counterpart (authoritative) |
 > |---|---|
 > | 04 System topology, 12 Diagrams | [`architecture.md`](architecture.md) |
 > | 05 AI/ML engine | [`prompt-engineering-agent-design.md`](prompt-engineering-agent-design.md), [`architecture.md` §2](architecture.md#2-agent-breakdown) |
-> | 06 Data models, 07 REST API | [`api-reference.md`](api-reference.md), [`architecture.md` §4](architecture.md#4-api-contract) |
-> | 09 Deployment runbooks | [`../DEPLOYMENT.md`](../DEPLOYMENT.md), [`ops-runbook-troubleshooting.md`](ops-runbook-troubleshooting.md) |
+> | 06 Data models, 07 REST API | [`architecture.md` §4](architecture.md#4-api-contract) (07 is authoritative for the route list) |
+> | 09 Deployment runbooks | [`../DEPLOYMENT.md`](../DEPLOYMENT.md) |
 > | 10 User manual | [`frontend-spec.md`](frontend-spec.md) (UI), doc 22 (dashboards) |
 > | 13 Unit economics | [`api-cost-accuracy-performance-metrics.md`](api-cost-accuracy-performance-metrics.md) |
 > | 17 Roadmap | [`product-strategy-and-personas.md`](product-strategy-and-personas.md), [`known-limitations-and-future-work.md`](known-limitations-and-future-work.md) |
@@ -96,9 +99,5 @@ In addition to the 23 numbered modules above, the following detailed reference s
 - [`architecture.md`](architecture.md) — Technical system specification & data contracts.
 - [`prompt-engineering-agent-design.md`](prompt-engineering-agent-design.md) — Deep dive into LLM prompt engineering, `reasoning_effort` tuning, and JSON repair.
 - [`security-privacy-ethics.md`](security-privacy-ethics.md) — Information security, cryptographic caching, and AI hallucination safeguards.
-- [`api-reference.md`](api-reference.md) — OpenAPI specs and TypeScript response interface contracts.
 - [`product-strategy-and-personas.md`](product-strategy-and-personas.md) — Detailed persona profiles, JTBD framework, and GTM strategy.
-- [`ops-runbook-troubleshooting.md`](ops-runbook-troubleshooting.md) — Operational incident playbooks and diagnostic commands.
 - [`milestone2-verification.md`](milestone2-verification.md) — Live empirical verification log across 7 distinct startup domains.
-- [`milestone2-status.md`](milestone2-status.md) — Milestone 2 task tracking and timeline.
-- [`milestone1-plan.md`](milestone1-plan.md), [`milestone3-plan.md`](milestone3-plan.md) — Historical milestone engineering plans (point-in-time, not updated).

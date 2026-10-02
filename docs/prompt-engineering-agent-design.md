@@ -21,14 +21,14 @@ Affinity solves this through strict **task-to-tool scoping**:
 
 | Pipeline Stage | Module | Architecture Class | Execution Engine | API Cost |
 |---|---|---|---|---|
-| **1. Search Retrieval** | [`agent/retrieval.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/retrieval.py) | Direct Tool Search | Tavily API (Primary) / DDG + Wikipedia + HN (Fallback) | $0.00 to $0.008 |
-| **2. Confidence Indicator** | [`agent/graph.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/graph.py) (`confidence_node`) | Deterministic Heuristic | Source-count/relevance aggregation | **$0.00** |
-| **3. Market Opportunity** | [`agent/market_agent.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/market_agent.py) | LLM Agent | Groq (`qwen/qwen3.8-27b` primary) | Free-tier / Paid |
-| **4. Competitor Discovery** | [`agent/competitor_agent.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/competitor_agent.py) | Local NLP Engine | spaCy `en_core_web_sm` NER | **$0.00** |
-| **5. White-space Analysis** | [`agent/white_space.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/white_space.py) | Algorithmic Synthesis | Deterministic Python heuristics | **$0.00** |
-| **6. Opportunity Score** | [`agent/opportunity_score.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/opportunity_score.py) | Mathematical Model | Weighted scoring formula | **$0.00** |
+| **1. Search Retrieval** | [`agent/retrieval.py`](../backend/agent/retrieval.py) | Direct Tool Search | Tavily API (Primary) / DDG + Wikipedia + HN (Fallback) | $0.00 to $0.008 |
+| **2. Confidence Indicator** | [`agent/graph.py`](../backend/agent/graph.py) (`confidence_node`) | Deterministic Heuristic | Source-count/relevance aggregation | **$0.00** |
+| **3. Market Opportunity** | [`agent/market_agent.py`](../backend/agent/market_agent.py) | LLM Agent | Groq (`qwen/qwen3.8-27b` primary) | Free-tier / Paid |
+| **4. Competitor Discovery** | [`agent/competitor_agent.py`](../backend/agent/competitor_agent.py) | Local NLP Engine | spaCy `en_core_web_sm` NER | **$0.00** |
+| **5. White-space Analysis** | [`agent/white_space.py`](../backend/agent/white_space.py) | Algorithmic Synthesis | Deterministic Python heuristics | **$0.00** |
+| **6. Opportunity Score** | [`agent/opportunity_score.py`](../backend/agent/opportunity_score.py) | Mathematical Model | Weighted scoring formula | **$0.00** |
 | **7. SWOT / MVP / GTM** | `agent/swot_agent.py`, `mvp_agent.py`, `gtm_agent.py` | LLM Agents | Groq (same fallback chain) | Free-tier / Paid |
-| **8. Confidence Dashboard** | [`agent/graph.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/graph.py) (`confidence_dashboard_node`) | Deterministic Heuristic | Source coverage/recency aggregation over prior agents' output | **$0.00** |
+| **8. Confidence Dashboard** | [`agent/graph.py`](../backend/agent/graph.py) (`confidence_dashboard_node`) | Deterministic Heuristic | Source coverage/recency aggregation over prior agents' output | **$0.00** |
 
 ---
 
@@ -54,7 +54,7 @@ The Market Opportunity agent evaluates startup ideas against retrieved web conte
 ### 3.1 Context Structuring Strategy
 Passing raw search results directly into an LLM prompt can blow up the context window and crowd out relevant market insights with general text. 
 
-[`backend/agent/market_agent.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/market_agent.py) implements `_build_context()` to filter and prioritize context:
+[`backend/agent/market_agent.py`](../backend/agent/market_agent.py) implements `_build_context()` to filter and prioritize context:
 - Ensures search results from the `"Market size & trends"` angle get first priority in the prompt context.
 - Caps snippets at 300 characters per source and limits total sources to 10.
 
@@ -94,7 +94,7 @@ Output strict JSON only: within JSON strings, never escape an apostrophe with a 
 ### 3.3 Reasoning Effort Tuning
 Open-weights models running on Groq (e.g., `qwen/qwen3.8-27b`) default to performing internal hidden reasoning before emitting text. Without bounds, hidden reasoning cycles consume thousands of tokens per call, causing rate limits.
 
-In [`backend/agent/llm.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/llm.py), explicit `reasoning_effort` mapping tunes per-model performance:
+In [`backend/agent/llm.py`](../backend/agent/llm.py), explicit `reasoning_effort` mapping tunes per-model performance:
 
 ```python
 _REASONING_EFFORT = {

@@ -600,7 +600,6 @@ Blueprint-sync caveat and multi-instance guidance.
 │   └── tests/                        # Unit, contract, async, and integration/concurrency tests
 ├── docs/
 │   ├── architecture.md        # this file
-│   ├── milestone1-plan.md
 │   └── frontend-spec.md
 ├── .github/workflows/ci.yml   # backend tests + frontend lint/build on push/PR
 ├── render.yaml         # backend + frontend services, managed Postgres database

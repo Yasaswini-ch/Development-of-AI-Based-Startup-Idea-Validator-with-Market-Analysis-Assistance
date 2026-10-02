@@ -39,7 +39,7 @@
 
 ## 2. FastAPI & Pydantic Input Data Contracts
 
-Input requests to `POST /validate` are validated using Pydantic in [`backend/main.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/main.py):
+Input requests to `POST /validate` are validated using Pydantic in [`backend/main.py`](../backend/main.py):
 
 ```python
 class ValidateRequest(BaseModel):
@@ -151,7 +151,7 @@ interface ValidateResponse {
 
 ## 4. Volatile In-Memory Caching System
 
-To minimize LLM token consumption and respect Groq free-tier rate limits, [`backend/main.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/main.py) manages a 30-minute in-memory dictionary cache:
+To minimize LLM token consumption and respect Groq free-tier rate limits, [`backend/main.py`](../backend/main.py) manages a 30-minute in-memory dictionary cache:
 
 ```python
 _CACHE_TTL_SECONDS = 30 * 60
@@ -188,7 +188,7 @@ If a response contains any active errors (`errors.marketOpportunity != null`), `
 
 ## 5. Frontend Client State Persistence
 
-The React application ([`frontend/src/App.jsx`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/frontend/src/App.jsx)) stores recent analysis in browser `sessionStorage` (`affinity:lastValidation`):
+The React application ([`frontend/src/App.jsx`](../frontend/src/App.jsx)) stores recent analysis in browser `sessionStorage` (`affinity:lastValidation`):
 
 ```javascript
 const STORAGE_KEY = 'affinity:lastValidation'

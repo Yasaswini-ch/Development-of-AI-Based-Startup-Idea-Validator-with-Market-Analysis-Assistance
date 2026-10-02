@@ -125,7 +125,7 @@ reports show only a narrative market size.
 - **What:** `docs/` holds two sets that describe the same system:
   - the numbered set `01_AFFINITY_*.md` … `22_AFFINITY_*.md`, written as a formal
     report/thesis structure, and
-  - the lowercase set (`architecture.md`, `api-reference.md`, `frontend-spec.md`,
+  - the lowercase set (`architecture.md`, `frontend-spec.md`,
     `prompt-engineering-agent-design.md`, `security-privacy-ethics.md`, ...), which is
     what engineers updated alongside code changes.
 - **What went wrong:** features changed faster than both sets were updated. The
@@ -196,3 +196,31 @@ Details and formulas: [doc 23](23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOO
   profiling) there are no weaknesses, so that vector is always inferred and conviction
   tops out at 75%.
 
+
+## 8. Added 2026-10-02
+
+Findings from live use and a five-person informal test. The final project document
+([00](00_AFFINITY_FINAL_PROJECT_DOCUMENT.md), section 13) lists the full set.
+
+### 8.1 Free-tier quota is the main operational risk
+- In an informal test with five people, two got their report on screen and three were asked
+  for an email and received the full report by email in roughly 4 to 5 minutes. On free
+  tiers, the email path is a common experience, not a rare edge case. It is five people
+  informally observed, not a measured rate.
+- Heavy use exhausts Groq's per-minute and daily limits and Gemini's roughly 20 requests a
+  day per model, after which runs take the slower path.
+
+### 8.2 Estimated SAM and SOM
+- When no source states SAM or SOM but a TAM exists, the model may give an estimate. It is
+  badged "Estimate", has no citation and shows its assumption, but it is the model's own
+  working, not evidence. It has not yet been checked in a live run, and a longer prompt
+  example presses against Qwen's roughly 950-token output cap.
+
+### 8.3 Revenue models
+- Fixed: a failed model call no longer leaves the section empty. If competitors have pricing
+  text, the section is built from it and labelled inferred. If they do not, the section
+  still says the AI step did not run.
+
+### 8.4 Not built
+- PDF charts, a calibration of score weights, a measured competitor-recall figure, a written
+  scaling plan, progressive rendering, and a saved real example report for the landing page.

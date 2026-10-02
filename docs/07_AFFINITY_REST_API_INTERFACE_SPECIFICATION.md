@@ -1,111 +1,137 @@
 # 07. API Reference & Integration Specifications
 **Project:** Affinity — AI-Based Startup Idea Validator with Market Analysis Assistance  
-**Document Version:** 2.0 · September 2026  
-**Status:** Operational  
+**Document Version:** 3.0 · updated 2026-10-02 against `backend/main.py` on `staging`  
+**Status:** Operational
+
+> **What changed in 3.0.** Versions 1 and 2 documented only `/`, `/health`, `/validate` and
+> the sign-in routes. The API has 19 routes; this version lists all of them, with their
+> authentication, limits and failure responses, taken from the code. It also replaces the
+> separate `api-reference.md`, which duplicated this file and had the same gaps. For the full
+> `/validate` response schema see [doc 23 §9](23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOOGLE_SSO.md#9-where-each-field-lives-in-the-response)
+> and [`architecture.md` §4](architecture.md#4-api-contract).
 
 ---
 
 ## 📑 Document Table of Contents
 - [1. Overview & Service URLs](#1-overview--service-urls)
-- [2. CORS & Security Policy](#2-cors--security-policy)
-- [3. Endpoints Specification](#3-endpoints-specification)
-- [4. Partial Failure Contract](#4-partial-failure-contract)
-- [5. Integration Snippets (cURL, Python, JS, Go)](#5-integration-snippets-curl-python-js-go)
+- [2. Authentication, CORS & Rate Limits](#2-authentication-cors--rate-limits)
+- [3. Route Summary](#3-route-summary)
+- [4. Validation Routes](#4-validation-routes)
+- [5. Report, Advisor & Delivery Routes](#5-report-advisor--delivery-routes)
+- [6. Account & Admin Routes](#6-account--admin-routes)
+- [7. Partial Failure Contract](#7-partial-failure-contract)
+- [8. Integration Snippets](#8-integration-snippets)
 
 ---
 
 ## 1. Overview & Service URLs
 
-The Affinity API provides REST endpoints for automated startup validation.
-
-- **Local Endpoint:** `http://localhost:8000`
-- **Staging / Production:** `https://startup-validator-backend.onrender.com`
-
----
-
-## 2. CORS & Security Policy
-
-- **Authentication:** `/validate` does not require an API key; an optional bearer token
-  saves the run to an account. Accounts use `POST /auth/signup`, `POST /auth/login`, or
-  `POST /auth/google` (Google ID token in, same `{ token, user }` out). See
-  [doc 19 §4](19_AFFINITY_MILESTONE_3_POSTGRESQL_AUTH_AND_DATA_PERSISTENCE.md#4-authentication--access-control)
-  and [doc 23 §8](23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOOGLE_SSO.md#8-platform-layer-google-sign-in).
-- **CORS Allowed Origins:** Managed via `FRONTEND_ORIGIN` env variable (defaults to `http://localhost:5173`).
-- **Methods Allowed:** `GET`, `POST`, `OPTIONS`.
+- **Local:** `http://localhost:8000`
+- **Hosted:** the Render web service named in [`../DEPLOYMENT.md`](../DEPLOYMENT.md)
+- **Interactive docs:** FastAPI serves Swagger UI at `/docs` on any running instance.
 
 ---
 
-## 3. Endpoints Specification
+## 2. Authentication, CORS & Rate Limits
 
-### 3.1 `GET /` — Service Catalog
-Returns service metadata.
+- **Anonymous use works.** `/validate`, `/chat`, `/reports/*` and the PDF routes need no
+  token. A report is addressed by its random `sessionId`, which acts as a share link: anyone
+  who holds it can read that report, its PDF and its chat.
+- **Optional token on `/validate`.** A bearer token saves the run to the account. A header
+  that is present but invalid or expired is rejected with `401`, not silently treated as
+  anonymous.
+- **Account routes** (`/auth/me`, `/me/*`) require a valid bearer token. **Admin route**
+  (`/admin/platform-metrics`) additionally requires an account listed in `ADMIN_EMAILS`
+  (`403` otherwise).
+- **Tokens:** HS256 JWT, 30 days. Sign-in routes are `POST /auth/signup`, `/auth/login` and
+  `/auth/google` (a Google ID token in; the same `{ token, user }` out).
+- **CORS:** allowed origins come from `FRONTEND_ORIGIN` (default `http://localhost:5173`).
+- **Rate limits** are per client IP per minute and return `429`. Defaults, each overridable
+  by an environment variable:
 
-```json
-{
-  "message": "Affinity API is running",
-  "status": "ok",
-  "docs": "/docs",
-  "health": "/health",
-  "validate_endpoint": "/validate"
-}
-```
-
----
-
-### 3.2 `GET /health` — Liveness Check
-Health probe endpoint.
-
-```json
-{
-  "status": "ok",
-  "service": "Affinity API"
-}
-```
+| Group | Default per minute | Variable |
+|---|---|---|
+| `/validate` | 10 | `VALIDATE_RATE_LIMIT_PER_MINUTE` |
+| `/chat` | 30 | `CHAT_RATE_LIMIT_PER_MINUTE` |
+| PDF export and `/reports/*` reads | 10 | `EXPORT_PDF_RATE_LIMIT_PER_MINUTE` |
+| `/reports/{id}/email` | 5 | `REPORT_EMAIL_RATE_LIMIT_PER_MINUTE` |
+| Sign-in routes | 8 | `AUTH_RATE_LIMIT_PER_MINUTE` |
 
 ---
 
-### 3.3 `POST /validate` — Validation Pipeline Execution
+## 3. Route Summary
 
-#### Request Headers
-`Content-Type: application/json`
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| GET | `/` | none | Service catalog |
+| GET | `/health` | none | Liveness probe (also reports the database kind) |
+| POST | `/validate` | optional | Run the validation pipeline |
+| GET | `/validate/status/{job_id}` | none | Poll a background validation |
+| POST | `/chat` | none | One advisor turn for a report |
+| GET | `/validate/{session_id}/pdf` | none | Download a report as PDF |
+| POST | `/export-pdf` | none | Build a PDF from a response body you supply |
+| GET | `/reports/{session_id}` | none | Fetch the canonical saved report |
+| POST | `/reports/compare` | none | Fetch 2 to 5 reports for side-by-side comparison |
+| POST | `/reports/{session_id}/email` | none | Email a saved report to an address |
+| POST | `/auth/signup` | none | Create an account |
+| POST | `/auth/login` | none | Sign in |
+| POST | `/auth/google` | none | Sign in with Google |
+| GET | `/auth/me` | token | Current user (includes `isAdmin`) |
+| GET | `/me/history` | token | The account's saved validations |
+| POST | `/me/claim-session` | token | Attach an anonymous session to the account |
+| GET | `/me/analytics` | token | Aggregates behind the founder dashboard |
+| GET | `/metrics` | none | In-process counters (cache, per-node success and failure) |
+| GET | `/admin/platform-metrics` | admin | Platform health aggregates, `days` 1 to 90 |
 
-#### Request Body
+---
+
+## 4. Validation Routes
+
+### 4.1 `POST /validate`
+
+**Request body**
+
 ```json
 {
   "idea": "AI-powered invoice management for freelance photographers",
   "targetCustomer": "Freelance wedding photographers",
-  "problem": "Manual payment reminders take hours and clients miss due dates"
+  "problem": "Manual payment reminders take hours and clients miss due dates",
+  "email": "",
+  "mode": "deep"
 }
 ```
 
-#### Success Response `200 OK`
+| Field | Rules |
+|---|---|
+| `idea` | required, up to 2,500 characters |
+| `targetCustomer` | optional, up to 600 characters |
+| `problem` | optional, up to 1,500 characters |
+| `email` | optional; a signed-in user's account email is used if omitted |
+| `mode` | `"deep"` (default, full pipeline) or `"quick"` (core market validation; skips SWOT, viability, MVP, GTM, contradictions, experiments, action plan, revenue models) |
 
-> **Five-pillar additions (2026-09-26).** The interface below predates the Sprint 1–4
-> work on `staging`. Responses now also carry `marketOpportunity.voiceOfMarket`,
-> `marketOpportunity.viabilityIndex`, `whiteSpace.blueprints`, `mvp.deliveryRoadmap`,
-> `gtm.commercialModel`, and (deep mode) competitor profile fields plus
-> `competitors.comparisonMatrix` / `profiled`. All are optional and additive. Full
-> schemas: [doc 23 §9](23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOOGLE_SSO.md#9-where-each-field-lives-in-the-response) and
-> [`architecture.md` §4](architecture.md#4-api-contract).
+**Four possible outcomes**
+
+| Status | Body | When |
+|---|---|---|
+| `200` | The report plus `sessionId` | Finished normally |
+| `200` | `{ "needsEmailForDeepAnalysis": true, "message": "…" }` | Every cloud model was exhausted, a slower local model exists, and no email is on file. Resend with `email` set |
+| `202` | `{ "status": "processing", "jobId": "…", "message": "…" }` | An email is on file and the run took longer than the threshold (60 s by default). It continues in the background and the report is emailed; poll `/validate/status/{jobId}` |
+| `502` / `500` | `{ "error": "…" }` | The pipeline recorded a hard failure (for example every search source failed), or an unexpected exception |
+
+Identical requests are served from a 30-minute cache. Only responses with no section errors
+are cached.
+
+**Success response (abridged)**
 
 ```json
 {
-  "summary": "Found 12 relevant sources for \"AI-powered invoice management\", covering Market size & trends, Competitors, Industry news.",
+  "summary": "Found 12 relevant sources for \"AI-powered invoice management\"…",
   "results": [
-    {
-      "title": "Invoicing Software Market Size 2026",
-      "url": "https://example.com/report",
-      "snippet": "The global invoicing market is valued at $2.4B growing at 11% CAGR.",
-      "score": 0.89,
-      "angle": "Market size & trends"
-    }
+    { "title": "Invoicing Software Market Size 2026", "url": "https://example.com/report",
+      "snippet": "…", "score": 0.89, "angle": "Market size & trends" }
   ],
   "confidence": {
-    "agreeingSources": 6,
-    "totalSources": 8,
-    "percentage": 75,
-    "label": "6/8 sources agree",
-    "perAngle": { "Market size & trends": { "agreeingSources": 3, "totalSources": 6, "percentage": 50, "label": "3/6 sources agree" } },
+    "agreeingSources": 6, "totalSources": 8, "percentage": 75, "label": "6/8 sources agree",
     "sourceCoverage": { "claimsWithSource": 18, "totalClaims": 24, "percentage": 75 },
     "averageRelevance": 0.71,
     "crossSourceAgreement": { "claimsWithMultipleSources": 7, "totalClaims": 24, "percentage": 29 },
@@ -113,95 +139,134 @@ Health probe endpoint.
     "sourceRecency": { "sourcesWithKnownDate": 5, "totalSources": 12, "medianAgeDays": 94.5 }
   },
   "marketOpportunity": {
-    "marketSize": "The invoicing software market is valued at $2.4B globally with an 11% CAGR.",
+    "marketSize": "…",
     "tam": { "text": "$2.4B global invoicing software market (2026)", "sourceIds": ["src-1"] },
-    "sam": null,
+    "sam": { "text": "About $480M (estimate)", "sourceIds": [], "estimated": true,
+             "assumptions": "Assumes 20% of the TAM is reachable by small studios." },
     "som": null,
-    "trends": [
-      { "text": "Automated SMS payment reminders", "sourceIds": ["src-1"] },
-      { "text": "Instant deposit releases upon gallery approval", "sourceIds": ["src-1"] }
-    ],
-    "segments": [
-      {
-        "segment": "Wedding Photographers",
-        "painPoints": "Clients delay final balance payments",
-        "motivations": "Automate contract signing and deposit collection",
-        "buyingBehavior": "Prefer monthly subscriptions priced under $25/month",
-        "sourceIds": ["src-1"]
-      }
-    ],
+    "trends": [ { "text": "…", "sourceIds": ["src-1"] } ],
+    "segments": [ { "segment": "…", "painPoints": "…", "motivations": "…", "buyingBehavior": "…", "sourceIds": ["src-1"] } ],
     "opportunityScore": 78
   },
-  "competitors": {
-    "competitors": [
-      {
-        "name": "FreshBooks",
-        "offering": "General accounting suite for small business",
-        "positioning": "Established general financial software",
-        "estimatedPrice": "mid",
-        "featureBreadth": "broad",
-        "gap": "Lacks photo-gallery delivery triggers"
-      }
-    ]
-  },
-  "whiteSpace": {
-    "summary": "Strong market growth with moderate competitor concentration.",
-    "competitionNote": "Existing tools target general accounting rather than photo-specific deposit triggers.",
-    "opportunities": [
-      {
-        "title": "Gallery Delivery Payment Lock",
-        "why": "Photographers require full balance settlement before delivering high-res photos.",
-        "fit": "High fit for photographer pain points.",
-        "evidence": "3 search sources mention deposit dispute friction."
-      }
-    ]
-  },
-  "errors": {}
+  "competitors": { "competitors": [ { "name": "FreshBooks", "classification": "direct", "offering": "…", "gap": "…" } ] },
+  "whiteSpace": { "summary": "…", "opportunities": [ { "title": "…", "why": "…", "fit": "…", "evidence": "…" } ] },
+  "errors": {},
+  "sessionId": "…"
 }
 ```
 
+The full response also carries `swot`, `mvp`, `gtm`, `viabilityIndex`, `contradictions`,
+`experiments`, `actionPlan`, `assumptions`, `revenueModels` and `verdict`. A tier carrying
+`"estimated": true` is the model's own working from the TAM, never a sourced figure; it has
+no `sourceIds` and always has `assumptions`.
+
+### 4.2 `GET /validate/status/{job_id}`
+
+| Status | Body |
+|---|---|
+| `200` | `{ "status": "processing" }` while running |
+| `200` | `{ "status": "complete", …the full report }` when finished |
+| `502` | `{ "status": "failed", "error": "…" }` |
+| `404` | `{ "error": "Job not found or expired." }` (jobs are kept for 2 hours) |
+
 ---
 
-## 4. Partial Failure Contract
+## 5. Report, Advisor & Delivery Routes
 
-If an upstream LLM call rate-limits or fails, the API returns **`200 OK`** with partial data and populates `errors.marketOpportunity`:
+### 5.1 `POST /chat`
+
+Body: `{ "sessionId": "…", "message": "…" }` (message up to 1,200 characters). Returns
+`{ "reply": "…", "section": { "tab", "id", "label" } }`. `section` is present when the
+question maps to a report section, so the client can open that tab and scroll to it. Errors:
+`400` missing fields, `404` unknown or expired session, `429` rate limit, `502` the advisor
+could not answer.
+
+### 5.2 `GET /validate/{session_id}/pdf` and `POST /export-pdf`
+
+Return `application/pdf` (an attachment). The `GET` form builds the PDF from a saved session
+(`404` if unknown or expired). The `POST` form accepts a full response body and builds the PDF
+from it. Both use ReportLab and return `500` with an error message if the export fails.
+
+### 5.3 `GET /reports/{session_id}`
+
+Returns the canonical saved report. `404` if the session is unknown or expired (sessions are
+kept for 7 days).
+
+### 5.4 `POST /reports/compare`
+
+Body: `{ "sessionIds": ["…", "…"] }`, 2 to 5 distinct ids. Returns
+`{ "reports": [...], "missing": [...] }`. `404` if fewer than two sessions were found.
+
+### 5.5 `POST /reports/{session_id}/email`
+
+Body: `{ "recipient": "name@example.com" }`. Returns `202` with `{ "status": "queued",
+"deliveryId": "…" }` on success, `404` for an unknown session and `502` when email delivery
+is not available. The email carries a summary and a link to the report; it does not attach a
+PDF.
+
+---
+
+## 6. Account & Admin Routes
+
+- `POST /auth/signup` and `/auth/login`: body `{ "email", "password" }`; return `{ token, user }`.
+- `POST /auth/google`: body `{ "idToken" }`; the signature and audience are re-verified on the server.
+- `GET /auth/me`: `{ id, email, isAdmin, … }`. A `401` here is how the client learns its stored token is no longer valid.
+- `GET /me/history`: `{ "entries": [...] }`, the account's saved validations.
+- `POST /me/claim-session`: body `{ "sessionId" }`; attaches a run made anonymously to the account. `{ "claimed": true }`, or `404` if the session is missing or already owned by another account.
+- `GET /me/analytics`: the aggregates behind the founder dashboard.
+- `GET /metrics`: in-process counters (cache hit and miss, per-node success and failure). They reset on restart.
+- `GET /admin/platform-metrics?days=30`: validations per day, cache hit rate, API success rate, deep-analysis rate, latency by node, model usage, recent errors and email delivery, backed by the durable `events` log.
+
+---
+
+## 7. Partial Failure Contract
+
+A failed section does not fail the request. The API still returns `200` with that section
+`null` (or carrying a `degraded` flag where a rule-based fallback was used) and a message
+under `errors`:
 
 ```json
 {
-  "summary": "Found 9 relevant sources for \"Smart Water Bottle\"...",
-  "results": [ ... ],
-  "confidence": { "marketGrowth": { "agree": 3, "total": 4 }, "competitivePressure": { "agree": 0, "total": 3 } },
+  "summary": "Found 9 relevant sources for \"Smart Water Bottle\"…",
+  "results": [ "…" ],
   "marketOpportunity": null,
   "competitors": { "competitors": [ { "name": "HidrateSpark", "offering": "Smart hydration tracker" } ] },
   "whiteSpace": null,
   "errors": {
-    "marketOpportunity": "This analysis hit a temporary usage limit. Please try again in a moment.",
-    "competitors": null
+    "marketOpportunity": "This analysis hit a temporary usage limit. Please try again in a moment."
   }
 }
 ```
 
+A section built by a deterministic fallback (for example revenue models inferred from
+competitor pricing) carries `"degraded": true` and the UI labels it.
+
 ---
 
-## 5. Integration Snippets
+## 8. Integration Snippets
 
 ### cURL
 ```bash
 curl -X POST http://localhost:8000/validate \
   -H "Content-Type: application/json" \
-  -d '{"idea": "AI meal prep planner for busy parents"}'
+  -d '{"idea": "AI meal prep planner for busy parents", "targetCustomer": "Working parents", "problem": "No time to plan meals"}'
 ```
 
 ### Python (`requests`)
 ```python
 import requests
 
-url = "http://localhost:8000/validate"
-payload = {"idea": "AI meal prep planner for busy parents"}
-
-res = requests.post(url, json=payload)
+res = requests.post(
+    "http://localhost:8000/validate",
+    json={"idea": "AI meal prep planner for busy parents", "targetCustomer": "Working parents"},
+)
 data = res.json()
-print("Score:", data.get("marketOpportunity", {}).get("opportunityScore"))
+if data.get("needsEmailForDeepAnalysis"):
+    print(data["message"])          # resend with "email" set
+elif res.status_code == 202:
+    print("Running in the background:", data["jobId"])
+else:
+    print("Score:", (data.get("marketOpportunity") or {}).get("opportunityScore"))
 ```
 
 ### JavaScript (`fetch`)

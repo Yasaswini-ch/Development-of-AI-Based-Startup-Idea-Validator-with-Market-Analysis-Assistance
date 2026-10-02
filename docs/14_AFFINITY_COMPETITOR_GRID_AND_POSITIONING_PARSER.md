@@ -19,7 +19,7 @@
 
 In early iterations of Affinity, Competitor Discovery was executed by an LLM agent using CrewAI. Live load testing revealed that relying on LLMs for competitor extraction resulted in severe token quota exhaustion and frequent entity hallucinations (e.g. returning generic terms like "Software", "Platform", or outdated entities).
 
-[`backend/agent/competitor_agent.py`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/backend/agent/competitor_agent.py) solves this by using **local spaCy Named Entity Recognition (NER)** (`en_core_web_sm`). This non-LLM approach achieves:
+[`backend/agent/competitor_agent.py`](../backend/agent/competitor_agent.py) solves this by using **local spaCy Named Entity Recognition (NER)** (`en_core_web_sm`). This non-LLM approach achieves:
 - **$0.00 API Token Cost** for competitor *name identification*.
 - **Zero Rate-Limit Overhead** on the shared Groq quota, saving it for Market Opportunity/SWOT/MVP/GTM.
 - **Factual Grounding**, extracting company and product names directly from live search text.
@@ -105,7 +105,7 @@ Pattern-matches feature keywords in local text:
 
 ## 5. 3x3 Positioning Grid Algorithm
 
-Competitors are rendered on a 3x3 matrix in [`frontend/src/components/CompetitorAnalysis.jsx`](file:///C:/Opensource/AI%20Based%20Startup%20Idea%20Validator/frontend/src/components/CompetitorAnalysis.jsx):
+Competitors are rendered on a 3x3 matrix in [`frontend/src/components/CompetitorAnalysis.jsx`](../frontend/src/components/CompetitorAnalysis.jsx):
 
 ```text
                Narrow Breadth     Moderate Breadth     Broad Breadth
