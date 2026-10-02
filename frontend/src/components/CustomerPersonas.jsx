@@ -1,7 +1,7 @@
 import Citation from './Citation'
 import ProvenanceBadge from './ProvenanceBadge'
 
-// The one place customer segments are shown (the Market & Rivals tab used to
+// The one place customer segments are shown (the Market tab used to
 // repeat them as SegmentCards under the market-size numbers). Each persona
 // carries its own citation and Grounded/Inferred badge, since this is now
 // the only view of the segment claims.

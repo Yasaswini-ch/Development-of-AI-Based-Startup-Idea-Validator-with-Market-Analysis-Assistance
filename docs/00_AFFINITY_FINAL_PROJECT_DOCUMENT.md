@@ -65,7 +65,7 @@ The report opens in **eight tabs**:
 | Tab | Contents |
 |---|---|
 | Evidence | Every source found, with relevance, angle and date where known |
-| Market | Market signal, TAM / SAM / SOM only where a source states the figure, viability breakdown |
+| Market | Market signal, TAM / SAM / SOM (TAM sourced; SAM and SOM sourced or a labelled estimate), viability breakdown |
 | Competitors | Rivals found, each labelled direct or indirect, with logo, pricing and a comparison table against the idea |
 | Customers | Customer segments, pain points, and verbatim quotes from the sources |
 | Gaps | White-space analysis: where customer pain meets weak competitor coverage |
@@ -168,6 +168,9 @@ described as an autonomous "swarm"; agents do not negotiate or choose their own 
 ## 7. Competitor discovery
 
 This was the most reworked part of the project, and its history explains its design.
+Competitors are now discovered from **several sources combined**, not one: the web search
+results, local NER, an LLM pass, three public APIs and rule-based fallbacks. The merged list
+is de-duplicated before it is enriched and classified.
 
 1. **Local spaCy NER** always runs first over the search snippets, at no API cost. Generic
    words mislabelled as organisations ("History", "Windows", "Reply") are removed by a
@@ -315,8 +318,12 @@ the system behaves; 13.2 is work that was asked for or planned and is not finish
   characters before it reaches an agent, so a fact deeper in a page is missed.
 - **"Grounded" is not "true".** It means a claim cites a source that a verification pass
   accepted as supporting it. The source itself may be wrong, biased or out of date.
-- **Market sizing is only as good as the sources.** TAM, SAM and SOM are shown only where a
-  source states the figure; otherwise the tier is hidden, which can leave the Market tab thin.
+- **Market sizing is only as good as the sources.** TAM is shown only where a source states
+  the figure. SAM and SOM are shown as sourced figures when a source states them; otherwise,
+  if a TAM exists, the model may give an **estimate** from the TAM and the target customer. An
+  estimate is badged "Estimate", has no citation, shows its assumption and is never created
+  without a TAM. It is the model's own working, not evidence, and a founder should treat it as
+  a starting point to check. Before this was added, SAM and SOM were almost always hidden.
 - **Competitor results are imperfect.** Rival classification can under-label a company when
   its source text is thin, and a real company that is off-topic for the idea can still appear.
   Price and feature-breadth labels come from text heuristics and are often "unknown".
@@ -418,7 +425,7 @@ What this shows, and what it does not:
 | 3 | SWOT, MVP, go-to-market, advisor chat, PostgreSQL and accounts, PDF export, comparison matrix |
 | 4 | Email delivery, evidence and confidence layer, contradiction detector, experiments and action plan, Google sign-in |
 | 5 | Analytics dashboards and role-based admin access |
-| Latest | Competitor discovery rework (LLM plus NER, direct and indirect), enrichment, eight-tab report, redesigned landing page, revenue-model fallback |
+| Latest | Multi-source competitor discovery (web, NER, LLM, public APIs; direct and indirect), eight-tab report, redesigned landing page, revenue-model fallback, labelled SAM/SOM estimates |
 
 Contribution history is in the git log.
 
