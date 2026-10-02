@@ -186,9 +186,6 @@ def get_platform_metrics(days: int = 30) -> dict:
     error_events = events.query("pipeline_error", since=since, limit=200)
     email_events = events.query("email_sent", since=since)
 
-    llm_success = sum(snapshot.get(f"node.{n}.success", 0) for n in _LLM_NODES)
-    llm_failure = sum(snapshot.get(f"node.{n}.failure", 0) for n in _LLM_NODES)
-
     needs_deep_analysis = sum(
         1 for e in error_events if (e["detail"] or {}).get("errorType") == "NeedsDeepAnalysisError"
     )
@@ -218,6 +215,18 @@ def get_platform_metrics(days: int = 30) -> dict:
             rate = _node_rate(snapshot, node)  # nothing durable for this node yet
         if rate is not None:
             node_success_rates[node] = rate
+
+    # The headline "API success rate" must agree with the node chart and the
+    # deep-analysis rate above it, so it comes from the same durable log. The
+    # in-process counters only cover runs since the last restart, which let it
+    # read 100% beside a 30% deep-analysis rate.
+    llm_runs = sum(runs_by_node.get(n, 0) for n in _LLM_NODES)
+    if llm_runs:
+        llm_failure = min(sum(failures_by_node.get(n, 0) for n in _LLM_NODES), llm_runs)
+        llm_success = llm_runs - llm_failure
+    else:
+        llm_success = sum(snapshot.get(f"node.{n}.success", 0) for n in _LLM_NODES)
+        llm_failure = sum(snapshot.get(f"node.{n}.failure", 0) for n in _LLM_NODES)
 
     overall_latency_samples = [e["detail"]["seconds"] for e in latency_events if e.get("detail")]
 

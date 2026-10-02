@@ -90,6 +90,20 @@ class PlatformMetricsAggregationTests(unittest.TestCase):
         result = get_platform_metrics()
         self.assertEqual(result["nodeSuccessRates"]["white_space"], 100.0)
 
+    def test_api_success_rate_uses_the_durable_log_and_agrees_with_failures(self):
+        # Counters say "all fine" (a fresh process); the durable log says
+        # 1 of 4 LLM-node runs failed. The headline must follow the log.
+        from agent import metrics
+        metrics.reset()
+        metrics.increment("node.swot.success")
+        for _ in range(3):
+            events.record("node_latency", node="swot_analysis", detail={"seconds": 1.0})
+        events.record("node_latency", node="mvp_recommendation", detail={"seconds": 1.0})
+        events.record("pipeline_error", node="mvp", detail={"errorType": "NeedsDeepAnalysisError"})
+        result = get_platform_metrics()
+        self.assertEqual(result["kpis"]["apiSuccessRate"], 75.0)
+        self.assertEqual(result["nodeSuccessRates"]["mvp"], 0.0)
+
     def test_deep_analysis_rate(self):
         events.record("cache_miss")
         events.record("cache_miss")
