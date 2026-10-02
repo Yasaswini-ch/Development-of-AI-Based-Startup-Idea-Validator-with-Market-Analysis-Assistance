@@ -20,6 +20,7 @@ import AssumptionTracker from './AssumptionTracker'
 import BearCase from './BearCase'
 import RevenueModels from './RevenueModels'
 import VerdictCard from './VerdictCard'
+import VerdictWhatIf from './VerdictWhatIf'
 import VoiceOfMarketSection from './VoiceOfMarketCard'
 import MvpDeliveryRoadmap from './MvpDeliveryRoadmap'
 
@@ -297,6 +298,7 @@ export default function ValidationResults({
   assumptions,
   revenueModels,
   verdict,
+  marketViability,
   sessionId,
   apiUrl,
   errors,
@@ -359,6 +361,14 @@ export default function ValidationResults({
 
       {/* The decision first: verdict + the report's one headline score */}
       <VerdictCard data={verdict} />
+      <VerdictWhatIf
+        verdict={verdict}
+        marketViability={marketViability}
+        swot={swot}
+        assumptions={assumptions}
+        confidence={confidence}
+        marketOpportunity={marketOpportunity}
+      />
 
       <div className="flex flex-wrap items-center gap-6 rounded-2xl border border-border-strong bg-panel p-6 shadow-sm sm:p-8">
         <div className="min-w-0 flex-1">

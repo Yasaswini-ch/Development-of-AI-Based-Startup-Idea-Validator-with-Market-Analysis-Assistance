@@ -630,6 +630,7 @@ export default function App() {
               assumptions={validation.assumptions}
               revenueModels={validation.revenueModels}
               verdict={validation.verdict}
+              marketViability={validation.marketViability}
               sessionId={validation.sessionId}
               apiUrl={API_URL}
               errors={validation.errors}
