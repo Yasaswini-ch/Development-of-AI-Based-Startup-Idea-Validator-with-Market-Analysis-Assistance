@@ -66,12 +66,14 @@ FALLBACK_MODELS = ("groq/openai/gpt-oss-20b", "groq/openai/gpt-oss-120b", "gemin
 # Which model each agent STARTS on. Every model is its own rate-limit bucket on a
 # free tier, so the agents are spread across them instead of queueing on one:
 #   groq/qwen3.8-27b    1,000 output tokens/min for the whole account: one call a
-#                       minute. Market analysis and the assumption tracker start here;
-#                       they run about a minute apart. Before this map six agents
+#                       minute. Only market analysis starts here: its answer fits under
+#                       Qwen's 950-token output ceiling, and the assumption tracker's does
+#                       not (measured about 1,500 tokens, so it failed the shape check on
+#                       Qwen every time). Before this map six agents
 #                       (market, SWOT, MVP, assumptions, revenue models, verification)
 #                       all started on it, and all but the first spent their time on
 #                       rate-limit errors before falling down the chain.
-#   groq/gpt-oss-20b    8,000 tokens/min, 200k/day: competitors, MVP, verification
+#   groq/gpt-oss-20b    8,000 tokens/min, 200k/day: competitors, MVP, assumptions, verification
 #   groq/gpt-oss-120b   8,000 tokens/min, 200k/day: SWOT and go-to-market. Revenue models
 #                       were first put here too and fell back to the rule-based result:
 #                       SWOT, go-to-market and revenue all run within about 40 seconds,
@@ -89,7 +91,7 @@ AGENT_PRIMARY_MODELS = {
     "swot": "groq/openai/gpt-oss-120b",
     "mvp": "groq/openai/gpt-oss-20b",
     "gtm": "groq/openai/gpt-oss-120b",
-    "assumptions": "groq/qwen/qwen3.8-27b",
+    "assumptions": "groq/openai/gpt-oss-20b",
     "revenue": "gemini/gemini-3.8-flash",
     "verification": "groq/openai/gpt-oss-20b",
     "advisor": "gemini/gemini-3.6-flash",
@@ -247,6 +249,33 @@ def _key_order(provider: str, model: str | None = None) -> list[str]:
     return ready + cooling
 
 
+# The max_tokens each agent asks for was tuned for Qwen, whose account-wide cap is
+# 1,000 output tokens a minute. The gpt-oss models count their hidden reasoning
+# against max_tokens too, so the same number leaves too little to finish the JSON:
+# measured on a real SWOT run, the answer needed about 1,100-1,600 completion tokens
+# on gpt-oss-20b and 2,241 on gpt-oss-120b against a limit of 900. A cut-off answer
+# fails the shape check and costs a whole second call (about 4,000 tokens) on the
+# next model. So the budget is scaled per model: (prefix, multiplier, floor).
+_COMPLETION_HEADROOM = (
+    ("groq/openai/gpt-oss-120b", 3.0, 1500),
+    ("groq/openai/gpt-oss-20b", 2.5, 1500),
+    ("gemini/", 1.5, 0),
+)
+_QWEN_OUTPUT_CEILING = 950  # its 1,000-per-minute cap: a larger request is refused outright
+
+
+def _token_budget(model: str, max_tokens: int | None) -> int | None:
+    """max_tokens adjusted for the model that will answer (see the note above)."""
+    if max_tokens is None:
+        return None
+    if model.startswith("groq/qwen/"):
+        return min(max_tokens, _QWEN_OUTPUT_CEILING)
+    for prefix, multiplier, floor in _COMPLETION_HEADROOM:
+        if model.startswith(prefix):
+            return max(int(max_tokens * multiplier), floor)
+    return max_tokens
+
+
 def get_llm(max_tokens: int | None = None, model: str | None = None):
     """LLM used by every CrewAI agent, via LiteLLM.
 
@@ -284,7 +313,7 @@ def get_llm(max_tokens: int | None = None, model: str | None = None):
     if is_local:
         kwargs["api_base"] = _OLLAMA_BASE_URL
     if max_tokens is not None:
-        kwargs["max_tokens"] = max_tokens
+        kwargs["max_tokens"] = _token_budget(model, max_tokens)
     reasoning_effort = _REASONING_EFFORT.get(model)
     if reasoning_effort is not None:
         kwargs["reasoning_effort"] = reasoning_effort

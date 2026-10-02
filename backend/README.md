@@ -76,11 +76,17 @@ model, a provider error, or a response whose JSON fails the caller's shape check
   | Agent | Starts on | Why |
   |---|---|---|
   | Market | Groq `qwen3.8-27b` | best quality for the first, biggest step |
-  | Assumption tracker | Groq `qwen3.8-27b` | runs about a minute after market, so the 1,000-token-per-minute bucket has recovered |
-  | Competitor discovery, MVP, grounding verifier | Groq `gpt-oss-20b` | 8,000 tokens/min, 200k/day |
+  | Competitor discovery, MVP, assumption tracker, grounding verifier | Groq `gpt-oss-20b` | 8,000 tokens/min, 200k/day |
   | SWOT, go-to-market | Groq `gpt-oss-120b` | its own 8,000 tokens/min bucket |
   | Revenue models | Gemini 3.8 flash | one call per run, and its own bucket |
   | Advisor | Gemini 3.6 flash | one call per chat message |
+- **Token budgets are scaled per model** (`_token_budget` in `agent/llm.py`). The `max_tokens` each agent
+  asks for was tuned for Qwen, which allows 950 output tokens at most. The gpt-oss models count their
+  hidden reasoning against `max_tokens`, so the same number cut the JSON off: measured on a real SWOT
+  run it needed about 1,100-1,600 tokens on `gpt-oss-20b` and 2,241 on `gpt-oss-120b` against a limit of
+  900. A cut-off answer failed the shape check and cost a whole second call (about 4,000 tokens).
+  Qwen stays capped at 950, `gpt-oss-120b` gets 3x (floor 1,500), `gpt-oss-20b` 2.5x (floor 1,500) and
+  Gemini 1.5x. After the change, four real agents ran with zero invalid-answer retries (it was 5, then 4).
 - **Several keys per provider.** `GROQ_API_KEYS` and `GEMINI_API_KEYS` take a comma-separated list
   (the single `GROQ_API_KEY` / `GEMINI_API_KEY` still works, and with one key nothing changes). Calls
   alternate between keys, and a rate limit on one key retries the *same* model on the next key before

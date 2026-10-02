@@ -229,6 +229,37 @@ class ChainTests(KeyEnvCase):
         self.assertNotIn("gsk_SECRET", text)
 
 
+
+class TokenBudgetTests(unittest.TestCase):
+    def test_qwen_stays_under_its_hard_output_cap(self):
+        self.assertEqual(llm._token_budget("groq/qwen/qwen3.8-27b", 900), 900)
+        self.assertEqual(llm._token_budget("groq/qwen/qwen3.8-27b", 2000), 950)
+
+    def test_gpt_oss_models_get_room_for_their_reasoning(self):
+        # measured: SWOT needed about 1,100-1,600 on 20b and 2,241 on 120b against a 900 limit
+        self.assertGreaterEqual(llm._token_budget("groq/openai/gpt-oss-20b", 900), 1600)
+        self.assertGreaterEqual(llm._token_budget("groq/openai/gpt-oss-20b", 600), 1100)  # MVP needed about 1,100
+        self.assertGreaterEqual(llm._token_budget("groq/openai/gpt-oss-120b", 900), 2241)
+
+    def test_small_requests_still_get_a_workable_floor(self):
+        self.assertEqual(llm._token_budget("groq/openai/gpt-oss-20b", 400), 1500)
+        self.assertEqual(llm._token_budget("groq/openai/gpt-oss-120b", 400), 1500)
+
+    def test_gemini_gets_a_moderate_increase_and_unknown_models_are_untouched(self):
+        self.assertEqual(llm._token_budget("gemini/gemini-3.6-flash", 600), 900)
+        self.assertEqual(llm._token_budget("ollama/qwen2.5:7b", 600), 600)
+
+    def test_no_limit_means_no_limit(self):
+        self.assertIsNone(llm._token_budget("groq/openai/gpt-oss-20b", None))
+
+    @patch("agent.llm.LLM")
+    def test_get_llm_applies_the_per_model_budget(self, llm_cls):
+        llm.get_llm(max_tokens=900, model="groq/openai/gpt-oss-120b")
+        self.assertEqual(llm_cls.call_args.kwargs["max_tokens"], 2700)
+        llm.get_llm(max_tokens=900, model="groq/qwen/qwen3.8-27b")
+        self.assertEqual(llm_cls.call_args.kwargs["max_tokens"], 900)
+
+
 class AgentCeilingTests(unittest.TestCase):
     FILES = [
         "market_agent.py", "competitor_agent.py", "swot_agent.py", "mvp_agent.py", "gtm_agent.py",

@@ -247,20 +247,29 @@ Findings from live use and a five-person informal test. The final project docume
 - Which model each agent starts on (`AGENT_PRIMARY_MODELS`) came from each agent's token use and
   when it runs. A live check with exhausted quotas confirmed SWOT on `gpt-oss-120b` returns valid,
   non-degraded results, and showed revenue models colliding with SWOT on one bucket (so they were
-  moved). MVP, assumptions and revenue on their new models were not confirmed. Re-measure with
-  `scripts/latency_token_measurement.py` once quotas allow, and re-point any agent with
-  `AGENT_MODEL_<NAME>`.
-- `gpt-oss-20b` and `gpt-oss-120b` may format JSON differently from Qwen; the shape check and the
-  fallback chain catch a bad answer, at the cost of an extra call.
+  moved). A second live pass (2026-10-03, with three Groq accounts) found the assumption tracker
+  failing the shape check on Qwen every time (its answer needs about 1,500 tokens, Qwen's ceiling is
+  950), so it moved to `gpt-oss-20b`. After that, SWOT, MVP, assumptions and revenue models all ran
+  live without degrading, in 3-10 s each, with no invalid-answer retries. Revenue models' first
+  choice (Gemini 3.8) was out of daily quota, so they fell to `gpt-oss-20b`, which worked. Re-point
+  any agent with `AGENT_MODEL_<NAME>`; `scripts/latency_token_measurement.py` re-measures.
+- **Cut-off answers were the main hidden cost.** The gpt-oss models count hidden reasoning against
+  `max_tokens`, so the 900-token budget tuned for Qwen truncated their JSON; each truncation failed
+  the shape check and cost a second call of about 4,000 tokens. Budgets are now scaled per model
+  (`_token_budget` in `agent/llm.py`). The multipliers come from one idea, measured on one run per
+  agent, so a long answer on an unusual idea could still be cut off.
+- The two gpt-oss models and Qwen format JSON a little differently; the shape check and the fallback
+  chain still catch a bad answer, at the cost of an extra call.
 
 ### 8.6 Key pooling depends on separate accounts
 - Several keys help only when they belong to different Groq organizations or Google Cloud projects:
   the limit is per account. Keys from one account share one bucket and the retry on the next key
   fails the same way, costing a call. Using several accounts may be restricted by a provider's terms,
   which are the operator's responsibility to check.
-- Verified live (2026-10-02): the two local Groq keys have independent buckets (spending about 3,000
-  tokens on one left the other's per-minute headroom untouched), both work on all three Groq models,
-  and three real calls through the pooled chain succeeded. Not verified live: skipping a key that is
+- Verified live (2026-10-02 and 2026-10-03): three local Groq keys have independent buckets (spending
+  about 3,000 tokens on one left the others' per-minute headroom untouched), all work on the Groq
+  models, and real calls through the pooled chain succeeded, including a retry on the next key when
+  one key was rate limited. Not verified live: skipping a key that is
   actually rate limited, because the key near its daily limit still had room for small calls. That
   path (including the retry-after cooldown) is covered by tests with mocks only.
 

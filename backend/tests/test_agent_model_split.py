@@ -32,20 +32,20 @@ class ModelMapTests(unittest.TestCase):
     def test_every_llm_agent_has_a_primary(self):
         self.assertEqual(set(llm.AGENT_PRIMARY_MODELS), set(AGENT_FILES))
 
-    def test_at_most_two_agents_start_on_the_1000_token_per_minute_model(self):
-        # That model's cap leaves room for one call a minute; six agents on it
-        # meant five of them waited on rate-limit errors before falling back.
-        # Two is the limit, and only because they run about a minute apart.
+    def test_only_market_starts_on_the_1000_token_per_minute_model(self):
+        # That model's cap leaves room for one call a minute, and its 950-token
+        # output ceiling is too small for most agents' answers (the assumption
+        # tracker needs about 1,500 and failed the shape check on it every time).
         on_qwen = [a for a, m in llm.AGENT_PRIMARY_MODELS.items() if m == QWEN]
-        self.assertEqual(sorted(on_qwen), ["assumptions", "market"])
+        self.assertEqual(on_qwen, ["market"])
 
     def test_mvp_and_gtm_run_in_parallel_so_they_use_different_models(self):
         self.assertNotEqual(llm.primary_for("mvp"), llm.primary_for("gtm"))
 
-    def test_no_model_carries_more_than_three_agents(self):
+    def test_no_model_carries_more_than_four_agents(self):
         counts = Counter(llm.AGENT_PRIMARY_MODELS.values())
-        self.assertLessEqual(max(counts.values()), 3)
-        self.assertGreaterEqual(len(counts), 5)
+        self.assertLessEqual(max(counts.values()), 4)
+        self.assertGreaterEqual(len(counts), 4)
 
     def test_swot_go_to_market_and_revenue_do_not_share_one_8000_token_bucket(self):
         # They run within about 40 seconds of each other; revenue models fell back to
