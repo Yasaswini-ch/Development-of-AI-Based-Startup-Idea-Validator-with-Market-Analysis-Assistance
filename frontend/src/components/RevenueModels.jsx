@@ -83,7 +83,7 @@ export default function RevenueModels({ data, error, sourceMap }) {
 
   const models = Array.isArray(data.models) ? data.models : []
   if (models.length === 0) {
-    return <p className="text-center text-sm text-muted">No revenue models were suggested.</p>
+    return <p className="text-center text-sm text-muted">{data.degraded ? "The AI step for revenue models did not run for this report, and no competitor pricing was found to infer from." : "No revenue models were suggested."}</p>
   }
 
   const highFitCount = models.filter((m) => m.fit === 'high').length
