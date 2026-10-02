@@ -173,6 +173,9 @@ export default function SampleReportPreview() {
           </ul>
         </div>
       </div>
+      <p className="mt-2 text-center font-mono text-[10px] uppercase tracking-wide text-muted">
+        Illustrative content for an invented idea. Your report is built from your own research.
+      </p>
     </section>
   )
 }
