@@ -42,16 +42,25 @@ and what fixing it would take. Items are verified against the code on the date a
 
 ## 2. Accounts and security
 
-### 2.1 No password reset and no email verification
-- **What:** there is no "forgot password" flow and no check that the email belongs to
-  the person signing up.
-- **Impact:** a user who forgets their password must create a new account. Anyone can
-  register any email address, including one listed in `ADMIN_EMAILS` if that account
-  doesn't exist yet (see 2.3).
-- **Fix:** a short-lived, single-use reset token emailed through the existing SendGrid
-  path, plus a verification link at sign-up.
+### 2.1 Password reset is built; email verification is not
+- **Password reset (added 2026-10-02).** "Forgot password?" on the sign-in form emails a
+  link through the existing SendGrid path. The token is random, single-use and valid for 30
+  minutes; only its SHA-256 hash is stored. The endpoint gives the same answer whether or not
+  an account exists, and sends the email after responding, so neither the reply nor its
+  timing reveals which emails are registered. A new request replaces the earlier link.
+- **Limits of the reset.** Existing login tokens stay valid until they expire (see 2.2).
+  The email is sent from the one verified SendGrid sender, so on the free tier it can land in
+  spam. If SendGrid is not configured the request still answers normally but no email goes
+  out. Reset emails are counted in the platform's email-delivery figures. Because resetting
+  proves control of the inbox, a Google-only account can use it to add a password.
+- **Email verification is still not built.** Nothing checks that the email belongs to the
+  person signing up, so anyone can register any email address, including one listed in
+  `ADMIN_EMAILS` if that account doesn't exist yet (see 2.3). Resetting that account's
+  password would need access to the inbox, so it does not hand over the account.
+- **Fix:** a verification link at sign-up.
 
 ### 2.2 No token revocation
+- **Includes password reset:** changing a password does not sign out sessions already issued.
 - **What:** JWTs are stateless and valid for 30 days. Signing out only clears the
   browser copy. There is no "sign out everywhere".
 - **Fix:** a revocation list or short-lived access tokens with refresh tokens.

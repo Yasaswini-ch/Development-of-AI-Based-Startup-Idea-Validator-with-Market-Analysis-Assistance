@@ -220,7 +220,7 @@
 # Part D: The platform around it
 
 ## Slide 20: Accounts, Dashboards & Security
-- **Accounts:** optional email + password (bcrypt, 30-day JWT) and Google sign-in. Anonymous validation still works.
+- **Accounts:** optional email + password (bcrypt, 30-day JWT), Google sign-in, and password reset by a single-use emailed link (30 minutes, only a hash stored; the endpoint answers the same whether or not the email has an account). Anonymous validation still works.
 - **Account menu:** History, Compare ideas, Dashboard, and (admins only) Platform health.
 - **Founder Dashboard:** Overview, Comparison matrix, Validation history, Score trends.
 - **Admin Platform Health:** validations per day, cache hit rate, API success rate, deep-analysis rate, latency by node, model usage, recent errors and email delivery, backed by a durable `events` log. Admin access comes only from the `ADMIN_EMAILS` environment variable.
@@ -282,7 +282,7 @@
 - **Not built yet:** charts in the PDF; a calibration of the score weights against labelled ideas; a measured competitor-recall figure; a written scaling plan beyond free tiers; progressive rendering of sections as they finish; a saved real example report on the landing page.
 - **Accuracy:** results vary run to run because retrieval uses live search; agents read trimmed snippets (about 1,500 characters), not whole pages; "Grounded" means a claim cites an accepted source, not that the source is true; SAM and SOM estimates are the model's own working and are labelled as such; scores are reasoned, not calibrated; tested on seven industries, so niche or non-English markets are unproven.
 - **Quota exposure:** on free tiers, heavy use pushes runs onto the slower email path (3 of 5 testers saw it).
-- **Operational:** sessions expire after 7 days; Render's free Postgres expires after 30 days; a free host sleeps when idle and the free database auto-suspends, which slows the first sign-in; no password reset or email verification yet.
+- **Operational:** sessions expire after 7 days; Render's free Postgres expires after 30 days; a free host sleeps when idle and the free database auto-suspends, which slows the first sign-in; no email verification yet (password reset was added on 2026-10-02).
 - **Technical:** the local-model fallback needs real GPU hardware; rival classification under-labels on thin text.
 - Full list: [known-limitations-and-future-work.md](known-limitations-and-future-work.md), [scaling-options.md](scaling-options.md).
 

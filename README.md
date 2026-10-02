@@ -273,6 +273,7 @@ The full contract, with field types and error shapes, is in
 | `POST` | `/reports/compare` | Compare several saved ideas side by side |
 | `POST` | `/reports/{sessionId}/email` | Email a report |
 | `POST` | `/auth/signup`, `/auth/login`, `/auth/google` | Authentication |
+| `POST` | `/auth/forgot-password`, `/auth/reset-password` | Password reset by emailed single-use link |
 | `GET` | `/auth/me`, `/me/history`, `/me/analytics` | Account, history and personal analytics |
 | `POST` | `/me/claim-session` | Attach a guest validation to the signed-in account |
 | `GET` | `/admin/platform-metrics` | Platform Health (admins only) |

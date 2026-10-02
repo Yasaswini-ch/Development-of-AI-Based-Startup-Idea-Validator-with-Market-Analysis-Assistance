@@ -221,10 +221,11 @@ connection limit.
 
 - **No team workspaces or RBAC.** One account = one person's own board. The only role
   is the single `is_admin` flag.
-- **No password reset and no email verification** for email/password accounts. Both
-  are listed as future work. (Google accounts are verified by Google.)
+- **Password reset exists (added 2026-10-02); email verification does not.** See
+  [known limitations §2.1](known-limitations-and-future-work.md#21-password-reset-is-built-email-verification-is-not).
+  (Google accounts are verified by Google.)
 - **No account linking beyond "same email".** Google and password sign-in for one email
-  share one row; there is no way to unlink, or to add a password to a Google-only account.
+  share one row; there is no way to unlink. A Google-only account can add a password through the reset flow.
 - **Google is the only external identity provider.** GitHub SSO from the original
   roadmap (doc 17) was not built.
 - **No token revocation.** A stolen token is valid until it expires (30 days) or

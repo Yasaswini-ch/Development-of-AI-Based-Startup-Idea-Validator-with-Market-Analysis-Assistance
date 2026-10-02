@@ -2,7 +2,7 @@
 
 FastAPI service that runs the Affinity validation pipeline. Updated 2026-10-02.
 
-- **Full API reference** (all 19 routes, auth, limits, failure responses):
+- **Full API reference** (all 21 routes, auth, limits, failure responses):
   [`docs/07_AFFINITY_REST_API_INTERFACE_SPECIFICATION.md`](../docs/07_AFFINITY_REST_API_INTERFACE_SPECIFICATION.md)
 - **System design and data contracts:** [`docs/architecture.md`](../docs/architecture.md)
 - **Whole-project summary:** [`docs/00_AFFINITY_FINAL_PROJECT_DOCUMENT.md`](../docs/00_AFFINITY_FINAL_PROJECT_DOCUMENT.md)
@@ -97,7 +97,7 @@ Notes:
 ## Files
 
 **Entry point and pipeline**
-- `main.py`: FastAPI app, CORS, rate limits, request cache, all 19 routes
+- `main.py`: FastAPI app, CORS, rate limits, request cache, all 21 routes
 - `agent/graph.py`: the LangGraph pipeline, state and node wiring
 - `agent/chat_graph.py`: the advisor's own small graph (optional scoped search, section routing)
 

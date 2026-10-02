@@ -275,7 +275,7 @@ The comparison deliberately avoids claims about other products that were not ver
 
 - **Accounts are optional.** Anonymous use works; signing in saves history.
 - **Auth:** bcrypt password hashes, HS256 JWT valid 30 days, Google sign-in verified on the
-  server. Per-IP rate limits cover sign-in, validation, chat, export and email.
+  server, and password reset by emailed single-use link (30 minutes, only a hash stored). Per-IP rate limits cover sign-in, validation, chat, export and email.
 - **Admin access** comes only from the `ADMIN_EMAILS` environment variable. There is no
   self-service route.
 - **Retention:** validation sessions expire after 7 days (200-row cap), the response cache
@@ -339,7 +339,8 @@ the system behaves; 13.2 is work that was asked for or planned and is not finish
 **Product and operations**
 
 - **No charts in the PDF**, and sections appear only once the whole run finishes.
-- **No password reset or email verification** for accounts.
+- **No email verification** for accounts. Password reset was added on 2026-10-02: a single-use
+  link, valid 30 minutes, emailed through SendGrid. It does not sign out sessions already issued.
 - **Reports expire.** Validation sessions are kept for 7 days, even for signed-in users, and
   a free Render Postgres database expires 30 days after creation.
 - **Share links are open.** Anyone holding a report's link can view that report, its PDF and

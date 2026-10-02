@@ -4,7 +4,7 @@
 **Status:** Operational
 
 > **What changed in 3.0.** Versions 1 and 2 documented only `/`, `/health`, `/validate` and
-> the sign-in routes. The API has 19 routes; this version lists all of them, with their
+> the sign-in routes. The API has 21 routes; this version lists all of them, with their
 > authentication, limits and failure responses, taken from the code. It also replaces the
 > separate `api-reference.md`, which duplicated this file and had the same gaps. For the full
 > `/validate` response schema see [doc 23 §9](23_AFFINITY_FIVE_PILLAR_EVIDENCE_STRATEGY_AND_GOOGLE_SSO.md#9-where-each-field-lives-in-the-response)
@@ -55,7 +55,8 @@
 | `/chat` | 30 | `CHAT_RATE_LIMIT_PER_MINUTE` |
 | PDF export and `/reports/*` reads | 10 | `EXPORT_PDF_RATE_LIMIT_PER_MINUTE` |
 | `/reports/{id}/email` | 5 | `REPORT_EMAIL_RATE_LIMIT_PER_MINUTE` |
-| Sign-in routes | 8 | `AUTH_RATE_LIMIT_PER_MINUTE` |
+| Sign-in routes and `/auth/reset-password` | 8 | `AUTH_RATE_LIMIT_PER_MINUTE` |
+| `/auth/forgot-password` | 3 | `FORGOT_PASSWORD_RATE_LIMIT_PER_MINUTE` |
 
 ---
 
@@ -76,6 +77,8 @@
 | POST | `/auth/signup` | none | Create an account |
 | POST | `/auth/login` | none | Sign in |
 | POST | `/auth/google` | none | Sign in with Google |
+| POST | `/auth/forgot-password` | none | Email a single-use password-reset link |
+| POST | `/auth/reset-password` | none | Set a new password from a reset token |
 | GET | `/auth/me` | token | Current user (includes `isAdmin`) |
 | GET | `/me/history` | token | The account's saved validations |
 | POST | `/me/claim-session` | token | Attach an anonymous session to the account |
@@ -210,6 +213,16 @@ PDF.
 
 - `POST /auth/signup` and `/auth/login`: body `{ "email", "password" }`; return `{ token, user }`.
 - `POST /auth/google`: body `{ "idToken" }`; the signature and audience are re-verified on the server.
+- `POST /auth/forgot-password`: body `{ "email" }`. Always answers `202` with the same message
+  (`{ "status": "ok", "message": "If an account exists for that email, a reset link is on its way…" }`),
+  whether or not the address has an account or is even well-formed, and sends the email after
+  responding, so neither the body nor the timing reveals which emails are registered. The link
+  is `<FRONTEND_ORIGIN>/?reset=<token>`. The token is random, single-use and valid for 30 minutes;
+  only its SHA-256 hash is stored, and a new request replaces the earlier link. `429` when rate limited.
+- `POST /auth/reset-password`: body `{ "token", "password" }` (password at least 8 characters).
+  `200 { "status": "ok" }` and the token is consumed in the same transaction that changes the
+  password; `400 { "error": "…" }` for an invalid, expired or already-used token or a too-short
+  password. It does not sign the user in, and tokens (JWTs) already issued stay valid until they expire.
 - `GET /auth/me`: `{ id, email, isAdmin, … }`. A `401` here is how the client learns its stored token is no longer valid.
 - `GET /me/history`: `{ "entries": [...] }`, the account's saved validations.
 - `POST /me/claim-session`: body `{ "sessionId" }`; attaches a run made anonymously to the account. `{ "claimed": true }`, or `404` if the session is missing or already owned by another account.
