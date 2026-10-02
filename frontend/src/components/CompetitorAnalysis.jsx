@@ -236,12 +236,20 @@ function UnavailableCard({ error }) {
 }
 
 function PositioningGrid({ competitors }) {
+  // Where the founder places their own idea on the grid (click a cell, or drag
+  // the chip into one), and which competitor's detail is open. Local, not saved.
+  const [mine, setMine] = useState(null)
+  const [selected, setSelected] = useState(null)
   const placed = competitors.filter(
     (c) => PRICE_ROWS.includes(c.estimatedPrice) && BREADTH_COLS.includes(c.featureBreadth)
   )
   const unclassified = competitors.filter((c) => !placed.includes(c))
 
   if (placed.length === 0) return null
+
+  const here = mine ? placed.filter((c) => c.estimatedPrice === mine.row && c.featureBreadth === mine.col) : []
+  const open = selected ? placed.find((c) => c.name === selected) : null
+  const drop = (row, col) => setMine({ row, col })
 
   return (
     <div className="mt-5">
@@ -250,8 +258,25 @@ function PositioningGrid({ competitors }) {
       </h3>
       <p className="mb-3 text-[11px] leading-snug text-muted">
         Approximate placement by price and feature breadth, pattern-matched from
-        source text &mdash; not verified market data.
+        source text &mdash; not verified market data. Click a competitor for detail,
+        and place your own idea to see how crowded that spot is.
       </p>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span
+          draggable
+          onDragStart={(e) => e.dataTransfer.setData('text/plain', 'my-idea')}
+          className="cursor-grab rounded border border-success/40 bg-success/10 px-2 py-0.5 text-[11px] font-semibold text-success"
+          data-testid="my-idea-chip"
+        >
+          Your idea
+        </span>
+        <span className="text-[11px] text-muted">Drag it into a cell, or click a cell.</span>
+        {mine && (
+          <button type="button" onClick={() => setMine(null)} className="font-mono text-[10px] uppercase tracking-wide text-accent">
+            Clear
+          </button>
+        )}
+      </div>
 
       <div className="grid grid-cols-[auto_repeat(3,1fr)] gap-1.5">
         <div />
@@ -276,18 +301,39 @@ function PositioningGrid({ competitors }) {
               return (
                 <div
                   key={`${row}-${col}`}
-                  className="min-h-[3.5rem] rounded-lg border border-border bg-surface p-1.5"
+                  data-testid={`cell-${row}-${col}`}
+                  onClick={() => drop(row, col)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    drop(row, col)
+                  }}
+                  className={`min-h-[3.5rem] cursor-pointer rounded-lg border bg-surface p-1.5 ${
+                    mine?.row === row && mine?.col === col ? 'border-success' : 'border-border'
+                  }`}
                 >
                   <div className="flex flex-wrap gap-1">
                     {cellCompetitors.map((c, i) => (
-                      <span
+                      <button
+                        type="button"
                         key={i}
-                        className="rounded border border-accent/30 bg-accent/10 px-1.5 py-0.5 text-[10px] leading-snug text-accent"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setSelected(selected === c.name ? null : c.name)
+                        }}
+                        className={`rounded border px-1.5 py-0.5 text-[10px] leading-snug text-accent ${
+                          selected === c.name ? 'border-accent bg-accent/25' : 'border-accent/30 bg-accent/10'
+                        }`}
                         title={c.name}
                       >
                         {c.name}
-                      </span>
+                      </button>
                     ))}
+                    {mine?.row === row && mine?.col === col && (
+                      <span className="rounded border border-success/40 bg-success/10 px-1.5 py-0.5 text-[10px] font-semibold text-success">
+                        Your idea
+                      </span>
+                    )}
                   </div>
                 </div>
               )
@@ -295,6 +341,33 @@ function PositioningGrid({ competitors }) {
           </Fragment>
         ))}
       </div>
+
+      {mine && (
+        <p className="mt-3 text-xs leading-relaxed text-text" data-testid="grid-verdict">
+          {here.length === 0
+            ? 'No competitor is placed in this spot - it may be open space, or may mean nobody has made it work.'
+            : `${here.length} competitor${here.length === 1 ? '' : 's'} already sit${here.length === 1 ? 's' : ''} here: ${here.map((c) => c.name).join(', ')}. You would need a clear reason to win against ${here.length === 1 ? 'it' : 'them'}.`}
+        </p>
+      )}
+
+      {open && (
+        <div className="mt-3 rounded-xl border border-border bg-surface p-4" data-testid="grid-detail">
+          <p className="text-sm font-semibold text-text">{open.name}</p>
+          {open.offering && <p className="mt-1 text-sm leading-relaxed text-muted">{open.offering}</p>}
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <Badge label="Price" value={open.estimatedPrice} />
+            <Badge label="Breadth" value={open.featureBreadth} />
+          </div>
+          {open.gap && open.gap !== _GAP_DISCLOSURE && (
+            <p className="mt-2 text-sm leading-relaxed text-text">{open.gap}</p>
+          )}
+          {open.url && (
+            <a href={open.url} target="_blank" rel="noreferrer" className="mt-2 inline-block font-mono text-[10px] uppercase tracking-wide text-accent">
+              {hostnameOf(open.url) || 'Visit'}
+            </a>
+          )}
+        </div>
+      )}
 
       {unclassified.length > 0 && (
         <p className="mt-2 text-[11px] leading-snug text-muted">

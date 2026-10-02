@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import CompetitorAnalysis from '../CompetitorAnalysis'
 
@@ -68,5 +68,29 @@ describe('CompetitorAnalysis cards', () => {
   it('never uses the publisher article\'s favicon as the competitor logo', () => {
     const { container } = render(<CompetitorAnalysis data={{ competitors: [base('Clockify')] }} />)
     expect(container.querySelector('img')).toBeNull()
+  })
+})
+
+describe('Positioning grid interaction', () => {
+  const data = {
+    competitors: [
+      base('Harvest', { estimatedPrice: 'mid', featureBreadth: 'moderate', offering: 'Tracks time.' }),
+      base('Clockify', { estimatedPrice: 'low', featureBreadth: 'broad' }),
+    ],
+  }
+
+  it('says how crowded the spot is once the idea is placed', () => {
+    render(<CompetitorAnalysis data={data} />)
+    fireEvent.click(screen.getByTestId('cell-mid-moderate'))
+    expect(screen.getByTestId('grid-verdict').textContent).toMatch(/1 competitor already sits here: Harvest/)
+    fireEvent.click(screen.getByTestId('cell-high-narrow'))
+    expect(screen.getByTestId('grid-verdict').textContent).toMatch(/No competitor is placed/)
+  })
+
+  it('opens a competitor detail without moving the idea', () => {
+    render(<CompetitorAnalysis data={data} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Harvest' }))
+    expect(screen.getByTestId('grid-detail').textContent).toMatch(/Tracks time\./)
+    expect(screen.queryByTestId('grid-verdict')).toBeNull()
   })
 })
