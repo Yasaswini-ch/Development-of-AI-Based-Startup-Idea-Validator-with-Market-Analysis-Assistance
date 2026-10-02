@@ -29,7 +29,7 @@ from dotenv import load_dotenv
 # explicitly from this exact path in isolation, worked immediately.
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -43,13 +43,20 @@ from agent.auth import (
     login_with_google as auth_login_with_google,
     optional_user,
     require_admin,
+    request_password_reset,
     require_user,
+    reset_password as auth_reset_password,
     signup as auth_signup,
 )
 from agent.google_auth import GoogleAuthError
 from agent.chat_graph import ChatRateLimitError, classify_section, run_chat_turn
 from agent.db import cache_table, database_backend, get_engine
-from agent.email_delivery import is_valid_email, send_canonical_report_email, send_report_email
+from agent.email_delivery import (
+    is_valid_email,
+    send_canonical_report_email,
+    send_password_reset_email,
+    send_report_email,
+)
 from agent.graph import NEEDS_DEEP_ANALYSIS, pipeline
 from agent.idea_category import categorize_idea
 from agent.job_store import complete_job, create_job, fail_job, get_job
@@ -319,6 +326,15 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: str = Field(max_length=320)
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=200)
+    password: str = Field(max_length=200)
+
+
 class GoogleAuthRequest(BaseModel):
     # The raw signed JWT Google's Identity Services button hands the
     # frontend - never the claims inside it, which the client could have
@@ -516,11 +532,9 @@ def health():
 # Stateless JWT bearer tokens (agent/auth.py) - a signed-in user's own
 # validations get tagged with their user id at creation time (see
 # _create_validation_session's user_id param) so GET /me/history can list
-# them back. No password reset / email verification flow yet - out of
-# scope for a first pass at "my own board," and both are separable
-# follow-ups (email verification needs the same email-sending path
-# email_delivery.py already has; reset needs a short-lived, single-use
-# token distinct from the long-lived session JWT here).
+# them back. Password reset is below (/auth/forgot-password and
+# /auth/reset-password: a short-lived, single-use token distinct from the
+# long-lived session JWT). Email verification is still not built.
 
 @app.post("/auth/signup")
 def auth_signup_route(payload: SignupRequest, request: Request):
@@ -554,6 +568,44 @@ def auth_google_route(payload: GoogleAuthRequest, request: Request):
         return auth_login_with_google(payload.idToken)
     except GoogleAuthError as exc:
         return JSONResponse(status_code=401, content={"error": str(exc)})
+
+
+_FORGOT_PASSWORD_RATE_LIMIT = int(os.environ.get("FORGOT_PASSWORD_RATE_LIMIT_PER_MINUTE", "3"))
+_FORGOT_PASSWORD_REPLY = {
+    "status": "ok",
+    "message": "If an account exists for that email, a reset link is on its way. It works once and expires in 30 minutes.",
+}
+
+
+def _send_reset_email_in_background(email: str, token: str) -> None:
+    send_password_reset_email(email, f"{frontend_origin.rstrip('/')}/?reset={token}")
+
+
+@app.post("/auth/forgot-password", status_code=202)
+def auth_forgot_password_route(payload: ForgotPasswordRequest, request: Request, background: BackgroundTasks):
+    """Email a single-use reset link. The answer is identical whether or not
+    the address has an account, and the email is sent after the response, so
+    neither the body nor the response time reveals which emails are registered.
+    """
+    if _is_rate_limited(f"forgot:{_client_ip(request)}", _FORGOT_PASSWORD_RATE_LIMIT):
+        return _rate_limit_response("Too many reset requests. Please wait a minute and try again.")
+    email = payload.email.strip()
+    if is_valid_email(email):
+        issued = request_password_reset(email)
+        if issued is not None:
+            background.add_task(_send_reset_email_in_background, issued[0], issued[1])
+    return _FORGOT_PASSWORD_REPLY
+
+
+@app.post("/auth/reset-password")
+def auth_reset_password_route(payload: ResetPasswordRequest, request: Request):
+    if _is_rate_limited(f"auth:{_client_ip(request)}", _AUTH_RATE_LIMIT):
+        return _rate_limit_response("Too many attempts. Please wait a minute and try again.")
+    try:
+        auth_reset_password(payload.token, payload.password)
+    except AuthError as exc:
+        return JSONResponse(status_code=400, content={"error": str(exc)})
+    return {"status": "ok"}
 
 
 @app.get("/auth/me")

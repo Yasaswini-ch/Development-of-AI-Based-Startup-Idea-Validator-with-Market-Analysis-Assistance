@@ -83,6 +83,17 @@ users_table = Table(
     Column("avatar_url", String, nullable=True),
 )
 
+# One row per issued password-reset link. Only a SHA-256 hash of the token is
+# stored, so a database leak does not hand out working reset links. A row is
+# single-use (deleted on success) and short-lived (expires_at).
+password_resets_table = Table(
+    "password_resets",
+    metadata,
+    Column("token_hash", String, primary_key=True),
+    Column("user_id", String, nullable=False, index=True),
+    Column("expires_at", Float, nullable=False),
+)
+
 jobs_table = Table(
     "jobs",
     metadata,
@@ -329,6 +340,7 @@ __all__ = [
     "get_engine",
     "jobs_table",
     "now",
+    "password_resets_table",
     "reset_engine",
     "sessions_table",
     "users_table",

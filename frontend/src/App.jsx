@@ -73,11 +73,22 @@ function adaptReportToValidation(report) {
 
 export default function App() {
   const [persisted] = useState(loadPersisted)
+  // Arriving from a password-reset email (?reset=<token>): remember the token
+  // and take it out of the address bar and browser history straight away.
+  const [resetToken] = useState(() => {
+    try {
+      const token = new URLSearchParams(window.location.search).get('reset')
+      if (token) window.history.replaceState({}, '', window.location.pathname)
+      return token
+    } catch {
+      return null
+    }
+  })
   // Skip the landing page when a session is already mid-flow (a persisted
   // result from before a tab reload, per loadPersisted's own reasoning) -
   // it should only greet a genuinely fresh visitor, not interrupt someone
   // returning to their own results.
-  const [view, setView] = useState(persisted?.validation ? 'form' : 'landing')
+  const [view, setView] = useState(resetToken ? 'account' : persisted?.validation ? 'form' : 'landing')
   const [isLoading, setIsLoading] = useState(false)
   // The button already disables mid-request, but re-enables the instant a
   // response lands - nothing stopped someone from immediately firing another
@@ -522,7 +533,7 @@ export default function App() {
   if (view === 'account') {
     return (
       <div className="min-h-screen bg-surface px-4 py-10">
-        <AuthPanel apiUrl={API_URL} onAuthenticated={handleAuthenticated} onBack={() => setView(preAuthView)} />
+        <AuthPanel apiUrl={API_URL} onAuthenticated={handleAuthenticated} onBack={() => setView(preAuthView)} resetToken={resetToken} />
       </div>
     )
   }

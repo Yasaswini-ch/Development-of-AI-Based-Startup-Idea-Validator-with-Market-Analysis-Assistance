@@ -9,7 +9,9 @@ real, deliberate limitation, not an oversight - not needed for a single
 it ever is.
 """
 
+import hashlib
 import os
+import secrets
 import time
 import uuid
 
@@ -18,7 +20,7 @@ import jwt
 from fastapi import Header, HTTPException
 from sqlalchemy.exc import IntegrityError
 
-from .db import get_engine, now, users_table
+from .db import get_engine, now, password_resets_table, users_table
 from .google_auth import verify_google_id_token
 from sqlalchemy import select
 
@@ -68,6 +70,77 @@ def _verify_password(password: str, password_hash: str | None) -> bool:
         # Malformed stored hash - fails closed rather than raising a 500
         # for what's still just "these credentials don't match."
         return False
+
+
+_RESET_TOKEN_TTL_SECONDS = 30 * 60
+
+
+def _hash_reset_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def request_password_reset(email: str) -> tuple[str, str] | None:
+    """Create a single-use reset token for an existing account.
+
+    Returns (email, token) so the caller can email the link, or None when no
+    such account exists. The caller must give the same response either way so
+    this can't be used to discover which emails have accounts. Any earlier
+    unused link for the user is replaced, so only the newest one works.
+    Google-only accounts are allowed: controlling the inbox is exactly what
+    proves the right to set a password on that email.
+    """
+    email = (email or "").strip().lower()
+    if not email:
+        return None
+    engine = get_engine()
+    with engine.begin() as conn:
+        row = conn.execute(select(users_table.c.id, users_table.c.email).where(users_table.c.email == email)).first()
+        # Housekeeping: drop expired links so the table cannot grow without bound.
+        conn.execute(password_resets_table.delete().where(password_resets_table.c.expires_at < now()))
+        if row is None:
+            return None
+        conn.execute(password_resets_table.delete().where(password_resets_table.c.user_id == row.id))
+        token = secrets.token_urlsafe(32)
+        conn.execute(
+            password_resets_table.insert().values(
+                token_hash=_hash_reset_token(token),
+                user_id=row.id,
+                expires_at=now() + _RESET_TOKEN_TTL_SECONDS,
+            )
+        )
+    return row.email, token
+
+
+def reset_password(token: str, new_password: str) -> None:
+    """Set a new password from a reset token. Raises AuthError for an
+    invalid, expired or already-used token, or a too-short password.
+
+    The token is consumed in the same transaction that changes the password.
+    Existing login tokens (JWTs) stay valid until they expire: this app has no
+    revocation list (see the module docstring), which is a known limit.
+    """
+    if len(new_password or "") < _MIN_PASSWORD_LENGTH:
+        raise AuthError(f"Password must be at least {_MIN_PASSWORD_LENGTH} characters.")
+    invalid = AuthError("This reset link is invalid or has expired. Request a new one.")
+    token_hash = _hash_reset_token(token or "")
+    engine = get_engine()
+    with engine.begin() as conn:
+        row = conn.execute(
+            select(password_resets_table.c.user_id, password_resets_table.c.expires_at).where(
+                password_resets_table.c.token_hash == token_hash
+            )
+        ).first()
+        if row is None or row.expires_at < now():
+            raise invalid
+        # Delete first and check the count, so two simultaneous uses of one
+        # link cannot both succeed.
+        used = conn.execute(password_resets_table.delete().where(password_resets_table.c.token_hash == token_hash))
+        if used.rowcount != 1:
+            raise invalid
+        conn.execute(
+            users_table.update().where(users_table.c.id == row.user_id).values(password_hash=_hash_password(new_password))
+        )
+        conn.execute(password_resets_table.delete().where(password_resets_table.c.user_id == row.user_id))
 
 
 def _issue_token(user_id: str, email: str) -> str:
