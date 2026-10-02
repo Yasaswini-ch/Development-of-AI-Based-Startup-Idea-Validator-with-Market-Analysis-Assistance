@@ -230,6 +230,19 @@ Findings from live use and a five-person informal test. The final project docume
   text, the section is built from it and labelled inferred. If they do not, the section
   still says the AI step did not run.
 
-### 8.4 Not built
+### 8.4 Lookup cache, App Store layer and the comparison table
+- **Cache reuse is mostly exact-match.** A repeat run is served almost entirely from the lookup
+  cache (20.4 s to 2.8 s, no paid calls in one measurement), but a different idea in the same
+  space searched different words and saved nothing. Company facts and recurring pages are what
+  carry across ideas. Reusing results for *similar* wording would need fuzzy or semantic matching.
+- **Cached data can go stale** within its time limit (search 12 h, extracts 7 d, App Store 24 h,
+  company facts 30 d). `WEB_CACHE=0` bypasses it.
+- **The product-first query is built by rule** from the idea's first sentence, so an unusually
+  phrased idea can still search poorly. Rivals found also depend on what Tavily and the App Store
+  return that day; names such as "Chrome" or "Key Features" can still slip through NER.
+- **The App Store layer fits app-like ideas best.** For other kinds of product it usually adds
+  nothing, because only apps sharing two topic words with the idea are kept.
+
+### 8.5 Not built
 - PDF charts, a calibration of score weights, a measured competitor-recall figure, a written
   scaling plan, progressive rendering, and a saved real example report for the landing page.

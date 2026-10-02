@@ -114,7 +114,8 @@
 
 ## Slide 7: Evidence Tab — Search Retrieval & Filtering
 - **Angles:** `Market size & trends`, `Competitors`, `Industry news`, `Customer demand`, `How others solve this`.
-- **Blended search:** Tavily and DuckDuckGo results are merged and deduplicated by URL, keeping the best score. Wikipedia and Hacker News serve as a zero-cost fallback only when neither returns.
+- **Blended search:** Tavily and DuckDuckGo results are merged and deduplicated by URL, keeping the best score. The market-size and competitor angles use Tavily advanced search, and the top three competitor pages are read in full (Tavily Extract, 2,500 characters).
+- **Product-first competitor queries:** the competitor angle searches for what the product does, not the customer's words (a freelancer invoicing idea moved from Upwork and Fiverr pages to FreshBooks, Harvest, Clockify and Avaza). Wikipedia and Hacker News serve as a zero-cost fallback only when neither returns.
 - **Filtering:** `_EXCLUDED_DOMAINS` strips `arxiv.org` and generic directory and review aggregators (for example `competitors.app`, `alternativeto.net`, `saashub.com`, `trustradius.com`) that keyword-match almost any query without being about the idea. Low-signal Wikipedia page shapes are filtered too.
 - **What the tab shows:** every source with its relevance, angle and date where known. Everything later in the report cites these sources by id.
 
@@ -122,7 +123,7 @@
 
 ## Slide 8: Competitors Tab — Discovery from Multiple Sources
 - **Design:** competitors are no longer taken from one place. Five kinds of source are combined, and the result is merged and de-duplicated.
-  1. **The web search results** (the blended Tavily + DuckDuckGo evidence from Slide 7).
+  1. **The web search results** (the blended Tavily + DuckDuckGo evidence from Slide 7), plus **the App Store's own search** for what the product does, added as ordinary cited sources (apps sharing at least two topic words with the idea, at most five).
   2. **Local spaCy NER** (`en_core_web_sm`) always runs over the snippets at no API cost. A denylist and a product-context test remove generic words mislabelled as companies.
   3. **An LLM discovery pass** (`gpt-oss-20b` first) reads richer source text and proposes rivals with an offering, a gap, strengths and weaknesses.
   4. **Public APIs for enrichment:** Product Hunt, the iTunes Search API (rating, price, artwork) and Wikidata (descriptions). A record attaches only when the competitor's name appears in the record's own title, so a lookalike cannot attach the wrong logo or rating.
@@ -134,7 +135,7 @@
 
 ## Slide 9: Competitors Tab — Direct vs Indirect, Matrix & Positioning
 - **Mapping:** each rival is labelled **direct** (shares at least two distinct topic stems with the idea, ignoring the target-customer words), **indirect** (shares one), or left unlabelled. Competitor cards group by label and show a logo and one line of real data where enrichment found it.
-- **Comparison matrix:** a table of the idea against each rival.
+- **Comparison matrix:** the idea against up to 8 rivals (direct first) across 6 to 8 rows. The AI-written matrix is topped up to at least 6 rows, and when the model is unavailable the rule-based fallback builds up to 8 rows from real data (price, feature breadth, positioning, what it offers, business model, strength, weakness, customer rating, founding year). The idea's own cells say "pre-launch" and never claim a price.
 - **Positioning grid:** Price (`low/mid/high`) × Feature Breadth (`narrow/moderate/broad`). Rivals without price evidence land on `"unknown"` rather than being guessed.
 - **Honest limit:** classification can under-label a rival when its source text is thin; a real but off-topic company is a relevance judgement the rule path cannot make.
 
@@ -234,7 +235,7 @@
 - **Switch triggers:** rate limits, missing models, provider errors, **and responses that fail per-attempt shape validation** (for example unparseable JSON).
 - **Provider limits that shaped it:** Qwen has a hard 1,000 output-token per minute cap, so its calls stay under about 950 tokens; the `gpt-oss` models have 8,000 tokens per minute and a daily cap; Gemini's free tier allows about 20 requests a day per model.
 - **Last resort:** a local Ollama model (only where one runs), then one cloud retry after a cooldown, then a labelled deterministic fallback. Where a local model exists but no email is on file, the user is asked for an email so the slower run can be sent to them.
-- **Cache:** identical requests are cached for 30 minutes, and only successful responses are cached, so a cached result is never a hidden failure.
+- **Cache:** identical requests are cached for 30 minutes, and only successful responses are cached, so a cached result is never a hidden failure. A second lookup cache keeps search results (12 h), page extracts (7 d), App Store results (24 h) and company facts (30 d): a repeat run measured 20.4 s down to 2.8 s with no paid calls, while a different idea in the same space saved nothing.
 
 ---
 
@@ -280,7 +281,7 @@
 
 ## Slide 26: Limitations & Future Work
 - **Not built yet:** charts in the PDF; a calibration of the score weights against labelled ideas; a measured competitor-recall figure; a written scaling plan beyond free tiers; progressive rendering of sections as they finish; a saved real example report on the landing page.
-- **Accuracy:** results vary run to run because retrieval uses live search; agents read trimmed snippets (about 1,500 characters), not whole pages; "Grounded" means a claim cites an accepted source, not that the source is true; SAM and SOM estimates are the model's own working and are labelled as such; scores are reasoned, not calibrated; tested on seven industries, so niche or non-English markets are unproven.
+- **Accuracy:** results vary run to run because retrieval uses live search; agents mostly read trimmed snippets, with deeper content only for the market-size and competitor angles (Tavily advanced search, and full-page Extract for the top three competitor sources, capped at 2,500 characters); "Grounded" means a claim cites an accepted source, not that the source is true; SAM and SOM estimates are the model's own working and are labelled as such; scores are reasoned, not calibrated; tested on seven industries, so niche or non-English markets are unproven.
 - **Quota exposure:** on free tiers, heavy use pushes runs onto the slower email path (3 of 5 testers saw it).
 - **Operational:** sessions expire after 7 days; Render's free Postgres expires after 30 days; a free host sleeps when idle and the free database auto-suspends, which slows the first sign-in; no email verification yet (password reset was added on 2026-10-02).
 - **Technical:** the local-model fallback needs real GPU hardware; rival classification under-labels on thin text.

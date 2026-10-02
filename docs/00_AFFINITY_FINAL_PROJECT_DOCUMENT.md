@@ -66,7 +66,7 @@ The report opens in **eight tabs**:
 |---|---|
 | Evidence | Every source found, with relevance, angle and date where known |
 | Market | Market signal, TAM / SAM / SOM (TAM sourced; SAM and SOM sourced or a labelled estimate), viability breakdown |
-| Competitors | Rivals found, each labelled direct or indirect, with logo, pricing and a comparison table against the idea |
+| Competitors | Rivals found, each labelled direct or indirect, with logo, pricing and a comparison table against the idea (6 to 8 rows, up to 8 rivals) |
 | Customers | Customer segments, pain points, and verbatim quotes from the sources |
 | Gaps | White-space analysis: where customer pain meets weak competitor coverage |
 | Risks | Strengths and exposure, the bear case (investor objections), key assumptions to test |
@@ -189,6 +189,29 @@ is de-duplicated before it is enriched and classified.
    also appear in that source's text was relaxed, because it discarded real rivals the model
    knew from the page's context.
 
+**Search queries (changed 2026-10-02).** The competitor angle used to search with the customer's
+words, so a freelancer invoicing app searched "freelancers alternatives" and got Upwork and Fiverr
+alternative pages. It now leads with what the product does ("track time, generate invoices, chase
+late payments ... alternatives", then "best ..."), and keeps the old queries only as fallbacks. On
+the same idea this moved the rivals found from freelance marketplaces to FreshBooks, Harvest,
+Clockify, Avaza and QuickBooks. The phrase is built by rule from the idea's first sentence, so an
+unusually phrased idea can still produce a poor query.
+
+**Extra evidence layers.** Besides Tavily and DuckDuckGo: Tavily advanced search for the
+market-size and competitor angles, full-page Tavily Extract for the top three competitor sources
+(2,500 characters, read only by the LLM pass), and the App Store's own search for what the product
+does. App Store apps join the same evidence pool as ordinary sources, so every rival stays cited to
+a real page. Only apps that share at least two distinct topic words with the idea are kept, at most
+five. `TAVILY_DEEP=0` and `ITUNES_DISCOVERY=0` switch these off.
+
+**Comparison table.** The AI-written matrix asks for 5 to 8 rows. When the model is unavailable, the
+rule-based fallback now builds up to 8 rows from real data: Price, Feature breadth and Positioning
+always, then what it offers, business model, main strength, main weakness, customer rating, pricing
+details and founding year, each only when at least one rival has real data for it. A short AI matrix
+is topped up to at least 6 rows the same way, without changing its own rows. Columns are the closest
+rivals, direct before indirect, at most 8, and the top 8 rivals are now enriched (it was 4). The idea's
+own cells say "pre-launch" and never state a price or a claim.
+
 **Known limit:** classification can under-label rivals when a source gives little text. The
 LLM path does better than the rule path there. A real company that is off-topic for the idea
 is a relevance judgement the rule path cannot make. See [14](14_AFFINITY_COMPETITOR_GRID_AND_POSITIONING_PARSER.md).
@@ -235,6 +258,14 @@ Affinity runs on free tiers, so rate limits are the main operational risk.
   section simply came back empty.
 - **Caching:** identical requests are cached for 30 minutes, and only successful responses
   (no section errors) are cached, so a cached result is never a hidden failure.
+- **Lookup cache (added 2026-10-02).** A second, finer cache keeps public web lookups so they are
+  paid for once: search results by query (12 hours), full-page extracts by URL (7 days), App Store
+  results by query (24 hours) and company facts by name (30 days). Only successful, non-empty
+  results are stored, so a failed lookup is retried. Measured on one idea: a repeat run went from
+  20.4 s to 2.8 s with no Tavily or App Store calls. A *different* idea in the same space saved
+  nothing, because its search wording differed; cross-idea reuse happens mainly for company facts
+  and for pages that recur. It holds public web content and the search words derived from an idea,
+  never accounts. `WEB_CACHE=0` bypasses it.
 
 ## 10. Tools and services used
 
@@ -244,7 +275,7 @@ Affinity runs on free tiers, so rate limits are the main operational risk.
 | Agents | CrewAI | One single-task agent per AI section |
 | Model access | LiteLLM | One interface to Groq and Gemini, with fallback |
 | Models | Groq, Gemini (Ollama locally) | Reasoning steps |
-| Search | Tavily, DuckDuckGo | Live web retrieval |
+| Search | Tavily (basic, advanced and Extract), DuckDuckGo, App Store search | Live web retrieval and rival apps |
 | Entity extraction | spaCy | Local competitor-name extraction |
 | Enrichment | Product Hunt, iTunes Search, Wikidata | Ratings, pricing, logos, descriptions |
 | API | FastAPI | HTTP API, job status, rate limiting |
@@ -314,8 +345,13 @@ the system behaves; 13.2 is work that was asked for or planned and is not finish
 - **Results vary between runs.** Retrieval uses live web search, so the same idea can return
   different sources, competitors and numbers on different days. A single run is not a
   reproducible measurement. The scoring code is deterministic only for a given set of evidence.
-- **The analysis reads snippets, not whole pages.** Each source is trimmed to roughly 1,500
-  characters before it reaches an agent, so a fact deeper in a page is missed.
+- **The analysis mostly reads snippets, not whole pages.** Sources are trimmed before they reach
+  an agent. Two things go deeper, using more Tavily credits per run: the "Market size & trends"
+  and "Competitors" angles use Tavily's advanced search (a measured 55% more content per source
+  in one check), and the competitor LLM pass reads the full text, capped at 2,500 characters, of
+  its top three sources through Tavily Extract. A fact deeper in any other page is still missed.
+  Set `TAVILY_DEEP=0` to turn the deeper calls off when credits run low; every deep call falls
+  back to normal search if it fails.
 - **"Grounded" is not "true".** It means a claim cites a source that a verification pass
   accepted as supporting it. The source itself may be wrong, biased or out of date.
 - **Market sizing is only as good as the sources.** TAM is shown only where a source states
@@ -428,7 +464,7 @@ What this shows, and what it does not:
 | 3 | SWOT, MVP, go-to-market, advisor chat, PostgreSQL and accounts, PDF export, comparison matrix |
 | 4 | Email delivery, evidence and confidence layer, contradiction detector, experiments and action plan, Google sign-in |
 | 5 | Analytics dashboards and role-based admin access |
-| Latest | Multi-source competitor discovery (web, NER, LLM, public APIs; direct and indirect), eight-tab report, redesigned landing page, revenue-model fallback, labelled SAM/SOM estimates |
+| Latest | Multi-source competitor discovery (web, NER, LLM, public APIs; direct and indirect), product-first competitor queries, App Store layer, deeper Tavily content, 6 to 8 row comparison table, shared lookup cache, eight-tab report, redesigned landing page, revenue-model fallback, labelled SAM/SOM estimates |
 
 Contribution history is in the git log.
 
