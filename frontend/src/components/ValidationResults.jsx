@@ -310,6 +310,24 @@ export default function ValidationResults({
   // underlying report data together instead of just the chat bubble.
   const [pendingNav, setPendingNav] = useState(null)
   const tabsRef = useRef(null)
+  const contentRef = useRef(null)
+
+  // Switching tabs from further down the page used to leave the reader
+  // wherever the old scroll offset landed in the new tab's content. When the
+  // top of the content is already scrolled above the sticky tab bar, bring it
+  // back to just under the bar so the tab is read from its start.
+  function selectTab(key) {
+    setActiveTab(key)
+    requestAnimationFrame(() => {
+      const content = contentRef.current
+      if (!content) return
+      const barHeight = tabsRef.current?.offsetHeight ?? 0
+      if (content.getBoundingClientRect().top < barHeight) {
+        content.style.scrollMarginTop = `${barHeight}px`
+        content.scrollIntoView({ block: 'start' })
+      }
+    })
+  }
 
   function navigateToSection(section) {
     if (!section?.tab) return
@@ -428,7 +446,7 @@ export default function ValidationResults({
             <button
               key={t.key}
               role="tab"
-              onClick={() => setActiveTab(t.key)}
+              onClick={() => selectTab(t.key)}
               aria-selected={active}
               title={badge?.title}
               className={`flex items-center gap-2 rounded-full px-5 py-2 font-serif text-[15px] transition-colors ${
@@ -454,7 +472,7 @@ export default function ValidationResults({
         </div>
       </div>
 
-      <div>
+      <div ref={contentRef}>
         {activeTab === 'sources' && (
           <div className="space-y-8">
             {groups.length > 0 ? (
