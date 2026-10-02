@@ -113,6 +113,17 @@ cache_table = Table(
     Column("cached_at", Float, nullable=False, index=True),
 )
 
+# Public web lookups reused across runs - see agent/web_cache.py. Distinct from
+# validation_cache above, which holds whole reports for 30 minutes.
+web_cache_table = Table(
+    "web_cache",
+    metadata,
+    Column("cache_key", String, primary_key=True),
+    Column("kind", String, nullable=False, index=True),
+    Column("data", JSON, nullable=False),
+    Column("cached_at", Float, nullable=False, index=True),
+)
+
 # Append-only operational log backing GET /admin/platform-metrics - the
 # in-memory-only counters in agent/metrics.py answer "what's the total
 # right now" but can't answer "how did this trend over the last 30 days"
@@ -344,4 +355,5 @@ __all__ = [
     "reset_engine",
     "sessions_table",
     "users_table",
+    "web_cache_table",
 ]

@@ -39,6 +39,8 @@ jobs:
       #     block or managed Postgres instance in this workflow.
       - name: Run test suite
         run: python -m unittest discover -s tests
+        env:
+          WEB_CACHE: "0"
 
   frontend-build:
     name: Frontend lint + build

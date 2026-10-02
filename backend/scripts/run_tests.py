@@ -17,7 +17,7 @@ from pathlib import Path
 backend = Path(__file__).resolve().parents[1]
 # litellm also calls load_dotenv() on import unless LITELLM_MODE is PRODUCTION, and
 # backend/.venv sits inside backend/, so it finds backend/.env on its own.
-env = {**os.environ, "AFFINITY_SKIP_DOTENV": "1", "LITELLM_MODE": "PRODUCTION"}
+env = {**os.environ, "AFFINITY_SKIP_DOTENV": "1", "LITELLM_MODE": "PRODUCTION", "WEB_CACHE": "0"}
 for key in ("GROQ_API_KEY", "GEMINI_API_KEY", "TAVILY_API_KEY", "SENDGRID_API_KEY"):
     env.pop(key, None)  # keep a shell-exported key from leaking into tests too
 

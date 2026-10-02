@@ -323,7 +323,7 @@ function ComparisonMatrix({ rows, competitors }) {
         <table className="w-full min-w-[32rem] border-collapse text-left text-xs">
           <thead>
             <tr className="bg-surface">
-              <th className="p-2.5 font-mono text-[10px] uppercase tracking-wide text-muted">Dimension</th>
+              <th className="sticky left-0 z-10 bg-surface p-2.5 font-mono text-[10px] uppercase tracking-wide text-muted">Dimension</th>
               <th className="p-2.5 font-mono text-[10px] uppercase tracking-wide text-accent">Your idea</th>
               {names.map((n) => (
                 <th key={n} className="p-2.5 font-mono text-[10px] uppercase tracking-wide text-muted">
@@ -335,7 +335,7 @@ function ComparisonMatrix({ rows, competitors }) {
           <tbody>
             {rows.map((row, i) => (
               <tr key={i} className="border-t border-border align-top">
-                <th scope="row" className="p-2.5 font-semibold text-text">
+                <th scope="row" className="sticky left-0 z-10 bg-panel p-2.5 font-semibold text-text">
                   {row.dimension}
                 </th>
                 <td className="bg-accent/5 p-2.5 text-text">{row.idea}</td>

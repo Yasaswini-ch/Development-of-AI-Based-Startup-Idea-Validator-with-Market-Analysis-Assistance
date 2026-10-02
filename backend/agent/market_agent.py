@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 # its source-relevance lookup covers the same citation window market's
 # trends/segments can actually cite (see _source_relevance_by_id).
 MAX_SOURCES_IN_CONTEXT = 10
-_MAX_SNIPPET_LEN = 300
+_MAX_SNIPPET_LEN = 600  # was 300; advanced Tavily search returns longer, more relevant content
 _MAX_SEGMENTS = 4
 _MAX_TRENDS = 4
 

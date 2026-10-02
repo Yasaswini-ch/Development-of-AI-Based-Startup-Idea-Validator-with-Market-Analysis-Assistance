@@ -44,7 +44,15 @@ opportunity, SWOT, MVP, GTM, competitors, revenue models) return a result flagge
 
 ## Search
 
-Tavily and DuckDuckGo results are blended and deduplicated by URL, keeping the best score;
+Tavily and DuckDuckGo results are blended and deduplicated by URL, keeping the best score. The
+"Market size & trends" and "Competitors" angles use Tavily's advanced search, and the top three
+Competitors results also get their full page text through Tavily Extract (capped at 2,500
+characters, read only by the competitor LLM pass and never returned in the API response). These
+use more credits per run; set `TAVILY_DEEP=0` to turn them off, and each falls back to normal
+search if it fails. The competitor angle searches for what the product does (`retrieval._what_it_does`),
+not the customer's words, and the App Store's own search adds rival apps as cited sources
+(`ITUNES_DISCOVERY=0` turns that off). `agent/web_cache.py` caches these lookups and company facts
+between runs (`WEB_CACHE=0` bypasses it);
 Wikipedia and Hacker News serve as a zero-cost fallback only when neither returns. Each
 idea is expanded into five angles (market size and trends, competitors, industry news,
 customer demand, how others solve this). Academic domains and generic directory or review
@@ -88,6 +96,7 @@ Notes:
 - `--reload` restarts the server on every code edit and kills any run in progress, so use it
   only while editing.
 - Optional keys enable more: `GEMINI_API_KEY` (fallback models and the advisor),
+  `TAVILY_API_KEY` (and `TAVILY_DEEP=0` to skip the deeper, costlier calls),
   `SENDGRID_API_KEY` and `SENDGRID_FROM_EMAIL` (report email), `GOOGLE_OAUTH_CLIENT_ID`
   (Google sign-in), `ADMIN_EMAILS` (admin access), `DATABASE_URL` (Postgres; SQLite is the
   local default). See `.env.example` and [`DEPLOYMENT.md`](../DEPLOYMENT.md).
@@ -105,7 +114,8 @@ Notes:
 - `agent/chat_graph.py`: the advisor's own small graph (optional scoped search, section routing)
 
 **Retrieval**
-- `agent/retrieval.py`: five-angle expansion, filtering, dedupe and ranking
+- `agent/retrieval.py`: five-angle expansion, product-first competitor queries, App Store layer, dedupe and ranking
+- `agent/web_cache.py`: shared cache for search, extract, App Store and company lookups
 - `agent/tools.py`: Tavily and DuckDuckGo blend, free fallbacks
 
 **LLM agents**

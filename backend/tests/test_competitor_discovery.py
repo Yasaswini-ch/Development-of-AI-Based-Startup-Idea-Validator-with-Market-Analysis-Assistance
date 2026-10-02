@@ -9,12 +9,14 @@ call, plus one analyze_competitors-level test with _discover_with_llm
 mocked to check the union/merge behavior.
 """
 
+import os
 import sys
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
+os.environ.setdefault("WEB_CACHE", "0")  # tests must never read or write the shared lookup cache (agent/web_cache.py)
 sys.path.insert(0, str(BACKEND_DIR))
 
 from agent import competitor_agent
@@ -301,7 +303,7 @@ class AnalyzeCompetitorsMergeTests(unittest.TestCase):
         self.assertTrue(result["competitors"])
         self.assertTrue(result["comparisonMatrix"])
         dimensions = {row["dimension"] for row in result["comparisonMatrix"]}
-        self.assertEqual(dimensions, {"Price", "Feature breadth", "Positioning"})
+        self.assertTrue({"Price", "Feature breadth", "Positioning"} <= dimensions)
         for row in result["comparisonMatrix"]:
             for name in {c["name"] for c in result["competitors"]}:
                 self.assertIn(name, row["competitors"])
@@ -311,7 +313,7 @@ class BuildFallbackMatrixTests(unittest.TestCase):
     def test_empty_without_competitors(self):
         self.assertEqual(competitor_agent._build_fallback_matrix([]), [])
 
-    def test_builds_three_rows_from_existing_fields(self):
+    def test_builds_the_three_core_rows_when_nothing_else_is_known(self):
         competitors = [
             {"name": "HelloFresh", "estimatedPrice": "high", "featureBreadth": "broad", "classification": "direct"},
             {"name": "Obscurename", "estimatedPrice": "unknown", "featureBreadth": "unknown", "classification": "unknown"},
@@ -326,6 +328,78 @@ class BuildFallbackMatrixTests(unittest.TestCase):
         for row in matrix:
             self.assertIn("idea", row)
             self.assertNotIn("$", row["idea"])
+
+
+class RichComparisonMatrixTests(unittest.TestCase):
+    RIVALS = [
+        {
+            "name": "Harvest",
+            "classification": "direct",
+            "estimatedPrice": "mid",
+            "featureBreadth": "broad",
+            "offering": "Time tracking and invoicing for freelancers and small teams.",
+            "businessModel": "subscription",
+            "pricing": "$12/mo, free tier",
+            "strengths": ["Simple timers", "Invoices from tracked time"],
+            "weaknesses": ["No late-payment reminders"],
+            "enrichment": {"source": "itunes", "averageRating": 4.49, "ratingCount": 12345},
+        },
+        {
+            "name": "FreshBooks",
+            "classification": "direct",
+            "estimatedPrice": "unknown",
+            "featureBreadth": "unknown",
+            "offering": "Accounting and invoicing software.",
+            "businessModel": "unknown",
+            "pricing": "unknown",
+            "strengths": [],
+            "weaknesses": [],
+            "enrichment": {"source": "wikidata", "foundedYear": 2003},
+        },
+    ]
+
+    def test_fallback_grows_to_eight_rows_from_real_data(self):
+        matrix = competitor_agent._build_fallback_matrix(self.RIVALS, "An app that tracks time and chases late payments. More text.")
+        dims = [r["dimension"] for r in matrix]
+        self.assertEqual(len(matrix), 8)
+        self.assertEqual(dims[:3], ["Price", "Feature breadth", "Positioning"])
+        for expected in ("What it offers", "Business model", "Main strength", "Main weakness", "Customer rating"):
+            self.assertIn(expected, dims)
+        by = {r["dimension"]: r for r in matrix}
+        self.assertEqual(by["Customer rating"]["competitors"]["Harvest"], "4.5/5 from 12,345 ratings")
+        self.assertEqual(by["Customer rating"]["competitors"]["FreshBooks"], "unknown")
+        self.assertEqual(by["Main strength"]["competitors"]["Harvest"], "Simple timers")
+        self.assertEqual(by["What it offers"]["idea"], "An app that tracks time and chases late payments")
+
+    def test_a_row_with_no_data_for_any_rival_is_left_out(self):
+        bare = [{"name": "A", "classification": "direct"}, {"name": "B", "classification": "direct"}]
+        self.assertEqual([r["dimension"] for r in competitor_agent._build_fallback_matrix(bare)], ["Price", "Feature breadth", "Positioning"])
+
+    def test_idea_cells_never_invent_a_price_or_a_claim(self):
+        for row in competitor_agent._build_fallback_matrix(self.RIVALS, "An app"):
+            self.assertNotIn("$", row["idea"])
+
+    def test_columns_are_the_closest_eight_rivals(self):
+        rivals = [{"name": f"I{i}", "classification": "indirect"} for i in range(6)] + [
+            {"name": f"D{i}", "classification": "direct"} for i in range(5)
+        ]
+        names = list(competitor_agent._build_fallback_matrix(rivals)[0]["competitors"])
+        self.assertEqual(len(names), 8)
+        self.assertEqual([n for n in names if n.startswith("D")], [f"D{i}" for i in range(5)])  # all direct rivals kept
+
+    def test_a_short_model_matrix_is_topped_up_without_changing_its_rows(self):
+        model_rows = [
+            {"dimension": "Price", "idea": "Freemium", "competitors": {"Harvest": "$12/mo", "FreshBooks": "$19/mo"}},
+            {"dimension": "Core feature", "idea": "Chases late payments", "competitors": {"Harvest": "Timers", "FreshBooks": "Invoices"}},
+        ]
+        padded = competitor_agent._pad_matrix(model_rows, self.RIVALS, "An app")
+        self.assertEqual(padded[:2], model_rows)
+        self.assertEqual(len(padded), 6)
+        self.assertEqual([r["dimension"] for r in padded].count("Price"), 1)  # no duplicate of a dimension the model covered
+
+    def test_a_matrix_that_is_already_long_enough_is_untouched(self):
+        rows = [{"dimension": f"D{i}", "idea": "x", "competitors": {"Harvest": "y"}} for i in range(6)]
+        self.assertEqual(competitor_agent._pad_matrix(rows, self.RIVALS), rows)
 
 
 if __name__ == "__main__":
@@ -360,3 +434,10 @@ class ClassifyCompetitorTests(unittest.TestCase):
 
     def test_no_keywords_is_unknown(self):
         self.assertEqual(competitor_agent._classify_competitor(set(), "anything at all"), "unknown")
+
+
+class NearMatchDedupeCaseTests(unittest.TestCase):
+    def test_spellings_that_differ_only_by_case_are_one_company(self):
+        kept = competitor_agent._dedupe_near_matches({"Toptal": {"count": 3}, "TopTal": {"count": 1}, "Contra": {"count": 1}})
+        self.assertEqual(sorted(k.lower() for k in kept), ["contra", "toptal"])
+        self.assertIn("Toptal", kept)  # the most-mentioned spelling wins

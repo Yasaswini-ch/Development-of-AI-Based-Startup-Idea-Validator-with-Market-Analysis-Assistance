@@ -13,7 +13,7 @@ const STACK = [
   {
     group: 'Evidence',
     items: [
-      ['Tavily + DuckDuckGo', 'Blended web search across five angles, deduplicated by URL.'],
+      ['Tavily + DuckDuckGo', 'Blended web search across five angles, deduplicated by URL. Tavily goes deeper on market size and competitors, with full-page text for the top rivals.'],
       ['spaCy', 'Local entity recognition finds company names with no API call.'],
       ['Product Hunt, iTunes, Wikidata', 'Free public APIs that add ratings, pricing and descriptions to competitors.'],
     ],

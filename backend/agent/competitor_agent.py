@@ -92,6 +92,7 @@ import re
 import urllib.parse
 import urllib.request
 
+from . import web_cache
 from .structured_output import extract_json_object
 
 # crewai/llm are imported lazily inside _profile_with_llm: every other
@@ -502,7 +503,10 @@ def _dedupe_near_matches(mentions: dict[str, dict]) -> list[str]:
     names = sorted(mentions.keys(), key=lambda n: (-mentions[n]["count"], len(n)))
     kept: list[str] = []
     for name in names:
-        if any(name in k or k in name for k in kept):
+        lowered = name.lower()
+        # Case-insensitive: "Toptal" and "TopTal" are one company, and were kept
+        # as two rivals when this compared exact spellings.
+        if any(lowered in k.lower() or k.lower() in lowered for k in kept):
             continue
         kept.append(name)
     return kept
@@ -609,6 +613,7 @@ def _refine_with_gemini(idea: str, entries: list[dict]) -> dict[str, dict]:
 
 _CLASSIFICATIONS = {"direct", "indirect", "unknown"}
 _MAX_LIST_ITEMS = 5
+_LISTING_CHARS_FULL = 2500
 _MAX_MATRIX_ROWS = 8
 
 
@@ -697,42 +702,116 @@ _CLASSIFICATION_LABELS = {
 }
 
 
-def _build_fallback_matrix(competitors: list[dict]) -> list[dict]:
-    """A deterministic comparisonMatrix built only from fields this module
-    already computes for every competitor (estimatedPrice, featureBreadth,
-    classification) - used whenever the LLM discovery pass didn't produce
-    one (it wasn't run, timed out, or found no competitors to build one
-    from), so the comparison view isn't contingent on that one LLM call
-    succeeding. It's honest about the idea's own side: at validation time
-    there's no real pricing or shipped feature set to compare with, so the
-    "idea" column says exactly that instead of inventing one - same
-    fabricate-nothing rule the rest of this module follows (see
-    _GAP_DISCLOSURE for the same tradeoff on a different field).
-    """
-    if not competitors:
-        return []
+_MATRIX_MIN_ROWS = 6
+_MATRIX_MAX_COMPETITOR_COLUMNS = 8
+_PRE_LAUNCH = "Not yet - pre-launch"
+
+
+def _known(value) -> bool:
+    return bool(value) and str(value).strip().lower() not in {"unknown", "n/a", "see source for details."}
+
+
+def _matrix_competitors(competitors: list[dict]) -> list[dict]:
+    """The rivals worth a column: direct before indirect before unlabelled
+    (stable within each), at most _MATRIX_MAX_COMPETITOR_COLUMNS. A table with
+    every rival found (up to 20) is unreadable."""
+    order = {"direct": 0, "indirect": 1}
+    ranked = sorted(competitors, key=lambda c: order.get(c.get("classification"), 2))
+    return ranked[:_MATRIX_MAX_COMPETITOR_COLUMNS]
+
+
+def _rating_text(competitor: dict) -> str:
+    enrichment = competitor.get("enrichment") or {}
+    rating, count = enrichment.get("averageRating"), enrichment.get("ratingCount")
+    if not rating:
+        return "unknown"
+    text = f"{float(rating):.1f}/5"
+    return f"{text} from {int(count):,} ratings" if count else text
+
+
+def _candidate_rows(competitors: list[dict], idea: str) -> list[tuple[str, str, dict, bool]]:
+    """(dimension, idea cell, {competitor: cell}, always_show) for every row
+    that can be built from fields this module already holds - nothing here is
+    invented, and the idea's own side stays honest about being pre-launch."""
+    first = (idea or "").strip().split(". ")[0].strip()[:200]
+
+    def cells(fn):
+        return {c["name"]: fn(c) or "unknown" for c in competitors}
+
+    def first_item(key):
+        return lambda c: (c.get(key) or [None])[0]
+
     return [
-        {
-            "dimension": "Price",
-            "idea": "Not yet priced - pre-launch",
-            "competitors": {c["name"]: _PRICE_LABELS[c.get("estimatedPrice", "unknown")] for c in competitors},
-        },
-        {
-            "dimension": "Feature breadth",
-            "idea": "Not yet built - pre-launch",
-            "competitors": {c["name"]: _BREADTH_LABELS[c.get("featureBreadth", "unknown")] for c in competitors},
-        },
-        {
-            "dimension": "Positioning",
-            "idea": "New entrant addressing this need",
-            "competitors": {
-                c["name"]: _CLASSIFICATION_LABELS[c.get("classification", "unknown")] for c in competitors
-            },
-        },
+        ("Price", "Not yet priced - pre-launch", cells(lambda c: _PRICE_LABELS[c.get("estimatedPrice", "unknown")]), True),
+        ("Feature breadth", "Not yet built - pre-launch", cells(lambda c: _BREADTH_LABELS[c.get("featureBreadth", "unknown")]), True),
+        ("Positioning", "New entrant addressing this need", cells(lambda c: _CLASSIFICATION_LABELS[c.get("classification", "unknown")]), True),
+        ("What it offers", first or "See the idea above", cells(lambda c: c.get("offering") if _known(c.get("offering")) else None), False),
+        ("Business model", "Not yet decided - pre-launch", cells(lambda c: c.get("businessModel") if _known(c.get("businessModel")) else None), False),
+        ("Main strength", "Not yet proven - pre-launch", cells(first_item("strengths")), False),
+        ("Main weakness", "Not yet known - pre-launch", cells(first_item("weaknesses")), False),
+        ("Customer rating", "No users yet - pre-launch", cells(lambda c: _rating_text(c) if _known(_rating_text(c)) else None), False),
+        ("Pricing details", "Not yet priced - pre-launch", cells(lambda c: c.get("pricing") if _known(c.get("pricing")) else None), False),
+        (
+            "Founded",
+            "New",
+            cells(lambda c: str((c.get("enrichment") or {}).get("foundedYear") or "") or None),
+            False,
+        ),
     ]
 
 
-_MAX_ENRICHED = 4
+def _build_fallback_matrix(competitors: list[dict], idea: str = "") -> list[dict]:
+    """A deterministic comparisonMatrix built only from fields this module
+    already holds for every competitor - used whenever the LLM discovery pass
+    didn't produce one (it wasn't run, timed out, or found nothing), so the
+    comparison view isn't contingent on that one call succeeding. It is
+    honest about the idea's own side: pre-launch, there is no real price or
+    shipped feature set to compare with, so those cells say exactly that
+    instead of inventing one (same fabricate-nothing rule as _GAP_DISCLOSURE).
+
+    Price, Feature breadth and Positioning are always shown. Further rows
+    (what it offers, business model, pricing details, main strength, main
+    weakness, customer rating, founded) appear only when at least one rival
+    has real data for them, up to 8 rows in all. Columns are the closest
+    rivals, at most 8.
+    """
+    if not competitors:
+        return []
+    shown = _matrix_competitors(competitors)
+    rows = []
+    for dimension, idea_cell, cells, always in _candidate_rows(shown, idea):
+        if not always and not any(_known(v) for v in cells.values()):
+            continue
+        rows.append({"dimension": dimension, "idea": idea_cell, "competitors": cells})
+        if len(rows) >= _MAX_MATRIX_ROWS:
+            break
+    return rows
+
+
+def _pad_matrix(matrix: list[dict], competitors: list[dict], idea: str = "") -> list[dict]:
+    """Top up a short model-written matrix to at least _MATRIX_MIN_ROWS rows
+    with rule-based rows for dimensions it does not already cover, using the
+    same competitors the model's rows describe. Model rows come first and are
+    never altered."""
+    if not matrix or len(matrix) >= _MATRIX_MIN_ROWS:
+        return matrix
+    names = {name for row in matrix for name in row.get("competitors", {})}
+    shown = [c for c in competitors if c["name"] in names]
+    if not shown:
+        return matrix
+    present = " | ".join(row["dimension"].lower() for row in matrix)
+    padded = list(matrix)
+    for dimension, idea_cell, cells, _always in _candidate_rows(shown, idea):
+        if len(padded) >= _MATRIX_MIN_ROWS:
+            break
+        key = dimension.lower().split()[0]
+        if key in present or not any(_known(v) for v in cells.values()):
+            continue
+        padded.append({"dimension": dimension, "idea": idea_cell, "competitors": cells})
+    return padded
+
+
+_MAX_ENRICHED = 8  # was 4; the comparison table shows up to 8 rivals and a rating row, and lookups are cached
 _WIKIDATA_SEARCH_URL = "https://www.wikidata.org/w/api.php"
 _WIKIDATA_FOUNDING_YEAR = re.compile(r"\b(1[89]\d{2}|20[0-4]\d)\b")
 _PRODUCTHUNT_ENDPOINT = "https://api.producthunt.com/v2/api/graphql"
@@ -953,7 +1032,12 @@ def _enrich_with_apis(competitors: list[dict]) -> None:
     """
     for competitor in competitors[:_MAX_ENRICHED]:
         name = competitor["name"]
-        enrichment = _producthunt_lookup(name) or _itunes_lookup(name) or _wikidata_lookup(name)
+        # Company facts rarely change, so a name already looked up (for this or
+        # any earlier idea) is reused for 30 days instead of calling three APIs.
+        enrichment = web_cache.get("enrichment", name.strip().lower())
+        if not enrichment:
+            enrichment = _producthunt_lookup(name) or _itunes_lookup(name) or _wikidata_lookup(name)
+            web_cache.put("enrichment", name.strip().lower(), enrichment)
         if enrichment:
             competitor["enrichment"] = enrichment
 
@@ -1098,14 +1182,16 @@ def _discover_with_llm(
     listing_lines = []
     for i, r in enumerate(competitor_results, start=1):
         source_id = f"r{i}"
-        text = _normalize_snippet_text(r.get("title", ""), r.get("snippet", ""))
+        full_text = r.get("fullText")
+        text = _normalize_snippet_text(r.get("title", ""), full_text or r.get("snippet", ""))
         sources[source_id] = {"text": text, "result": r}
         # 1500, not 600: a competitor mentioned deeper in a longer article
         # was invisible to the model at the old budget - team-forge's own
         # competitor prompt uses the same 1500-char window per source for
         # the same reason (its own comment: names mentioned deeper in
         # articles were getting truncated out at 200-300 chars).
-        listing_lines.append(f"{source_id}: {text[:1500]}")
+        # A source with full page text (Tavily Extract) gets a bigger window.
+        listing_lines.append(f"{source_id}: {text[:_LISTING_CHARS_FULL if full_text else 1500]}")
     listing = "\n".join(listing_lines)
 
     def build_crew(model: str):
@@ -1353,6 +1439,6 @@ def analyze_competitors(
     # means the comparison always renders whenever there are competitors to
     # compare against, independent of that one call's success - it's a
     # thinner matrix than the LLM's idea-specific one, never a missing one.
-    result["comparisonMatrix"] = matrix if matrix else _build_fallback_matrix(competitors)
+    result["comparisonMatrix"] = _pad_matrix(matrix, competitors, idea) if matrix else _build_fallback_matrix(competitors, idea)
     result["profiled"] = discovered is not None
     return result

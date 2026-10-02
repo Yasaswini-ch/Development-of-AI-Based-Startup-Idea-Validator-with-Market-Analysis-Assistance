@@ -725,7 +725,9 @@ def _run_pipeline_and_build_response(payload: ValidateRequest, cache_key: str, a
 
     response = {
         "summary": state.get("summary", ""),
-        "results": state.get("results", []),
+        # fullText (Tavily Extract) is for the competitor LLM pass only: dropped
+        # here so reports, the cache and sessions stay small.
+        "results": [{k: v for k, v in r.items() if k != "fullText"} for r in state.get("results", [])],
         # Sashi's Cross-Source Confidence
         "confidence": state.get("confidence"),
         # Sashi's Opportunity Score is attached inside marketOpportunity

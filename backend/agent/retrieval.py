@@ -11,7 +11,7 @@ place and doesn't care which sources tools.py is calling underneath.
 import re
 from urllib.parse import urlparse
 
-from .tools import fetch_results
+from .tools import extract_full_text, fetch_app_store_results, fetch_results
 
 try:
     # Reuse the same spaCy model/singleton competitor_agent already loads
@@ -277,6 +277,37 @@ def _domain_terms(idea: str, target_customer: str, problem: str, max_words: int 
     return [w for w in ranked if spread[w] >= 2][:max_words]
 
 
+_BRAND_INTRO = re.compile(r"^[A-Z][A-Za-z0-9-]+\s+(?:is|are)\s+", re.UNICODE)
+_PRODUCT_LEAD = re.compile(
+    r"^(?:(?:an?|the)\s+)?(?:[\w-]+\s+){0,2}?"
+    r"(?:app|tool|platform|marketplace|software|service|assistant|copilot|chatbot)\s+(?:that|which|where|for|to)(?:\s+|$)",
+    re.IGNORECASE,
+)
+_TRAILING_FILLER = {"and", "or", "to", "the", "a", "an", "of", "for", "with", "in", "on", "that", "they", "you", "from", "by", "at", "about", "into"}
+_LEADING_VERB = re.compile(r"^(?:helps?|lets?|allows?|enables?|empowers?)\s+", re.IGNORECASE)
+
+
+def _what_it_does(idea: str, max_words: int = 12) -> str:
+    """The idea's own description of what the product does, as search words:
+    its first sentence minus any "<Brand> is a ..." introduction and the
+    leading "an AI-powered app that ...". Searching for this finds the
+    products that already do the same job, which is what a competitor search
+    wants. The older domain-term queries used the customer's words instead
+    ("freelancers alternatives"), which returned Upwork and Fiverr alternative
+    pages for a freelancer invoicing app. "" when nothing usable is left.
+    """
+    sentence = re.split(r"(?<=[.;!?])\s", " ".join((idea or "").split()), maxsplit=1)[0].rstrip(".;!?")
+    sentence = _BRAND_INTRO.sub("", sentence)
+    sentence = _PRODUCT_LEAD.sub("", sentence)
+    sentence = re.sub(r"\([^)]*\)", "", sentence)
+    sentence = _LEADING_VERB.sub("", sentence)
+    words = sentence.split()[:max_words]
+    while words and words[-1].lower().strip(",") in _TRAILING_FILLER:
+        words.pop()
+    core = " ".join(words).strip(" ,")
+    return core if len(core.split()) >= 2 else ""
+
+
 def build_search_angles(idea: str, target_customer: str, problem: str) -> list[tuple[str, list[str]]]:
     """Turn one idea into a few distinct research angles instead of a single
     query, so results cover market sizing, competitors, and demand rather
@@ -319,6 +350,13 @@ def build_search_angles(idea: str, target_customer: str, problem: str) -> list[t
         # competitor discovery can only name companies these results contain.
         competitor_queries = [f"{domain} alternatives", f"{domain} competitors", *competitor_queries]
 
+    # Product-first queries lead: they describe what the product does, so they
+    # find the companies that already do it. The customer-word and brand
+    # queries above stay behind them as fallbacks.
+    core = _what_it_does(idea)
+    if core:
+        competitor_queries = [f"{core} alternatives", f"best {core}", *competitor_queries]
+
     angles = [
         ("Market size & trends", [f"{subject} market size", f"{subject_fallback} market"]),
         ("Competitors", competitor_queries),
@@ -343,6 +381,52 @@ def build_search_angles(idea: str, target_customer: str, problem: str) -> list[t
 _QUERIES_PER_ANGLE = {"Competitors": 2}
 
 
+# The two angles that gain most from deeper content: market-size figures (TAM,
+# SAM, SOM) and competitor names both tend to sit past the first few hundred
+# characters of a page. See tools.extract_full_text and TAVILY_DEEP.
+_DEEP_ANGLES = {"Market size & trends", "Competitors"}
+_FULL_TEXT_TOP_N = 3
+
+
+def _attach_full_text(results: list[dict]) -> None:
+    """Give the top few Competitors-angle results their full page text as
+    `fullText`. Only the competitor LLM pass reads it; main.py strips it from
+    the API response so reports stay small.
+    """
+    top = [r for r in results if r.get("angle") == "Competitors"][:_FULL_TEXT_TOP_N]
+    texts = extract_full_text([r.get("url", "") for r in top])
+    for result in top:
+        text = texts.get(result.get("url", ""))
+        if text:
+            result["fullText"] = text
+
+
+_APP_STORE_MAX = 5
+
+
+def _add_app_store_competitors(best_by_angle_url: dict, idea: str, target_customer: str, core: str) -> None:
+    """Add App Store apps that share at least two distinct topic words with the
+    idea (the same test that labels a rival "direct") to the Competitors angle.
+    Precision over recall: on a probe of six ideas this kept Harvest, FreshBooks,
+    HidrateSpark and Grove Collaborative and dropped every unrelated nursing,
+    plant-ID and email-cleaner app. Imported lazily because competitor_agent
+    imports this module.
+    """
+    from .competitor_agent import _classify_competitor
+
+    keywords = {w.lower() for w in _distinctive_nouns(idea, max_words=8)}
+    added = 0
+    for item in fetch_app_store_results(core):
+        if added >= _APP_STORE_MAX:
+            break
+        if _classify_competitor(keywords, f"{item['title']}. {item['snippet']}", exclude_terms=target_customer) != "direct":
+            continue
+        item["angle"] = "Competitors"
+        item["query"] = core
+        if best_by_angle_url.setdefault(("Competitors", item["url"]), item) is item:
+            added += 1
+
+
 def collect(idea: str, target_customer: str, problem: str, per_angle: int = 10) -> list[dict]:
     """Run every angle, drop duplicate URLs *within the same angle*, filter
     out academic/research-paper sources, and return the combined list ranked
@@ -365,7 +449,11 @@ def collect(idea: str, target_customer: str, problem: str, per_angle: int = 10) 
         successful_queries = 0
         wanted = _QUERIES_PER_ANGLE.get(label, 1)
         for query in queries:
-            hits = [item for item in fetch_results(query, max_results=per_angle) if not _is_academic(item["url"])]
+            hits = [
+                item
+                for item in fetch_results(query, max_results=per_angle, deep=label in _DEEP_ANGLES)
+                if not _is_academic(item["url"])
+            ]
             if not hits:
                 # Try the next, shorter/more generic candidate query for
                 # this angle instead of giving up - see build_search_angles.
@@ -380,7 +468,15 @@ def collect(idea: str, target_customer: str, problem: str, per_angle: int = 10) 
             if successful_queries >= wanted:
                 break
 
-    return sorted(best_by_angle_url.values(), key=lambda r: r["score"], reverse=True)
+    # Second evidence layer for the Competitors angle: the App Store's own
+    # search for what the product does (see tools.fetch_app_store_results).
+    core = _what_it_does(idea)
+    if core:
+        _add_app_store_competitors(best_by_angle_url, idea, target_customer, core)
+
+    ranked = sorted(best_by_angle_url.values(), key=lambda r: r["score"], reverse=True)
+    _attach_full_text(ranked)
+    return ranked
 
 
 def collect_scoped(query: str, max_results: int = 5) -> list[dict]:

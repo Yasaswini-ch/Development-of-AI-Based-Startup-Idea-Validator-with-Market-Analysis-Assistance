@@ -4,12 +4,14 @@ docs/api-cost-accuracy-performance-metrics.md's §7 "Open Metrics" questions
 yet measured.
 """
 
+import os
 import sys
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
+os.environ.setdefault("WEB_CACHE", "0")  # tests must never read or write the shared lookup cache (agent/web_cache.py)
 sys.path.insert(0, str(BACKEND_DIR))
 
 from fastapi.testclient import TestClient
