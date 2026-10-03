@@ -93,7 +93,7 @@ const STATS = [
   ['3', 'segments'],
 ]
 
-export default function SampleReportPreview() {
+export default function SampleReportPreview({ onOpenFull }) {
   const [active, setActive] = useState(0)
   const tab = TABS[active]
 
@@ -176,6 +176,19 @@ export default function SampleReportPreview() {
       <p className="mt-2 text-center font-mono text-[10px] uppercase tracking-wide text-muted">
         Illustrative content for an invented idea. Your report is built from your own research.
       </p>
+      {onOpenFull && (
+        <div className="mt-4 text-center">
+          <button
+            type="button"
+            onClick={onOpenFull}
+            className="rounded-full border border-accent/50 bg-accent/10 px-5 py-2 font-mono text-xs font-semibold uppercase tracking-wide text-accent transition-colors hover:bg-accent/20"
+            data-testid="open-full-sample"
+          >
+            Open a full sample report →
+          </button>
+          <p className="mt-1.5 text-[11px] text-muted">A real run, all eight tabs: sources, competitors, SWOT, MVP, go-to-market and more.</p>
+        </div>
+      )}
     </section>
   )
 }

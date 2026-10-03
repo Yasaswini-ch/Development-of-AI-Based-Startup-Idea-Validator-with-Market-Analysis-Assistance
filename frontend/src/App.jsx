@@ -432,9 +432,31 @@ export default function App() {
     }
   }
 
+  // A real saved run (public/sample-report.json) opened in the normal report
+  // view, so a visitor can browse every tab before running anything. It has no
+  // session, so the share link, PDF and chat are not offered for it.
+  async function openSample() {
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}sample-report.json`)
+      if (!res.ok) throw new Error('sample unavailable')
+      const data = await res.json()
+      setValidation(data)
+      setLastSubmission({
+        idea: 'An AI-powered app that helps freelancers automatically track time, generate invoices, and chase late payments from clients',
+        targetCustomer: 'Freelancers and independent contractors',
+        problem: 'Freelancers waste hours on manual time tracking and invoicing, and struggle to get paid on time',
+      })
+      setUpdatedAt(new Date())
+      setView('form')
+    } catch {
+      // leave the landing page as it is; the sample is a convenience
+    }
+  }
+
   if (view === 'landing') {
     return (
       <LandingPage
+        onViewSample={openSample}
         onStart={(idea) => {
           if (idea) setPrefill({ idea, key: Date.now() })
           setView('form')
@@ -612,6 +634,12 @@ export default function App() {
 
         {validation && (
           <>
+            {validation.isSample && (
+              <p className="mx-auto mb-4 max-w-5xl rounded-xl border border-dashed border-border-strong bg-panel px-4 py-3 text-center text-xs leading-relaxed text-muted" data-testid="sample-banner">
+                <span className="font-semibold text-text">Sample report.</span> A real run for an example idea, so you can look through
+                every tab. Start your own to get a report for your idea.
+              </p>
+            )}
             <ValidationResults
               idea={lastSubmission?.idea}
               targetCustomer={lastSubmission?.targetCustomer}
