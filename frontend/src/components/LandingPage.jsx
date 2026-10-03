@@ -199,7 +199,10 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
     <div className="min-h-screen bg-surface">
       <main className="mx-auto max-w-5xl px-4 pb-16 pt-10 sm:pt-14">
         <div className="mb-14 flex items-center justify-between">
-          <p className="font-mono text-xs uppercase tracking-widest text-accent">Affinity</p>
+          <p className="flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-accent">
+            <img src={`${import.meta.env.BASE_URL}logo.png`} alt="" className="h-6 w-6 object-contain" />
+            Affinity
+          </p>
           <div className="flex items-center gap-2">
             {currentUser ? (
               <button

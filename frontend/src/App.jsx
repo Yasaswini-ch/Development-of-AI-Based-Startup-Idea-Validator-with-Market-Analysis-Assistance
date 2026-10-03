@@ -570,7 +570,8 @@ export default function App() {
           </div>
 
           <header className="mb-8">
-            <p className="mb-2 font-mono text-xs uppercase tracking-widest text-accent">
+            <p className="mb-2 flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-accent">
+              <img src={`${import.meta.env.BASE_URL}logo.png`} alt="" className="h-6 w-6 object-contain" />
               Affinity
             </p>
             <h1 className="font-serif text-4xl leading-tight text-text sm:text-5xl">
