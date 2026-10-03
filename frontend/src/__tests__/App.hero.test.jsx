@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
+import { SAMPLE_IDEAS } from '../lib/examples'
 
 describe('landing hero and sample ideas', () => {
   beforeEach(() => {
@@ -28,7 +29,9 @@ describe('landing hero and sample ideas', () => {
     render(<App />)
     await user.click(screen.getAllByRole('button', { name: /validate my idea/i })[0])
     await user.click(screen.getByRole('button', { name: 'Freelancer invoicing' }))
-    expect(screen.getByLabelText(/target customer/i)).toHaveValue('Solo freelancers and tiny agencies')
+    expect(screen.getByLabelText(/target customer/i)).toHaveValue(
+      SAMPLE_IDEAS.find((x) => x.label === 'Freelancer invoicing').targetCustomer,
+    )
     expect(screen.getByLabelText(/problem being solved/i)).not.toHaveValue('')
   })
 })
