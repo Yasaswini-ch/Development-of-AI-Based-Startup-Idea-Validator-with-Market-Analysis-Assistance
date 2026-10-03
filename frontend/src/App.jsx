@@ -333,7 +333,7 @@ export default function App() {
         // Taking longer than the server's threshold - it keeps working in
         // the background and will email the report; poll the job here too
         // so the tab updates live if the user stays on the page.
-        setProcessingMessage(data.message || "This is taking longer than usual. We'll email you when it's ready.")
+        setProcessingMessage(data.message || "This is taking longer than usual. We'll email you when it's ready. You can close this browser; you don't need to keep this page open.")
         setIsLoading(false)
         pollJob(data.jobId)
         return
