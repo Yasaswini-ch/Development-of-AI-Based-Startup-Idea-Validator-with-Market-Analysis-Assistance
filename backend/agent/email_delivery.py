@@ -169,6 +169,7 @@ def _build_report_html(idea: str, response: dict, report_url: str | None = None)
     # --- Header banner ---
     sections.append(
         f'<tr><td style="background:{_C_ACCENT};padding:28px;text-align:center;">'
+        f'{_logo_html()}'
         f'<p style="font-family:{_F_MONO};font-size:11px;text-transform:uppercase;letter-spacing:0.15em;color:#fff;opacity:0.85;margin:0 0 6px;">Affinity</p>'
         f'<p style="font-family:{_F_SERIF};font-size:20px;color:#fff;margin:0;">Your validation report is ready</p>'
         f'</td></tr>'
@@ -456,6 +457,20 @@ def _send_via_sendgrid(to_email: str, subject: str, html: str, text: str | None 
         logger.exception("Failed to send report email via SendGrid")
         events.record("email_sent", detail={"outcome": "failed"})
         return False
+
+
+def _logo_html() -> str:
+    """The logo for the top of an email, as an <img> pointing at the public
+    site. Email clients do not run scripts or load local files, so the image has
+    to come from a public https address; with no https FRONTEND_ORIGIN (local
+    development) nothing is shown rather than a broken image."""
+    origin = (os.environ.get("FRONTEND_ORIGIN") or "").strip().rstrip("/")
+    if not origin.startswith("https://"):
+        return ""
+    return (
+        f'<img src="{_escape(origin)}/logo.png" width="44" height="44" alt="Affinity" '
+        'style="display:block;margin:0 auto 10px;background:#ffffff;border-radius:22px;padding:6px;">'
+    )
 
 
 def send_password_reset_email(to_email: str, reset_url: str) -> bool:
