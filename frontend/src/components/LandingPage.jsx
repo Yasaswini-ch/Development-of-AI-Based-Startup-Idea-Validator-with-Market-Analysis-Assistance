@@ -4,6 +4,7 @@ import useTypewriter from '../hooks/useTypewriter'
 import GoogleSignInButton from './GoogleSignInButton'
 import useAuthRequest from '../hooks/useAuthRequest'
 import { DECISION_STYLES } from './VerdictCard'
+import HeroOllie from './HeroOllie'
 import PipelineShowcase from './PipelineShowcase'
 import PlayableVerdict from './PlayableVerdict'
 import ReceiptsStrip from './ReceiptsStrip'
@@ -233,13 +234,7 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
           <h1 className="font-serif text-4xl leading-tight text-text sm:text-6xl">
             <span className="relative inline-block">
               B
-              <img
-                src={`${import.meta.env.BASE_URL}ollie.png`}
-                alt=""
-                aria-hidden="true"
-                data-testid="hero-ollie"
-                className="ollie-perch pointer-events-none absolute -left-1 -top-4 h-9 w-9 object-contain sm:-left-1 sm:-top-[1.65rem] sm:h-12 sm:w-12"
-              />
+              <HeroOllie />
             </span>
             efore you build it, measure the{' '}
             <em className="text-accent italic">affinity</em>.
