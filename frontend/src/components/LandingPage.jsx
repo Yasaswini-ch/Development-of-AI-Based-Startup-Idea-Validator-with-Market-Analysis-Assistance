@@ -172,7 +172,7 @@ const ACCOUNT_PERKS = [
   { Icon: IconDownload, text: 'Export a PDF or email yourself the full report' },
 ]
 
-export default function LandingPage({ onStart, onViewSample, currentUser, onSignIn, onSignOut, apiUrl, onAuthenticated }) {
+export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut, apiUrl, onAuthenticated }) {
   const { text, settled, index } = useTypewriter(EXAMPLE_IDEAS.map((e) => e.idea))
   const demo = EXAMPLE_IDEAS[index]
   const demoStyle = DECISION_STYLES[demo.decision] || DECISION_STYLES.validate_first
@@ -322,7 +322,7 @@ export default function LandingPage({ onStart, onViewSample, currentUser, onSign
           </div>
         </section>
 
-        <SampleReportPreview onOpenFull={onViewSample} />
+        <SampleReportPreview />
 
         <PipelineShowcase />
 
