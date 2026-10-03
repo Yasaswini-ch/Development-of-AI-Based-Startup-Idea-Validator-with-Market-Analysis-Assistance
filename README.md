@@ -13,6 +13,17 @@
 ![LangGraph](https://img.shields.io/badge/LangGraph-orchestration-1C3C3C)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-persistence-4169E1?logo=postgresql&logoColor=white)
 ![Deployed on Render](https://img.shields.io/badge/deployed%20on-Render-46E3B7?logo=render&logoColor=black)
+![Vite](https://img.shields.io/badge/Vite-frontend-646CFF?logo=vite&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-06B6D4?logo=tailwindcss&logoColor=white)
+![CrewAI](https://img.shields.io/badge/CrewAI-agents-FF5A50)
+![Groq](https://img.shields.io/badge/LLM-Groq-F55036)
+![Gemini](https://img.shields.io/badge/LLM-Gemini%20fallback-4285F4?logo=googlegemini&logoColor=white)
+![Tavily](https://img.shields.io/badge/search-Tavily-5B5BD6)
+![ReportLab](https://img.shields.io/badge/PDF-ReportLab-C0392B)
+![Backend tests](https://img.shields.io/badge/backend%20tests-679%20passing-2EA44F)
+![Frontend tests](https://img.shields.io/badge/frontend%20tests-141%20passing-2EA44F)
+![Pipeline](https://img.shields.io/badge/pipeline-17%20steps-E8743B)
+![Report](https://img.shields.io/badge/report-8%20tabs-E8743B)
 
 [**Live app**](https://startup-validator-frontend-5qcr.onrender.com) ·
 [API](https://startup-validator-backend-pruu.onrender.com/health) ·
@@ -74,7 +85,10 @@ fabricated and never comes back blank.
 | **Risk and viability** | Source-cited SWOT, risk register, opportunity score, viability score, contradiction detection and a final verdict |
 | **Build and launch plan** | MVP feature recommendations, GTM strategy, validation experiments, a 7/30/90-day action plan, assumption tracker, revenue models (inferred from competitor pricing if the model call fails), pricing tiers and an Alpha/Beta/GA delivery roadmap |
 | **Voice of Market** | Direct quotes from what the market actually says, attached to the claims they support |
-| **Conversational advisor** | Session-aware follow-up chat that reuses the validation's evidence and only searches again when the question needs fresh data |
+| **Conversational advisor (Ollie)** | Session-aware follow-up chat with the octopus mascot Ollie. It reuses the validation's evidence and only searches again when the question needs fresh data. It appears on the results page, where a report exists to talk about |
+| **Evidence audit** | A second pass re-checks every cited claim against its source text and strips citations the source does not support. The report shows how many claims were checked, how many held up and which lost their citation, and says so when the check did not run |
+| **Validation sprint and interview script** | A 4-week sprint (riskiest assumptions, customer interviews, a cheap smoke test, a decision) with pass and fail thresholds, plus a customer-interview script with one probe per risky assumption. Built from the report's own assumptions and experiments, with no extra model call |
+| **Interactive report** | A positioning grid where you place your own idea and see how crowded the spot is, a "what would change this verdict" panel that re-scores the verdict from its three inputs in the browser, a competitor pricing table showing where each rival was found, and a "how this report was made" view of the steps, models and timings |
 | **Reports** | Publication-ready PDF dossier, email delivery, and side-by-side comparison of saved ideas |
 | **Accounts and analytics** | Email or Google sign-in, validation history, comparison matrix and score trends, plus an admin Platform Health dashboard |
 
@@ -251,6 +265,10 @@ dashboard in production.
 | `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL` | backend | No | Report email delivery |
 | `ADMIN_EMAILS` | backend | No | Comma-separated accounts with Platform Health access |
 | `LLM_MODEL`, `LLM_FALLBACK_MODELS` | backend | No | Override the model chain |
+| `GROQ_API_KEYS`, `GEMINI_API_KEYS` | backend | No | Extra keys for the provider pool. A rate-limited key is skipped until its retry time. Keys only add capacity when they belong to separate accounts |
+| `AGENT_MODEL_<AGENT>` | backend | No | Pin one agent (market, competitor, swot, mvp, gtm, assumptions, revenue, verification, advisor) to a model |
+| `WEB_CACHE`, `TAVILY_DEEP`, `ITUNES_DISCOVERY` | backend | No | Switch the shared lookup cache, Tavily deep search and App Store discovery (all on by default; `0` turns one off) |
+| `AGENT_MAX_EXECUTION_SECONDS`, `AGENT_MAX_ITER` | backend | No | Per-agent time and iteration ceilings |
 | `*_RATE_LIMIT_PER_MINUTE` | backend | No | Per-IP limits for validate, chat, auth, PDF export and email |
 | `DB_POOL_SIZE`, `DB_POOL_MAX_OVERFLOW` | backend | No | Connection pool per instance (default 5/5) |
 | `VITE_API_URL` | frontend | Yes | Backend base URL |
@@ -292,14 +310,15 @@ curl -X POST http://localhost:8000/validate \
 ```
 
 The response contains `summary`, `results`, `confidence`, `marketOpportunity`,
-`competitors`, `whiteSpace`, `swot`, `mvp`, `gtm`, `experiments`, `actionPlan`, `verdict`,
-`errors` and `sessionId`. Errors use a single shape, `{ "error": "..." }`, with `400` for
+`competitors`, `whiteSpace`, `swot`, `mvp`, `gtm`, `experiments`, `actionPlan` (with `sprint` and
+`interviewScript`), `verdict`, `pipelineTrace`, `errors` and `sessionId`. Sections that
+were source-checked carry a `verification` record (see the API reference). Errors use a single shape, `{ "error": "..." }`, with `400` for
 invalid input, `429` for rate limits and `502` when every search provider is unavailable.
 
 ## Testing and CI
 
 ```bash
-# Backend: unit, contract, async and concurrency tests
+# Backend: unit, contract, async and concurrency tests (679 at the last full run)
 cd backend && python scripts/run_tests.py   # keyless; plain `python -m unittest discover -s tests` also works but loads .env
 
 # Frontend: component tests, lint and production build

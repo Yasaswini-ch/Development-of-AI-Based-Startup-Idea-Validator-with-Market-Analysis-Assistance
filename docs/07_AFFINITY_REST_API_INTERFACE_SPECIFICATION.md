@@ -291,3 +291,17 @@ const res = await fetch('http://localhost:8000/validate', {
 });
 const data = await res.json();
 ```
+
+
+## 9. Fields added 2026-10-03
+
+All are additive and optional; clients that ignore them keep working. Reports saved before
+these fields existed do not carry them.
+
+| Field | Where | Shape |
+|---|---|---|
+| `verification` | inside `marketOpportunity`, `swot`, `mvp`, `gtm` | `{ "ran": bool, "checked": int, "removed": [{ "text": str, "sourceIds": [str] }] }`. `ran: false` means the source check did not run for that section |
+| `kpis` | inside `gtm` | `[{ "name": str, "target": str, "timeframe": str }]`, up to 5. Absent when the go-to-market step used its rule-based fallback |
+| `sprint` | inside `actionPlan` | `{ "weeks": [{ "week": 1-4, "title": str, "tasks": [{ "task": str, "confirmsIf": str, "killsIf": str }] }], "note": str }` |
+| `interviewScript` | inside `actionPlan` | `{ "audience": str, "rules": [str], "opening": [str], "probes": [{ "assumption", "ask", "listenFor", "redFlag" }], "closing": [str] }` |
+| `pipelineTrace` | top level of the `/validate` response and the saved report | `[{ "node": str, "seconds": float, "models": [str] }]` in the order steps finished. `models` is empty for steps that make no model call |
