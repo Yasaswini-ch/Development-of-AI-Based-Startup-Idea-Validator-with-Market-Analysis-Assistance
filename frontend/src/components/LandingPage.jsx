@@ -4,6 +4,9 @@ import useTypewriter from '../hooks/useTypewriter'
 import GoogleSignInButton from './GoogleSignInButton'
 import useAuthRequest from '../hooks/useAuthRequest'
 import { DECISION_STYLES } from './VerdictCard'
+import PipelineShowcase from './PipelineShowcase'
+import PlayableVerdict from './PlayableVerdict'
+import ReceiptsStrip from './ReceiptsStrip'
 import { FormArtifact, ResearchArtifact, VerdictArtifact, ChatArtifact } from './HowItWorksArtifacts'
 import AgentsGrid from './AgentsGrid'
 import TechStack from './TechStack'
@@ -320,6 +323,12 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
         </section>
 
         <SampleReportPreview />
+
+        <PipelineShowcase />
+
+        <PlayableVerdict />
+
+        <ReceiptsStrip />
 
         <section className="mt-16">
           <p
