@@ -178,8 +178,8 @@ const NAV_LINKS = [
   { href: '#how-it-works', label: 'How it works' },
   { href: '#watch-it-work', label: 'Watch it work' },
   { href: '#try-the-verdict', label: 'Verdict' },
-  { href: '#agents', label: 'Agents' },
   { href: '#receipts', label: 'Receipts' },
+  { href: '#agents', label: 'Agents' },
   { href: '#why-affinity', label: 'Why Affinity' },
 ]
 
