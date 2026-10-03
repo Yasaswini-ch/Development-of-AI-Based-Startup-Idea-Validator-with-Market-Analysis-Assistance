@@ -32,7 +32,7 @@ export default function PricingTable({ competitors }) {
     <div className="mt-5" data-testid="pricing-table">
       <h3 className="mb-2 font-mono text-[11px] uppercase tracking-widest text-muted">Pricing, with sources</h3>
       <p className="mb-3 text-[11px] leading-snug text-muted">
-        Prices are taken from the pages we read. Where none was stated the row says so, and a rough tier is marked as an estimate.
+        Prices come from the pages we read; the last column is the article each rival was found in, not necessarily its own pricing page. Where none was stated the row says so, and a rough tier is marked as an estimate.
       </p>
       <div className="overflow-x-auto rounded-xl border border-border">
         <table className="w-full min-w-[520px] text-left text-xs">
@@ -41,7 +41,7 @@ export default function PricingTable({ competitors }) {
               <th className="px-3 py-2">Competitor</th>
               <th className="px-3 py-2">Price</th>
               <th className="px-3 py-2">Model</th>
-              <th className="px-3 py-2">Source</th>
+              <th className="px-3 py-2">Found in</th>
             </tr>
           </thead>
           <tbody>
