@@ -1,3 +1,5 @@
+import { IconCheckCircle, IconX } from './icons'
+
 // How Affinity differs from asking a general chatbot (ChatGPT, Claude and the
 // like). Kept to differences that are true of this codebase; chatbots can
 // browse and reason well, so the claim is about structure and checkability,
@@ -23,23 +25,42 @@ export default function ComparisonTable() {
         General assistants such as ChatGPT and Claude are strong at reasoning, and you can still use them alongside this.
         What differs is how checkable the answer is.
       </p>
-      <div className="overflow-x-auto rounded-2xl border border-border bg-panel shadow-sm">
-        <table className="w-full min-w-[640px] text-left text-sm">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[680px] border-separate text-left text-sm [border-spacing:0_0.5rem]">
           <thead>
-            <tr className="border-b border-border-strong font-mono text-[11px] uppercase tracking-widest text-muted">
-              <th scope="col" className="px-4 py-3">
+            <tr>
+              <th scope="col" className="w-28 px-2 pb-1">
                 <span className="sr-only">Aspect</span>
               </th>
-              <th scope="col" className="px-4 py-3 text-accent">Affinity</th>
-              <th scope="col" className="px-4 py-3">A general chatbot</th>
+              <th scope="col" className="px-1 pb-1 font-normal">
+                <span className="flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 font-mono text-xs font-semibold uppercase tracking-[0.18em] text-white shadow-sm">
+                  <img src={`${import.meta.env.BASE_URL}logo.png`} alt="" className="h-5 w-5 rounded-full bg-white/90 object-contain p-0.5" />
+                  Affinity
+                </span>
+              </th>
+              <th scope="col" className="px-1 pb-1 font-normal">
+                <span className="flex items-center rounded-xl border border-dashed border-border-strong px-4 py-2.5 font-mono text-xs font-semibold uppercase tracking-[0.18em] text-muted-strong">
+                  A general chatbot
+                </span>
+              </th>
             </tr>
           </thead>
           <tbody>
             {ROWS.map(([label, ours, theirs]) => (
-              <tr key={label} className="border-b border-border align-top last:border-0">
-                <th scope="row" className="px-4 py-3 font-semibold text-text">{label}</th>
-                <td className="px-4 py-3 leading-relaxed text-text">{ours}</td>
-                <td className="px-4 py-3 leading-relaxed text-muted">{theirs}</td>
+              <tr key={label} className="align-top">
+                <th scope="row" className="px-2 py-3 font-serif text-base font-semibold text-text">{label}</th>
+                <td className="px-1">
+                  <div className="flex h-full gap-3 rounded-xl border border-accent/30 bg-accent/5 px-4 py-3 leading-relaxed text-text">
+                    <IconCheckCircle aria-hidden="true" className="mt-0.5 h-[18px] w-[18px] shrink-0 text-accent" />
+                    <span>{ours}</span>
+                  </div>
+                </td>
+                <td className="px-1">
+                  <div className="flex h-full gap-3 rounded-xl border border-border bg-surface/60 px-4 py-3 leading-relaxed text-muted">
+                    <IconX aria-hidden="true" className="mt-0.5 h-[18px] w-[18px] shrink-0 text-muted/70" />
+                    <span>{theirs}</span>
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
