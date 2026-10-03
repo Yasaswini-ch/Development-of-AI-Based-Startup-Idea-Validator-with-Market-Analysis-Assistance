@@ -50,6 +50,21 @@ body {
   animation: pulse-dot 1.6s ease-in-out infinite;
 }
 
+@keyframes ollie-perch {
+  0%, 100% { rotate: -16deg; }
+  50% { rotate: -24deg; }
+}
+
+.ollie-perch {
+  rotate: -18deg;
+  transform-origin: 70% 90%;
+  animation: ollie-perch 3.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ollie-perch { animation: none; }
+}
+
 @keyframes ollie-float {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-10px); }
