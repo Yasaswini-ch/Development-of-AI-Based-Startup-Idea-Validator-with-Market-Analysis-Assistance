@@ -238,7 +238,7 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
                 alt=""
                 aria-hidden="true"
                 data-testid="hero-ollie"
-                className="ollie-perch pointer-events-none absolute -left-3 -top-6 h-9 w-9 object-contain sm:-left-4 sm:-top-9 sm:h-12 sm:w-12"
+                className="ollie-perch pointer-events-none absolute -left-1 -top-4 h-9 w-9 object-contain sm:-left-1 sm:-top-[1.65rem] sm:h-12 sm:w-12"
               />
             </span>
             efore you build it, measure the{' '}
