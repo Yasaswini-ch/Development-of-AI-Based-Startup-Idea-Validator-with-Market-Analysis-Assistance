@@ -39,8 +39,8 @@ const STACK = [
 export default function TechStack() {
   return (
     <section className="mt-16" aria-labelledby="stack-heading">
-      <p className="mb-2 text-center font-mono text-xs uppercase tracking-widest text-muted">What it is built with</p>
-      <h2 id="stack-heading" className="mb-6 text-center font-serif text-2xl text-text">
+      <p className="mb-2 text-center font-mono text-xs font-semibold uppercase tracking-[0.18em] text-accent">What it is built with</p>
+      <h2 id="stack-heading" className="mb-6 text-center font-serif text-2xl font-semibold text-text sm:text-3xl">
         Real tools, each with one job.
       </h2>
       <div className="grid gap-3 sm:grid-cols-2">

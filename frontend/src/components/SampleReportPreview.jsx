@@ -111,9 +111,10 @@ export default function SampleReportPreview() {
       style={{ animationDelay: '250ms' }}
       aria-labelledby="sample-report-heading"
     >
-      <p id="sample-report-heading" className="mb-3 text-center font-mono text-xs uppercase tracking-widest text-muted">
-        What you get: a report in eight tabs
-      </p>
+      <p className="mb-2 text-center font-mono text-xs font-semibold uppercase tracking-[0.18em] text-accent">What you get</p>
+      <h2 id="sample-report-heading" className="mb-6 text-center font-serif text-2xl font-semibold text-text sm:text-3xl">
+        A full report in eight tabs.
+      </h2>
       <div className="overflow-hidden rounded-2xl border border-border-strong bg-panel shadow-sm">
         <div className="flex items-center justify-between border-b border-border bg-surface px-4 py-2">
           <span className="font-mono text-[10px] uppercase tracking-widest text-muted">Validation report</span>

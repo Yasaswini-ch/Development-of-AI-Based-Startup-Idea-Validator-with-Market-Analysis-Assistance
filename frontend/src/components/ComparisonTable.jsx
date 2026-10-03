@@ -15,8 +15,8 @@ const ROWS = [
 export default function ComparisonTable() {
   return (
     <section className="mt-16" aria-labelledby="compare-heading">
-      <p className="mb-2 text-center font-mono text-xs uppercase tracking-widest text-muted">Why not just ask a chatbot?</p>
-      <h2 id="compare-heading" className="mb-3 text-center font-serif text-2xl text-text">
+      <p className="mb-2 text-center font-mono text-xs font-semibold uppercase tracking-[0.18em] text-accent">Why not just ask a chatbot?</p>
+      <h2 id="compare-heading" className="mb-3 text-center font-serif text-2xl font-semibold text-text sm:text-3xl">
         A chatbot answers. Affinity shows its work.
       </h2>
       <p className="mx-auto mb-6 max-w-2xl text-center text-sm leading-relaxed text-muted">

@@ -335,11 +335,14 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
 
         <section className="mt-16">
           <p
-            className="fade-in-up mb-6 text-center font-mono text-xs uppercase tracking-widest text-muted"
+            className="fade-in-up mb-2 text-center font-mono text-xs font-semibold uppercase tracking-[0.18em] text-accent"
             style={{ animationDelay: '200ms' }}
           >
             How it works
           </p>
+          <h2 className="fade-in-up mb-6 text-center font-serif text-2xl font-semibold text-text sm:text-3xl" style={{ animationDelay: '220ms' }}>
+            From idea to verdict in four steps.
+          </h2>
           <div
             role="tablist"
             aria-label="How it works"
@@ -441,13 +444,13 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
 
         <section className="mt-16">
           <p
-            className="fade-in-up mb-2 text-center font-mono text-xs uppercase tracking-widest text-muted"
+            className="fade-in-up mb-2 text-center font-mono text-xs font-semibold uppercase tracking-[0.18em] text-accent"
             style={{ animationDelay: '250ms' }}
           >
             Five pillars of evidence
           </p>
           <h2
-            className="fade-in-up mb-8 text-center font-serif text-2xl text-text"
+            className="fade-in-up mb-8 text-center font-serif text-2xl font-semibold text-text sm:text-3xl"
             style={{ animationDelay: '300ms' }}
           >
             Built for founders who want proof, not vibes.
