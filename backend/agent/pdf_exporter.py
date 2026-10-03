@@ -232,6 +232,37 @@ def _pill(text, color, s, filled=False):
     return table
 
 
+_LOGO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "logo.png")
+
+
+def _logo_reader():
+    """The Affinity mark as a drawable image, or None if the file is missing -
+    a report without the logo is better than no report."""
+    try:
+        from reportlab.lib.utils import ImageReader
+
+        return ImageReader(_LOGO_PATH) if os.path.exists(_LOGO_PATH) else None
+    except Exception:
+        return None
+
+
+class _Logo(Flowable):
+    """The logo mark sized for the cover's brand row."""
+
+    def __init__(self, size=18):
+        super().__init__()
+        self.size = size
+        self.width = self.height = size
+        self._image = _logo_reader()
+
+    def draw(self):
+        if self._image is not None:
+            self.canv.drawImage(self._image, 0, 0, self.size, self.size, mask="auto")
+        else:
+            self.canv.setFillColor(ACCENT)
+            self.canv.circle(self.size / 2, self.size / 2, self.size / 4, stroke=0, fill=1)
+
+
 class _Dot(Flowable):
     """The accent dot that leads every mono section label on the web."""
 
@@ -651,9 +682,14 @@ def _page_decorator(concept: str, generated: str):
         canvas.setFillColor(ACCENT)
         canvas.rect(0, PAGE_H - 4, PAGE_W, 4, stroke=0, fill=1)
         if doc.page > 1:
+            logo = _logo_reader()
+            text_x = EDGE
+            if logo is not None:
+                canvas.drawImage(logo, EDGE, PAGE_H - 34, 12, 12, mask="auto")
+                text_x = EDGE + 17
             canvas.setFont(_FONTS["mono_bold"], 7)
             canvas.setFillColor(TEXT)
-            canvas.drawString(EDGE, PAGE_H - 30, "AFFINITY")
+            canvas.drawString(text_x, PAGE_H - 30, "AFFINITY")
             canvas.setFont(_FONTS["mono"], 7)
             canvas.setFillColor(MUTED)
             short = concept if len(concept) <= 70 else concept[:67] + "…"
@@ -677,9 +713,9 @@ def _page_decorator(concept: str, generated: str):
 
 def _cover(story, d, s, concept, generated):
     story.append(Table(
-        [[_Dot(ACCENT, 6), Paragraph("AFFINITY", s["brand"]),
+        [[_Logo(20), Paragraph("AFFINITY", s["brand"]),
           Paragraph(f"MARKET VALIDATION REPORT  ·  {_e(generated).upper()}", s["label_right"])]],
-        colWidths=[12, 120, CONTENT_W - 132],
+        colWidths=[26, 114, CONTENT_W - 140],
         style=[("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
                ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0),
                ("BOTTOMPADDING", (0, 0), (-1, -1), 0)],

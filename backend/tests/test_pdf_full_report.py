@@ -204,3 +204,18 @@ class RobustnessTests(_Case):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BrandLogoTests(unittest.TestCase):
+    def test_logo_asset_ships_and_the_pdf_still_builds_with_and_without_it(self):
+        from unittest.mock import patch
+
+        from agent import pdf_exporter
+
+        self.assertTrue(os.path.exists(pdf_exporter._LOGO_PATH))
+        data = {"idea": "x", "targetCustomer": "y"}
+        with_logo = pdf_exporter.generate_dossier_pdf(data)
+        with patch.object(pdf_exporter, "_LOGO_PATH", "missing.png"):
+            without = pdf_exporter.generate_dossier_pdf(data)
+        self.assertTrue(with_logo.startswith(b"%PDF") and without.startswith(b"%PDF"))
+        self.assertGreater(len(with_logo), len(without))
