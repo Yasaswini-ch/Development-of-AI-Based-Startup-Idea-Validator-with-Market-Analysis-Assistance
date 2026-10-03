@@ -66,6 +66,7 @@ function adaptReportToValidation(report) {
     assumptions: report.assumptions,
     revenueModels: report.revenueModels,
     verdict: report.verdict,
+    pipelineTrace: report.pipelineTrace,
     sessionId: report.sessionId,
     errors: report.sectionErrors || {},
   }
@@ -631,6 +632,7 @@ export default function App() {
               revenueModels={validation.revenueModels}
               verdict={validation.verdict}
               marketViability={validation.marketViability}
+              pipelineTrace={validation.pipelineTrace}
               sessionId={validation.sessionId}
               apiUrl={API_URL}
               errors={validation.errors}

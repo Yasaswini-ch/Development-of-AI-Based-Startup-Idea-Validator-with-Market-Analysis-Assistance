@@ -78,6 +78,7 @@ def assemble_report(session_id: str, context: dict) -> dict:
         "assumptions": context.get("assumptions"),
         "revenueModels": context.get("revenueModels"),
         "verdict": context.get("verdict"),
+        "pipelineTrace": context.get("pipelineTrace") or [],
         "sources": context.get("sources") or [],
         "sectionErrors": _section_errors(context),
         "degradedSections": _degraded_sections(context),

@@ -8,6 +8,7 @@ import time
 from crewai import LLM
 
 from . import events
+from . import trace as _trace
 
 logger = logging.getLogger(__name__)
 
@@ -460,6 +461,7 @@ def _kickoff_with_metrics(model: str, build_crew):
             totalTokens=_as_int(getattr(usage, "total_tokens", None)),
         )
     events.record("model_used", detail=detail)
+    _trace.note_model(model)
     return output
 
 

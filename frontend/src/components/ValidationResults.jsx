@@ -10,6 +10,7 @@ import GtmStrategy from './GtmStrategy'
 import ChatAdvisor from './ChatAdvisor'
 import ConfidenceDashboard from './ConfidenceDashboard'
 import EvidenceAudit from './EvidenceAudit'
+import PipelineReplay from './PipelineReplay'
 import ContradictionsBanner from './ContradictionsBanner'
 import ExperimentsActionPlan from './ExperimentsActionPlan'
 import { buildSourceMap } from '../lib/sources'
@@ -299,6 +300,7 @@ export default function ValidationResults({
   revenueModels,
   verdict,
   marketViability,
+  pipelineTrace,
   sessionId,
   apiUrl,
   errors,
@@ -427,6 +429,7 @@ export default function ValidationResults({
       </div>
 
       <EvidenceAudit marketOpportunity={marketOpportunity} swot={swot} mvp={mvp} gtm={gtm} />
+      <PipelineReplay trace={pipelineTrace} />
 
       {veryThinData && (
         <GroundingNotice message="Fewer than 4 sources were retrieved for this idea — some sections may be inferred rather than grounded in real market data. Try rephrasing the idea or problem statement for a deeper result." />

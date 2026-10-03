@@ -22,6 +22,7 @@ from .swot_agent import analyze_swot
 from .commercial_model import build_commercial_model
 from .delivery_roadmap import build_delivery_roadmap
 from .strategic_wedge import build_strategic_wedges
+from . import trace
 from .sprint_plan import build_interview_script, build_sprint
 from .verdict import build_verdict
 from .viability_score import calculate_market_viability, calculate_viability_index
@@ -1314,8 +1315,16 @@ def _timed(node_name: str, fn):
 
     def wrapper(state: PipelineState) -> PipelineState:
         start = time.time()
-        result = fn(state)
+        token, step = trace.begin_step()
+        try:
+            result = fn(state)
+        finally:
+            trace.end_step(token)
         elapsed_seconds = time.time() - start
+        trace.record(
+            trace.run_key(state.get("idea"), state.get("targetCustomer"), state.get("problem")),
+            node_name, elapsed_seconds, step["models"],
+        )
         elapsed_ms = round(elapsed_seconds * 1000)
         logger.info("[%s] elapsed_ms=%d", node_name, elapsed_ms)
         events.record("node_latency", node=node_name, detail={"seconds": round(elapsed_seconds, 3)})
