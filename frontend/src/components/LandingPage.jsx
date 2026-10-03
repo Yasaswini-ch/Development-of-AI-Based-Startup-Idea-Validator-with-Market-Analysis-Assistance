@@ -199,8 +199,8 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
     <div className="min-h-screen bg-surface">
       <main className="mx-auto max-w-5xl px-4 pb-16 pt-10 sm:pt-14">
         <div className="mb-14 flex items-center justify-between">
-          <p className="flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-accent">
-            <img src={`${import.meta.env.BASE_URL}logo.png`} alt="" className="h-6 w-6 object-contain" />
+          <p className="flex items-center gap-2.5 font-serif text-2xl font-semibold tracking-tight text-text">
+            <img src={`${import.meta.env.BASE_URL}logo.png`} alt="" className="h-9 w-9 object-contain" />
             Affinity
           </p>
           <div className="flex items-center gap-2">
@@ -226,7 +226,8 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
           </div>
         </div>
 
-        <section className="fade-in-up mx-auto max-w-xl text-center">
+        <section className="fade-in-up grid items-center gap-10 lg:grid-cols-[1.15fr_0.85fr]">
+          <div className="mx-auto w-full max-w-xl text-center lg:mx-0 lg:text-left">
           <p className="mb-3 font-mono text-xs uppercase tracking-widest text-muted">
             AI Market Research Agent
           </p>
@@ -234,13 +235,13 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
             Before you build it, measure the{' '}
             <em className="text-accent italic">affinity</em>.
           </h1>
-          <p className="mx-auto mt-5 max-w-md text-[15px] leading-relaxed text-muted">
+          <p className="mx-auto mt-5 max-w-md text-[15px] leading-relaxed text-muted-strong lg:mx-0">
             Describe a startup idea and a team of research agents will search the live web,
             score its opportunity, and hand you a grounded, source-cited validation report —
             in minutes, not days.
           </p>
 
-          <div className="mt-8 flex flex-col items-center gap-2.5">
+          <div className="mt-8 flex flex-col items-center gap-2.5 lg:items-start">
             <form
               className="w-full max-w-md"
               onSubmit={(e) => {
@@ -260,7 +261,7 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
                 placeholder="Describe your idea in a sentence or two…"
                 className="w-full resize-none rounded-2xl border border-border bg-panel px-4 py-3 text-left text-sm leading-relaxed text-text shadow-sm outline-none transition-colors placeholder:text-muted focus:border-accent"
               />
-              <div className="mt-3 flex flex-wrap items-center justify-center gap-3">
+              <div className="mt-3 flex flex-wrap items-center justify-center gap-3 lg:justify-start">
                 <button
                   type="submit"
                   className="rounded-full bg-accent px-7 py-3 font-mono text-sm font-semibold uppercase tracking-wide text-white shadow-sm transition-transform hover:-translate-y-0.5 hover:bg-accent-hover"
@@ -270,7 +271,7 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
               </div>
             </form>
             {!currentUser && apiUrl && onAuthenticated && (
-              <div className="mt-1 flex w-full max-w-xs flex-col items-center">
+              <div className="mt-1 flex w-full max-w-xs flex-col items-center lg:items-start">
                 <div className={`w-full ${google.isSubmitting ? 'pointer-events-none opacity-60' : ''}`} aria-busy={google.isSubmitting}>
                   <GoogleSignInButton onCredential={handleGoogleCredential} onError={google.setError} width={320} />
                 </div>
@@ -287,11 +288,39 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
             <p className="text-[13px] text-muted">
               {currentUser ? 'Signed in · Your validations are saved to your account' : 'No signup required to try · Sign in to save your history'}
             </p>
-            <ul aria-label="What you get" className="mt-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 font-mono text-[11px] uppercase tracking-wide text-muted-strong">
+            <ul aria-label="What you get" className="mt-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 font-mono text-[11px] uppercase tracking-wide text-muted-strong lg:justify-start">
               <li>{AGENTS.length} agents and engines</li>
               <li>Every claim Grounded or Inferred</li>
               <li>PDF and email report</li>
             </ul>
+          </div>
+          </div>
+
+          {/* Ollie: the face of the product. Clicking him jumps to the idea box. */}
+          <div className="relative mx-auto flex w-full max-w-sm flex-col items-center" data-testid="hero-ollie">
+            <div
+              aria-hidden="true"
+              className="absolute left-1/2 top-1/2 h-72 w-72 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent/15 blur-3xl"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                const box = document.getElementById('hero-idea')
+                box?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                box?.focus()
+              }}
+              className="relative z-10 mb-2 max-w-[15rem] rounded-2xl rounded-bl-sm border border-border bg-panel px-4 py-2.5 text-left text-sm leading-snug text-text shadow-md transition-colors hover:border-accent"
+            >
+              Tell me your idea. I'll check it against the live web.
+            </button>
+            <img
+              src={`${import.meta.env.BASE_URL}ollie.png`}
+              alt="Ollie, the Affinity octopus"
+              className="ollie-float relative z-10 h-56 w-56 object-contain drop-shadow-xl sm:h-64 sm:w-64"
+            />
+            <p className="relative z-10 mt-1 font-mono text-[11px] uppercase tracking-widest text-muted-strong">
+              Meet Ollie, your validation advisor
+            </p>
           </div>
         </section>
 
