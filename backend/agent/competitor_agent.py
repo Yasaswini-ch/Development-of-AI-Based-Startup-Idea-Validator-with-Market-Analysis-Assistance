@@ -735,6 +735,30 @@ def _known(value) -> bool:
     return bool(value) and str(value).strip().lower() not in {"unknown", "n/a", "see source for details."}
 
 
+_CELL_MAX_CHARS = 140
+_GLUED_WORDS = re.compile(r"[a-z][A-Z]")
+
+
+def _tidy_cell(value) -> str | None:
+    """A comparison-table cell from scraped competitor text. Text lifted from a
+    page's navigation or a feature grid arrives as run-together words
+    ("TableauAPI Power BIAPI Collaboration SlackNative...") and reads as noise,
+    so it is dropped (the cell then shows unknown) rather than printed; anything
+    else is cut to one short readable piece."""
+    if not _known(value):
+        return None
+    text = " ".join(str(value).split())
+    if len(_GLUED_WORDS.findall(text)) >= 3 or "Missing / Weak" in text:
+        return None
+    if len(text) <= _CELL_MAX_CHARS:
+        return text
+    cut = text[:_CELL_MAX_CHARS]
+    sentence = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "))
+    if sentence >= 40:
+        return cut[: sentence + 1]
+    return cut[: cut.rfind(" ")].rstrip(",;:") + "..." if " " in cut else cut
+
+
 def _matrix_competitors(competitors: list[dict]) -> list[dict]:
     """The rivals worth a column: direct before indirect before unlabelled
     (stable within each), at most _MATRIX_MAX_COMPETITOR_COLUMNS. A table with
@@ -769,10 +793,10 @@ def _candidate_rows(competitors: list[dict], idea: str) -> list[tuple[str, str, 
         ("Price", "Not yet priced - pre-launch", cells(lambda c: _PRICE_LABELS[c.get("estimatedPrice", "unknown")]), True),
         ("Feature breadth", "Not yet built - pre-launch", cells(lambda c: _BREADTH_LABELS[c.get("featureBreadth", "unknown")]), True),
         ("Positioning", "New entrant addressing this need", cells(lambda c: _CLASSIFICATION_LABELS[c.get("classification", "unknown")]), True),
-        ("What it offers", first or "See the idea above", cells(lambda c: c.get("offering") if _known(c.get("offering")) else None), False),
+        ("What it offers", first or "See the idea above", cells(lambda c: _tidy_cell(c.get("offering"))), False),
         ("Business model", "Not yet decided - pre-launch", cells(lambda c: c.get("businessModel") if _known(c.get("businessModel")) else None), False),
-        ("Main strength", "Not yet proven - pre-launch", cells(first_item("strengths")), False),
-        ("Main weakness", "Not yet known - pre-launch", cells(first_item("weaknesses")), False),
+        ("Main strength", "Not yet proven - pre-launch", cells(lambda c: _tidy_cell(first_item("strengths")(c))), False),
+        ("Main weakness", "Not yet known - pre-launch", cells(lambda c: _tidy_cell(first_item("weaknesses")(c))), False),
         ("Customer rating", "No users yet - pre-launch", cells(lambda c: _rating_text(c) if _known(_rating_text(c)) else None), False),
         ("Pricing details", "Not yet priced - pre-launch", cells(lambda c: c.get("pricing") if _known(c.get("pricing")) else None), False),
         (
