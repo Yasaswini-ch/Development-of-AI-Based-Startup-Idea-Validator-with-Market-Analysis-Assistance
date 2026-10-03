@@ -44,8 +44,8 @@ export default function PipelineShowcase() {
 
   return (
     <section className="mt-16" data-testid="pipeline-showcase">
-      <p className="mb-2 text-center font-mono text-xs uppercase tracking-widest text-muted">Watch it work</p>
-      <h2 className="mb-2 text-center font-serif text-2xl text-text">Seventeen steps, not one chat reply.</h2>
+      <p className="mb-2 text-center font-mono text-sm font-semibold uppercase tracking-[0.2em] text-accent">Watch it work</p>
+      <h2 className="mb-2 text-center font-serif text-3xl font-semibold text-text sm:text-4xl">Seventeen steps, not one chat reply.</h2>
       <p className="mx-auto mb-6 max-w-xl text-center text-sm leading-relaxed text-muted">
         Each step runs on its own and hands its result to the next, and a failed section is reported instead of hidden. Some steps are language-model
         calls; others are plain code (search, formulas, rules), which cannot make things up.

@@ -333,12 +333,6 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
 
         <SampleReportPreview />
 
-        <PipelineShowcase />
-
-        <PlayableVerdict />
-
-        <ReceiptsStrip />
-
         <section className="mt-16">
           <p
             className="fade-in-up mb-6 text-center font-mono text-xs uppercase tracking-widest text-muted"
@@ -438,6 +432,12 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
             </div>
           </div>
         </section>
+
+        <PipelineShowcase />
+
+        <PlayableVerdict />
+
+        <ReceiptsStrip />
 
         <section className="mt-16">
           <p
