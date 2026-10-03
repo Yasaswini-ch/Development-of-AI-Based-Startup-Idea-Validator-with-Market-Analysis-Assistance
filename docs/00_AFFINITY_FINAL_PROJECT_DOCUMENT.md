@@ -1,7 +1,7 @@
 # Affinity: Final Project Document
 
 **Project:** Affinity, an AI-based startup idea validator with market analysis assistance
-**Version:** 1.0, 2 October 2026, written against the `staging` branch
+**Version:** 1.1, 3 October 2026 (section 18 lists what was added after 1.0), written against the `staging` branch
 **Purpose:** one document that describes the whole project as it stands today. The numbered
 chapters (`01` to `23`) go deeper on each part; this file is the map and the summary.
 
@@ -30,6 +30,7 @@ chapters (`01` to `23`) go deeper on each part; this file is the map and the sum
 15. [Team and milestones](#15-team-and-milestones)
 16. [Running it locally and deploying](#16-running-it-locally-and-deploying)
 17. [Document map](#17-document-map)
+18. [Added since version 1.0](#18-added-since-version-10-3-october-2026)
 
 ---
 
@@ -521,3 +522,45 @@ Practical notes:
 | Cost and accuracy | [13](13_AFFINITY_UNIT_ECONOMICS_COST_AND_ACCURACY_METRICS.md) |
 | Scoring maths | [15](15_AFFINITY_OPPORTUNITY_SCORE_MATHEMATICAL_MODEL.md) |
 | Limits and future work | [known-limitations-and-future-work.md](known-limitations-and-future-work.md), [scaling-options.md](scaling-options.md) |
+
+
+## 18. Added since version 1.0 (3 October 2026)
+
+Everything below is in the code and covered by tests; items marked *not verified live* have
+not yet been seen on a real model-generated report because the free-tier model quotas ran
+out during testing.
+
+**Trust and evidence**
+- **Evidence audit.** Each section that cites sources records what the source check did: how many
+  cited claims it examined and which lost their citation. The report overview and the PDF show it,
+  and say plainly when the check did not run.
+- **Honest competitor table.** A pricing table lists every rival with a stated price, a marked
+  estimate, or "not found in sources", plus the article each was found in. Run-together scraped
+  text is kept out of comparison cells.
+
+**Plan and action**
+- **KPI targets** in the go-to-market block *(not verified live)*. Acquisition cost stays in the commercial
+  economics section so the report has one CAC figure.
+- **4-week validation sprint and customer-interview script**, built from the report's own
+  assumptions and experiments with no extra model call. Tick-boxes in the UI remember progress
+  in the browser; both are in the PDF.
+
+**Interactive report**
+- **Positioning grid** where the founder places their own idea and sees how crowded that spot is.
+- **What would change this verdict**: three sliders re-score the verdict in the browser using the same
+  arithmetic as the backend, and explain when high-severity risks force a Rethink.
+- **How this report was made**: the steps, the models that served them and their timings.
+- Opening a tab now scrolls to the start of that tab.
+
+**Brand and chat**
+- **Ollie**, the octopus mascot, is the advisor chat's name and avatar. The new "A" logo is the
+  favicon and appears in the app header, the PDF cover and page headers, and the report email.
+- The landing page gained a "watch it work" pipeline view, a playable verdict and a "receipts"
+  section that states what the product does and what it cannot do.
+
+**Operations**
+- When a run is long and the report is emailed, the message now says the user can close the browser.
+- The sample ideas in the form are detailed examples (product, buyer, first market, pricing idea).
+
+See [known-limitations-and-future-work.md](known-limitations-and-future-work.md) section 8.9 for the
+caveats on each, and [07](07_AFFINITY_REST_API_INTERFACE_SPECIFICATION.md) section 9 for the new fields.

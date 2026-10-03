@@ -152,7 +152,7 @@ Notes:
 - `agent/market_agent.py`: market size, TAM/SAM/SOM (sourced, or a labelled estimate), trends, segments
 - `agent/competitor_agent.py`: multi-source competitor discovery, enrichment, direct/indirect labels
 - `agent/swot_agent.py`, `mvp_agent.py`, `gtm_agent.py`, `assumption_agent.py`, `revenue_agent.py`
-- `agent/verification.py`: checks that a cited source supports the claim
+- `agent/verification.py`: checks that a cited source supports the claim, and records what it did (`audit`) for the evidence audit
 - `agent/llm.py`: model chain, `reasoning_effort`, `kickoff_with_fallback()`
 - `agent/prompts/`: every prompt, as `<name>_system.md`, `_task.md` and `_output.md`
 
@@ -161,6 +161,8 @@ Notes:
 - `agent/white_space.py`, `strategic_wedge.py`, `voice_of_market.py`
 - `agent/contradiction_detector.py`; the two confidence steps (`confidence_node`, `confidence_dashboard_node`) live in `agent/graph.py`
 - `agent/experiment_generator.py`, `action_plan.py`, `delivery_roadmap.py`, `commercial_model.py`
+- `agent/sprint_plan.py`: the 4-week validation sprint and the customer-interview script, built from assumptions and experiments (no model call)
+- `agent/trace.py`: per-report pipeline trace (step, seconds, models) behind the "how this report was made" view; in memory, handed out once per request
 - `agent/deterministic_fallback.py`: evidence-based fallbacks when a model call fails
 
 **Output and delivery**

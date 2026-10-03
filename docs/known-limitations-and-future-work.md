@@ -295,3 +295,39 @@ Findings from live use and a five-person informal test. The final project docume
 ### 8.8 Not built
 - A calibration of score weights, a measured competitor-recall figure, a written scaling plan,
   progressive rendering, and a saved real example report for the landing page.
+
+### 8.9 Added 2026-10-03 (evening)
+
+Behaviour that is real but easy to over-read. None of it is hidden in the product.
+
+- **KPI targets need a successful go-to-market model call.** When that step falls back to
+  the rule-based version (it did on the first live Render report, because the model was
+  rate-limited), the KPI block is simply absent. There is no separate CAC range in the go-to-market block:
+  acquisition cost lives in the commercial economics section, so the report never carries two
+  different CAC figures.
+- **The validation sprint and interview script are templated, not written by a model.** They
+  rearrange the report's own assumptions and experiments, so they are as good as those
+  inputs and cost nothing. Older saved reports do not have them.
+- **The evidence audit counts only claims that carried a citation**, and at most 20 per
+  section per pass. If the check call fails, the section records "did not run" instead of
+  claiming everything held up.
+- **The pipeline trace lives in server memory** (the last 50 runs, keyed by the request's
+  idea, customer and problem). A restart, or two identical requests at once, can lose or
+  mix a trace; the report then simply shows no "how this was made" card. Model names for
+  steps that run side by side were not verified live.
+- **The pricing table's last column is the article a rival was found in**, not necessarily its
+  own pricing page. A price appears only when a source stated one; a rough tier is marked as
+  an estimate.
+- **Scraped, run-together text no longer appears in comparison cells.** When the AI
+  profiling pass does not run, the table falls back to source snippets; text that looks like
+  page chrome is dropped (the cell shows "unknown") and the rest is cut to about 140
+  characters. This hides the noise but does not make that table richer.
+- **The what-if verdict panel re-implements the scoring in JavaScript** (`frontend/src/lib/whatIf.js`).
+  It matches the backend today and has tests pinning the arithmetic, but the two must be
+  changed together.
+- **Ollie only appears on the results page.** The chat needs a report to talk about.
+- **Logo in emails needs a public https `FRONTEND_ORIGIN`.** Without it the email header
+  shows no logo rather than a broken image. Some email apps also hide images until allowed.
+- **Not yet verified live:** the new GTM KPI block, the pipeline card's per-step model names,
+  and the sprint and interview script on a real report beyond the first Render run, which
+  did show the evidence audit, sprint and script.

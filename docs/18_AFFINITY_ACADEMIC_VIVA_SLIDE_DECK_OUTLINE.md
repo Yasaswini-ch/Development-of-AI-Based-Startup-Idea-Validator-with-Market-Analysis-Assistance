@@ -299,3 +299,21 @@
   - What is the difference between your pipeline and a "swarm"? (Slide 5)
   - What is not done yet? (Slide 26)
   - How is admin access controlled, and what data is kept for how long? (Slide 20)
+
+
+---
+
+## Addendum: material added on 3 October 2026
+
+Optional extra slides, or add these points to the slides named in brackets.
+
+- **Evidence audit** [after the grounding slide]: a second pass re-checks each citation against the
+  source text; the report shows how many claims held up and how many lost their citation.
+- **What would change this verdict** [verdict slide]: the verdict is arithmetic, so three sliders re-score it
+  live. High-severity risks can force a Rethink whatever the score.
+- **Validation sprint and interview script** [roadmap slide]: the report ends in a dated 4-week plan with
+  pass and fail thresholds, and a customer-interview script, built from its own assumptions.
+- **How this report was made** [pipeline slide]: steps, models and timings, shown inside every report.
+- **Meet Ollie** [advisor slide]: the octopus mascot is the follow-up chat; eight arms, eight tabs.
+- **Honest limits** [limitations slide]: unknown prices stay "not found", estimates are labelled, a failed
+  step is shown as failed.
