@@ -4,7 +4,6 @@ import {
   IconCheckCircle,
   IconGlobe,
   IconLightbulb,
-  IconMessageCircle,
   IconUsers,
   IconX,
 } from './icons'
@@ -80,8 +79,16 @@ function MessageContent({ text }) {
   )
 }
 
+// The advisor is Ollie, the octopus mascot (public/ollie.png).
+const OLLIE_SRC = `${import.meta.env.BASE_URL}ollie.png`
+
+function OllieAvatar({ className = 'h-6 w-6' }) {
+  return <img src={OLLIE_SRC} alt="Ollie" className={`${className} shrink-0 object-contain`} />
+}
+
 function Avatar({ role }) {
-  const Icon = role === 'user' ? IconUsers : IconLightbulb
+  if (role !== 'user') return <OllieAvatar />
+  const Icon = IconUsers
   return (
     <span
       className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
@@ -167,8 +174,9 @@ export default function ChatAdvisor({ sessionId, apiUrl, onNavigateSection }) {
         <section className="flex w-[calc(100vw-2.5rem)] max-w-md flex-col overflow-hidden rounded-2xl border border-border bg-panel shadow-xl">
           <div className="flex items-center justify-between border-b border-border px-5 py-4">
             <h2 className="flex items-center gap-2 font-serif text-lg text-text">
-              <IconLightbulb className="h-5 w-5 text-accent" />
-              Validation advisor
+              <OllieAvatar className="h-7 w-7" />
+              Ollie
+              <span className="font-sans text-xs font-normal text-muted">your validation advisor</span>
               <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-info" aria-hidden="true" />
             </h2>
             <button
@@ -188,11 +196,9 @@ export default function ChatAdvisor({ sessionId, apiUrl, onNavigateSection }) {
           >
             {messages.length === 0 && (
               <div className="flex flex-col items-center py-6 text-center">
-                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-accent/10 text-accent">
-                  <IconLightbulb className="h-4 w-4" />
-                </span>
+                <OllieAvatar className="h-14 w-14" />
                 <p className="mt-3 max-w-[220px] text-sm leading-relaxed text-muted">
-                  Ask a follow-up about your market, risks, MVP, or launch strategy.
+                  Hi, I'm Ollie. Ask a follow-up about your market, risks, MVP, or launch strategy.
                 </p>
                 <div className="mt-4 flex flex-wrap justify-center gap-1.5">
                   {SUGGESTED_QUESTIONS.map(({ text, Icon }) => (
@@ -236,7 +242,7 @@ export default function ChatAdvisor({ sessionId, apiUrl, onNavigateSection }) {
               <div className="flex items-end gap-2">
                 <Avatar role="advisor" />
                 <p className="rounded-xl border border-border bg-surface px-4 py-2.5 font-mono text-xs uppercase tracking-wider text-muted shadow-sm cursor-blink">
-                  Advisor is thinking
+                  Ollie is thinking
                 </p>
               </div>
             )}
@@ -263,7 +269,7 @@ export default function ChatAdvisor({ sessionId, apiUrl, onNavigateSection }) {
           </div>
 
           <form onSubmit={handleSubmit} className="flex gap-2 border-t border-border p-4">
-            <label htmlFor="advisor-message" className="sr-only">Message the validation advisor</label>
+            <label htmlFor="advisor-message" className="sr-only">Message Ollie</label>
             <input
               id="advisor-message"
               ref={inputRef}
@@ -285,20 +291,22 @@ export default function ChatAdvisor({ sessionId, apiUrl, onNavigateSection }) {
         </section>
       )}
 
-      <button
-        type="button"
-        onClick={() => (isOpen ? setIsOpen(false) : openPanel())}
-        aria-label={isOpen ? 'Close validation advisor chat' : 'Open validation advisor chat'}
-        aria-expanded={isOpen}
-        className="relative flex h-14 w-14 items-center justify-center rounded-full bg-accent text-white shadow-lg transition-transform hover:scale-105 hover:bg-accent-hover"
-      >
-        {isOpen ? <IconX className="h-6 w-6" /> : <IconMessageCircle className="h-6 w-6" />}
-        {!isOpen && unreadCount > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-danger px-1 font-mono text-[10px] font-semibold text-white">
-            {unreadCount > 9 ? '9+' : unreadCount}
-          </span>
-        )}
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => (isOpen ? setIsOpen(false) : openPanel())}
+          aria-label={isOpen ? 'Close chat with Ollie' : 'Open chat with Ollie'}
+          aria-expanded={isOpen}
+          className={`relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full shadow-lg transition-transform hover:scale-105 ${isOpen ? 'bg-accent text-white hover:bg-accent-hover' : 'border border-border bg-panel'}`}
+        >
+          {isOpen ? <IconX className="h-5 w-5" /> : <img src={OLLIE_SRC} alt="" className="h-10 w-10 object-contain" />}
+          {!isOpen && unreadCount > 0 && (
+            <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-danger px-1 font-mono text-[10px] font-semibold text-white">
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          )}
+        </button>
+      </div>
     </div>
   )
 }
