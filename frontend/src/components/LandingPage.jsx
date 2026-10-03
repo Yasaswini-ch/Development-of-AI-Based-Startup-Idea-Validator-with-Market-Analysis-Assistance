@@ -120,7 +120,7 @@ const STEPS = [
   {
     Icon: IconMessageCircle,
     title: 'Ask a follow-up',
-    body: 'A validation advisor is on hand to dig into risks, pricing, or what to build first.',
+    body: 'Ollie, our validation advisor, is on hand to dig into risks, pricing, or what to build first.',
     summary:
       'Keep going after the report: ask about a risk, a price point or what to build first, and take the report with you.',
     flow: [
