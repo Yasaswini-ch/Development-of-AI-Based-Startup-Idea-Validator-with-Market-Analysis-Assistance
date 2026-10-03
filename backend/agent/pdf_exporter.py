@@ -899,7 +899,7 @@ def _competitors(story, d, s, sections):
         return Paragraph(_e(_CLASSIFICATION_SHORT.get(key, "Unclear")),
                          ParagraphStyle("Class", parent=s["cell_bold"], textColor=_CLASSIFICATION_COLOR.get(key, MUTED_STRONG)))
 
-    rows = [["Competitor", "Type", "Pricing", "Feature breadth"]]
+    rows = [["Competitor", "Type", "Pricing", "Feature breadth", "Source"]]
     for c in comp_list[:8]:
         pricing = c.get("pricing") or c.get("estimatedPrice") or c.get("priceBucket") or "unknown"
         rows.append([
@@ -907,8 +907,9 @@ def _competitors(story, d, s, sections):
             classification_cell(c),
             Paragraph(_single_line(pricing, 22), s["cell"]),
             Paragraph(_single_line(c.get("featureBreadth") or "unknown", 16), s["cell"]),
+            Paragraph(_single_line(_source_host(c.get("url")), 22), s["cell"]),
         ])
-    story.append(_data_table(rows, [CONTENT_W - 340, 90, 130, 120], s))
+    story.append(_data_table(rows, [CONTENT_W - 440, 70, 100, 90, 180], s))
 
     # Direct rivals carry a stated weakness once profiled - surface it as
     # the "so what" a bare classification label doesn't give.
@@ -1437,6 +1438,17 @@ def _action_plan(story, d, s, sections):
         ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
     story.append(row)
+
+
+def _source_host(url) -> str:
+    """Host of a competitor's source page, or a dash when there is none."""
+    from urllib.parse import urlparse
+
+    try:
+        host = urlparse(str(url or "")).netloc.lower()
+    except ValueError:
+        host = ""
+    return host[4:] if host.startswith("www.") else (host or "-")
 
 
 def _sprint_and_script(story, d, s, sections):

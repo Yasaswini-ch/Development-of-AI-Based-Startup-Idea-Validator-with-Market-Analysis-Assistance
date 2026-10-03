@@ -40,6 +40,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from agent import events, metrics
+from agent import trace as agent_trace
 from agent.auth import (
     AuthError,
     is_admin,
@@ -493,6 +494,7 @@ def _create_validation_session(payload: ValidateRequest, response: dict, user_id
             "assumptions": response.get("assumptions"),
             "revenueModels": response.get("revenueModels"),
             "verdict": response.get("verdict"),
+            "pipelineTrace": response.get("pipelineTrace"),
         },
         user_id=user_id,
     )
@@ -747,6 +749,9 @@ def _run_pipeline_and_build_response(payload: ValidateRequest, cache_key: str, a
         "assumptions": state.get("assumptions"),
         "revenueModels": state.get("revenueModels"),
         "verdict": state.get("verdict"),
+        "pipelineTrace": agent_trace.take(
+            agent_trace.run_key(state.get("idea"), state.get("targetCustomer"), state.get("problem"))
+        ),
         "errors": state.get("errors", {}),
         "mode": state.get("mode", "deep"),
     }

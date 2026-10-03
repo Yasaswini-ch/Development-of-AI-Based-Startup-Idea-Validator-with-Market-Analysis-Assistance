@@ -1,5 +1,6 @@
 import { Fragment, useState } from 'react'
 import { IconAlertTriangle } from './icons'
+import PricingTable from './PricingTable'
 
 // Mirrors backend/agent/competitor_agent.py's _GAP_DISCLOSURE exactly - the
 // fallback text it writes when NER found the competitor but couldn't
@@ -519,6 +520,8 @@ export default function CompetitorAnalysis({ data, error }) {
       <ComparisonMatrix rows={data.comparisonMatrix} competitors={competitors} />
 
       <PositioningGrid competitors={competitors} />
+
+      <PricingTable competitors={competitors} />
 
       <SimilarProducts products={data.similarProducts} />
     </div>
