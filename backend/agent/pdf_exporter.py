@@ -899,7 +899,7 @@ def _competitors(story, d, s, sections):
         return Paragraph(_e(_CLASSIFICATION_SHORT.get(key, "Unclear")),
                          ParagraphStyle("Class", parent=s["cell_bold"], textColor=_CLASSIFICATION_COLOR.get(key, MUTED_STRONG)))
 
-    rows = [["Competitor", "Type", "Pricing", "Feature breadth", "Source"]]
+    rows = [["Competitor", "Type", "Pricing", "Feature breadth", "Found in"]]
     for c in comp_list[:8]:
         pricing = c.get("pricing") or c.get("estimatedPrice") or c.get("priceBucket") or "unknown"
         rows.append([
@@ -1282,34 +1282,19 @@ def _gtm_strategy(story, d, s, sections):
 
 
 def _gtm_targets(story, gtm, s):
-    acquisition = gtm.get("acquisition") if isinstance(gtm.get("acquisition"), dict) else {}
-    cac = acquisition.get("estimatedCac") if isinstance(acquisition.get("estimatedCac"), dict) else None
     kpis = [k for k in gtm.get("kpis") or [] if isinstance(k, dict) and k.get("name") and k.get("target")]
-    if not acquisition.get("primaryMethod") and not cac and not kpis:
+    if not kpis:
         return
     story.append(Spacer(1, 8))
-    story.append(Paragraph("Acquisition cost and KPI targets", s["h3"]))
+    story.append(Paragraph("KPI targets", s["h3"]))
     story.append(Spacer(1, 6))
-    if acquisition.get("primaryMethod") or cac:
-        content = [Paragraph("ACQUISITION (ESTIMATE)", s["label"]), Spacer(1, 4)]
-        if acquisition.get("primaryMethod"):
-            content.append(Paragraph(_e(acquisition["primaryMethod"]), s["body"]))
-        if cac:
-            content += [Spacer(1, 4), Paragraph(
-                f'<font name="{_FONTS["mono_bold"]}" size="7" color="{_hex(MUTED)}">ESTIMATED CAC&nbsp;&nbsp;</font>'
-                f'<b>${cac["low"]:,.0f} - ${cac["high"]:,.0f}</b> per paying customer', s["body"])]
-            if cac.get("basis"):
-                content.append(Paragraph(_e(cac["basis"]), s["body_muted"]))
-        story.append(KeepTogether(_card(content, padding=12)))
-        story.append(Spacer(1, 8))
-    if kpis:
-        rows = [[Paragraph("KPI", s["label"]), Paragraph("TARGET", s["label"]), Paragraph("WHEN", s["label"])]]
-        for k in kpis:
-            rows.append([Paragraph(_e(k["name"]), s["cell_bold"]), Paragraph(_e(k["target"]), s["cell"]),
-                         Paragraph(_e(k.get("timeframe") or "-"), s["cell"])])
-        story.append(_data_table(rows, [CONTENT_W - 260, 130, 130], s))
+    rows = [[Paragraph("KPI", s["label"]), Paragraph("TARGET", s["label"]), Paragraph("WHEN", s["label"])]]
+    for k in kpis:
+        rows.append([Paragraph(_e(k["name"]), s["cell_bold"]), Paragraph(_e(k["target"]), s["cell"]),
+                     Paragraph(_e(k.get("timeframe") or "-"), s["cell"])])
+    story.append(_data_table(rows, [CONTENT_W - 260, 130, 130], s))
     story.append(Spacer(1, 4))
-    story.append(Paragraph("CAC and KPI targets are model estimates from typical channel costs, not measured figures - validate them in a pilot.", s["body_muted"]))
+    story.append(Paragraph("KPI targets are model estimates, not measured figures - validate them in a pilot. Acquisition cost is in the commercial economics section.", s["body_muted"]))
 
 
 def _revenue_models(story, d, s, sections):

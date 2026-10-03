@@ -64,3 +64,23 @@ class EnglishQuoteTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TidyCellTests(unittest.TestCase):
+    def test_run_together_scraped_text_is_dropped(self):
+        from agent.competitor_agent import _tidy_cell
+
+        junk = "RedshiftConnector TableauAPI Power BIAPI Collaboration SlackNative Google WorkspaceNative Microsoft TeamsConnector"
+        self.assertIsNone(_tidy_cell(junk))
+        self.assertIsNone(_tidy_cell("Missing / Weak SAP S/4HANALimited"))
+        self.assertIsNone(_tidy_cell("unknown"))
+
+    def test_normal_text_is_kept_and_long_text_is_cut_at_a_sentence(self):
+        from agent.competitor_agent import _tidy_cell
+
+        self.assertEqual(_tidy_cell("Tracks time and sends invoices."), "Tracks time and sends invoices.")
+        long = "Runway is a financial planning tool built for venture-backed startups. " + "More detail follows here. " * 20
+        out = _tidy_cell(long)
+        self.assertLessEqual(len(out), 143)
+        self.assertTrue(out.endswith("."))
+        self.assertNotIn("...", out)

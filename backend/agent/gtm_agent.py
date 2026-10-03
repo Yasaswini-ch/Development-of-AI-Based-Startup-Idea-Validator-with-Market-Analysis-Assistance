@@ -23,32 +23,6 @@ _FIT_SCORES = {"high", "medium", "low"}
 _MAX_KPIS = 5
 
 
-def _clean_acquisition(value) -> dict | None:
-    """Optional CAC estimate. Kept only when it has a usable numeric range; it is
-    an estimate by construction, so nothing here is verified against sources."""
-    if not isinstance(value, dict):
-        return None
-    out = {}
-    method = value.get("primaryMethod")
-    if isinstance(method, str) and method.strip():
-        out["primaryMethod"] = method.strip()
-    cac = value.get("estimatedCac")
-    if isinstance(cac, dict):
-        try:
-            low, high = float(cac.get("low")), float(cac.get("high"))
-        except (TypeError, ValueError):
-            low = high = None
-        if low is not None and 0 <= low <= high and high < 1_000_000:
-            basis = cac.get("basis")
-            out["estimatedCac"] = {
-                "low": round(low, 2),
-                "high": round(high, 2),
-                "currency": "USD",
-                "basis": basis.strip() if isinstance(basis, str) else "",
-            }
-    return out or None
-
-
 def _clean_kpis(value) -> list[dict]:
     if not isinstance(value, list):
         return []
@@ -105,7 +79,7 @@ def _build_crew(idea: str, target_customer: str, context: str, model: str) -> Cr
         role="Go-to-Market Strategy Analyst",
         goal="Create a focused positioning and early acquisition plan grounded in validated customer and competitor evidence.",
         backstory=load_prompt("gtm_system"),
-        # Now 850: the CAC estimate and 4-5 KPI targets add roughly 250 tokens
+        # Now 850: the 4-5 KPI targets add roughly 250 tokens
         # on top of the 600 the channels and tactics needed.
         # Bumped to 600 (was 450) to accommodate per-channel tactics[] array
         # added in the GTM prompt update. 450 is the confirmed safe floor for
@@ -169,10 +143,8 @@ def analyze_gtm(
         data["earlyCustomerApproachSourceIds"] = sanitize_source_ids(
             data.get("earlyCustomerApproachSourceIds"), valid_ids
         )
-        acquisition = _clean_acquisition(data.pop("acquisition", None))
+        data.pop("acquisition", None)
         kpis = _clean_kpis(data.pop("kpis", None))
-        if acquisition:
-            data["acquisition"] = acquisition
         if kpis:
             data["kpis"] = kpis
         data["channels"] = [

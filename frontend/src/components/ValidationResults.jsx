@@ -440,7 +440,7 @@ export default function ValidationResults({
       </div>
 
       {/* Pill tab switcher */}
-      <div ref={tabsRef} className="sticky top-0 z-10 max-w-full overflow-x-auto bg-surface/95 py-2 backdrop-blur-sm">
+      <div ref={tabsRef} className="sticky top-0 z-20 max-w-full overflow-x-auto bg-surface/95 py-2 backdrop-blur-sm">
         <div role="tablist" aria-label="Report sections" className="inline-flex min-w-max gap-0.5 rounded-full bg-border p-1">
           {TABS.map((t) => {
           const active = activeTab === t.key

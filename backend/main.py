@@ -889,7 +889,8 @@ async def validate_idea(payload: ValidateRequest, request: Request, current_user
                     "jobId": job_id,
                     "message": (
                         "This is taking longer than usual. We'll email your report to "
-                        f"{effective_email} as soon as it's ready."
+                        f"{effective_email} as soon as it's ready. You can close this browser; "
+                        "you don't need to keep this page open."
                     ),
                 },
             )
