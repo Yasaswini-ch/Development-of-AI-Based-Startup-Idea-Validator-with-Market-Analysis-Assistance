@@ -899,7 +899,7 @@ def _competitors(story, d, s, sections):
         return Paragraph(_e(_CLASSIFICATION_SHORT.get(key, "Unclear")),
                          ParagraphStyle("Class", parent=s["cell_bold"], textColor=_CLASSIFICATION_COLOR.get(key, MUTED_STRONG)))
 
-    rows = [["Competitor", "Type", "Pricing", "Feature breadth", "Source"]]
+    rows = [["Competitor", "Type", "Pricing", "Feature breadth", "Found in"]]
     for c in comp_list[:8]:
         pricing = c.get("pricing") or c.get("estimatedPrice") or c.get("priceBucket") or "unknown"
         rows.append([

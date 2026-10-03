@@ -131,6 +131,8 @@ _GENERIC_WORDS = {
     "market", "industry", "report", "analysis", "options", "bank", "cloud",
     "sync", "unlimited", "premium", "team", "cash", "trade", "exploration",
     "ratings", "rating", "awards", "award",
+    # A plural category word a live run listed as a rival ("Startups").
+    "startups", "startup", "founders", "businesses",
     # Page chrome and non-competitors that real runs surfaced as "rivals": a
     # browser named in "Chrome extension", the "Key Features" heading of a
     # product page, and the review/analyst sites a "best X software" article is
