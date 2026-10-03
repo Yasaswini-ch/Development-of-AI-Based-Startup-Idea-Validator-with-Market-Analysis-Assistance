@@ -393,7 +393,8 @@ function ComparisonMatrix({ rows, competitors }) {
         Built only from what the search results say about each competitor &mdash; &ldquo;unknown&rdquo; means the
         sources were silent, not that the feature is missing.
       </p>
-      <div className="overflow-x-auto rounded-xl border border-border">
+      {/* isolate: the sticky first column uses z-10 and, sharing the tab bar's level, painted over it when the page scrolled */}
+      <div className="isolate overflow-x-auto rounded-xl border border-border">
         <table className="w-full min-w-[32rem] border-collapse text-left text-xs">
           <thead>
             <tr className="bg-surface">
