@@ -21,9 +21,9 @@ export default function PlayableVerdict() {
   const style = DECISION_STYLES[decision]
 
   return (
-    <section className="mt-16" data-testid="playable-verdict">
-      <p className="mb-2 text-center font-mono text-xs uppercase tracking-widest text-muted">Try the verdict</p>
-      <h2 className="mb-2 text-center font-serif text-2xl text-text">The call is arithmetic you can see.</h2>
+    <section id="try-the-verdict" className="mt-16 scroll-mt-24" data-testid="playable-verdict">
+      <p className="mb-2 text-center font-mono text-xs font-semibold uppercase tracking-[0.18em] text-accent">Try the verdict</p>
+      <h2 className="mb-2 text-center font-serif text-2xl font-semibold text-text sm:text-3xl">The call is arithmetic you can see.</h2>
       <p className="mx-auto mb-6 max-w-xl text-center text-sm leading-relaxed text-muted">
         Demand, risk and growth set one score, and fixed rules turn it into Pursue, Validate first or Rethink. Drag them and watch it
         change. In your report these come from your own research.

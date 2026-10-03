@@ -22,9 +22,9 @@ const RECEIPTS = [
 
 export default function ReceiptsStrip() {
   return (
-    <section className="mt-16" data-testid="receipts-strip">
-      <p className="mb-2 text-center font-mono text-xs uppercase tracking-widest text-muted">The receipts</p>
-      <h2 className="mb-6 text-center font-serif text-2xl text-text">What we do that a chat reply will not.</h2>
+    <section id="receipts" className="mt-16 scroll-mt-24" data-testid="receipts-strip">
+      <p className="mb-2 text-center font-mono text-xs font-semibold uppercase tracking-[0.18em] text-accent">The receipts</p>
+      <h2 className="mb-6 text-center font-serif text-2xl font-semibold text-text sm:text-3xl">What we do that a chat reply will not.</h2>
       <div className="grid gap-3 sm:grid-cols-2">
         {RECEIPTS.map((r) => (
           <div key={r.title} className="rounded-2xl border border-border bg-panel p-5">
