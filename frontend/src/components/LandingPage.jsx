@@ -173,6 +173,16 @@ const ACCOUNT_PERKS = [
   { Icon: IconDownload, text: 'Export a PDF or email yourself the full report' },
 ]
 
+const NAV_LINKS = [
+  { href: '#what-you-get', label: 'What you get' },
+  { href: '#how-it-works', label: 'How it works' },
+  { href: '#watch-it-work', label: 'Watch it work' },
+  { href: '#try-the-verdict', label: 'Verdict' },
+  { href: '#agents', label: 'Agents' },
+  { href: '#receipts', label: 'Receipts' },
+  { href: '#why-affinity', label: 'Why Affinity' },
+]
+
 export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut, apiUrl, onAuthenticated }) {
   const { text, settled, index } = useTypewriter(EXAMPLE_IDEAS.map((e) => e.idea))
   const demo = EXAMPLE_IDEAS[index]
@@ -198,13 +208,24 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
 
   return (
     <div className="min-h-screen bg-surface">
-      <main className="mx-auto max-w-5xl px-4 pb-16 pt-10 sm:pt-14">
-        <div className="mb-14 flex items-center justify-between">
-          <p className="flex items-center gap-2.5 font-serif text-2xl font-semibold tracking-tight text-text">
+      <header className="sticky top-0 z-30 border-b border-border bg-surface/90 backdrop-blur-md">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-2.5">
+          <a href="#top" className="flex shrink-0 items-center gap-2.5 font-serif text-2xl font-semibold tracking-tight text-text" aria-label="Affinity, back to top">
             <img src={`${import.meta.env.BASE_URL}logo.png`} alt="" className="h-9 w-9 object-contain" />
             Affinity
-          </p>
-          <div className="flex items-center gap-2">
+          </a>
+          <nav aria-label="Sections" className="hidden items-center gap-1 md:flex">
+            {NAV_LINKS.map(({ href, label }) => (
+              <a
+                key={href}
+                href={href}
+                className="rounded-full px-3 py-1.5 font-mono text-[11px] font-semibold uppercase tracking-wide text-muted-strong transition-colors hover:bg-panel hover:text-accent"
+              >
+                {label}
+              </a>
+            ))}
+          </nav>
+          <div className="flex shrink-0 items-center gap-2">
             {currentUser ? (
               <button
                 type="button"
@@ -226,10 +247,23 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
             )}
           </div>
         </div>
+        <nav aria-label="Sections (compact)" className="flex gap-1 overflow-x-auto border-t border-border px-3 py-1.5 md:hidden">
+          {NAV_LINKS.map(({ href, label }) => (
+            <a
+              key={href}
+              href={href}
+              className="shrink-0 rounded-full px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-strong hover:bg-panel hover:text-accent"
+            >
+              {label}
+            </a>
+          ))}
+        </nav>
+      </header>
 
+      <main id="top" className="mx-auto max-w-5xl px-4 pb-16 pt-10 sm:pt-14">
         <section className="fade-in-up mx-auto max-w-xl text-center">
-          <p className="mb-3 font-mono text-xs uppercase tracking-widest text-muted">
-            Evidence-grounded startup validation
+          <p className="font-tagline mb-3 text-base font-semibold text-accent sm:text-lg">
+            Curious? So are our agents.
           </p>
           <h1 className="font-serif text-4xl leading-tight text-text sm:text-6xl">
             <span className="relative inline-block">
@@ -333,7 +367,7 @@ export default function LandingPage({ onStart, currentUser, onSignIn, onSignOut,
 
         <SampleReportPreview />
 
-        <section className="mt-16">
+        <section id="how-it-works" className="mt-16 scroll-mt-24">
           <p
             className="fade-in-up mb-2 text-center font-mono text-xs font-semibold uppercase tracking-[0.18em] text-accent"
             style={{ animationDelay: '200ms' }}

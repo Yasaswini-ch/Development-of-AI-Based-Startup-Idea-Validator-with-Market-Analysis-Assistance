@@ -50,6 +50,15 @@ body {
   animation: pulse-dot 1.6s ease-in-out infinite;
 }
 
+/* The hero tagline: Sora is rounded and wide, so it stays readable when the page is shared on a call. */
+.font-tagline {
+  font-family: 'Sora', ui-sans-serif, system-ui, sans-serif;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}
+
 @keyframes ollie-perch {
   0%, 100% { rotate: -16deg; }
   50% { rotate: -24deg; }

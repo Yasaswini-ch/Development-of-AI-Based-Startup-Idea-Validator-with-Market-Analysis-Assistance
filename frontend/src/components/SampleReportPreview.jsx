@@ -107,7 +107,8 @@ export default function SampleReportPreview() {
 
   return (
     <section
-      className="fade-in-up mx-auto mt-10 max-w-3xl"
+      id="what-you-get"
+      className="fade-in-up mx-auto mt-10 max-w-3xl scroll-mt-24"
       style={{ animationDelay: '250ms' }}
       aria-labelledby="sample-report-heading"
     >

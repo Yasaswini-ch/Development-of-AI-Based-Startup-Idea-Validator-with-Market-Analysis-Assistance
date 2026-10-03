@@ -16,7 +16,7 @@ const ROWS = [
 
 export default function ComparisonTable() {
   return (
-    <section className="mt-16" aria-labelledby="compare-heading">
+    <section id="why-affinity" className="mt-16 scroll-mt-24" aria-labelledby="compare-heading">
       <p className="mb-2 text-center font-mono text-xs font-semibold uppercase tracking-[0.18em] text-accent">Why not just ask a chatbot?</p>
       <h2 id="compare-heading" className="mb-3 text-center font-serif text-2xl font-semibold text-text sm:text-3xl">
         A chatbot answers. Affinity shows its work.

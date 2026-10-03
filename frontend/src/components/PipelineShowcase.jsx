@@ -43,7 +43,7 @@ export default function PipelineShowcase() {
   }, [])
 
   return (
-    <section className="mt-16" data-testid="pipeline-showcase">
+    <section id="watch-it-work" className="mt-16 scroll-mt-24" data-testid="pipeline-showcase">
       <p className="mb-2 text-center font-mono text-xs font-semibold uppercase tracking-[0.18em] text-accent">Watch it work</p>
       <h2 className="mb-2 text-center font-serif text-2xl font-semibold text-text sm:text-3xl">Seventeen steps, not one chat reply.</h2>
       <p className="mx-auto mb-6 max-w-xl text-center text-sm leading-relaxed text-muted">
