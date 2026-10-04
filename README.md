@@ -112,7 +112,7 @@ fabricated and never comes back blank.
 
 ## Architecture
 
-<img src="docs/images/System_Architecture_diagram.png" alt="System architecture" width="820" />
+<img src="docs/images/Complete%20System%20Architecture.jpeg" alt="System architecture" width="820" />
 
 ### Validation pipeline
 
@@ -385,7 +385,7 @@ never makes billed LLM calls.
 
 ## Deployment
 
-<img src="docs/images/Cloud%20and%20Software%20Deployment%20Architecture%20Diagram.png" alt="Deployment architecture" width="820" />
+<img src="docs/images/Cloud%20and%20Software%20Deployment.jpeg" alt="Deployment architecture" width="820" />
 
 Affinity deploys to [Render](https://render.com) as a Blueprint defined in
 [`render.yaml`](render.yaml):
