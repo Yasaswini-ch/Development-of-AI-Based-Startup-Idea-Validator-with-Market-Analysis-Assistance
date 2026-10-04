@@ -116,33 +116,84 @@ fabricated and never comes back blank.
 
 ### Validation pipeline
 
-The node graph as implemented in [`backend/agent/graph.py`](backend/agent/graph.py):
+The node graph as implemented in [`backend/agent/graph.py`](backend/agent/graph.py). Orange nodes
+call a language model, green nodes are plain code (search, formulas, rules), and grey nodes are rule-based
+engines that read earlier results:
 
 ```mermaid
 flowchart TD
     START([POST /validate]) --> WS[Web search<br/>5 research angles]
-    WS --> CI[Confidence indicator]
-    CI --> MO[Market opportunity<br/>LLM]
+    WS --> CI[Source agreement]
+    CI --> MO[Market opportunity<br/>TAM / SAM / SOM]
     MO --> CD[Competitor discovery<br/>NER + LLM + public APIs]
     CD --> OS[Opportunity score]
-    OS --> WSP[Whitespace analysis<br/>+ strategic wedges]
-    WSP --> SW[SWOT and risk<br/>LLM, source-cited]
+    OS --> WSP[Whitespace + strategic wedges]
+    WSP --> SW[SWOT and risk<br/>source-cited]
     SW --> VS[Viability score]
-    VS --> MVP[MVP recommendation<br/>LLM]
-    VS --> GTM[GTM strategy<br/>LLM]
+    VS --> MVP[MVP plan]
+    VS --> GTM[Go-to-market<br/>+ KPI targets]
     MVP --> CT[Contradiction detector]
     GTM --> CT
-    CT --> EX[Experiment generator]
+    CT --> EX[Experiments]
     EX --> AP[Action plan]
     AP --> AS[Assumption tracker]
     AS --> RV[Revenue models]
-    RV --> CF[Confidence dashboard]
-    CF --> VD[Verdict]
+    RV --> CF[Evidence confidence]
+    CF --> SP[Validation sprint +<br/>interview script]
+    SP --> VD[Verdict]
     VD --> END([Validation report])
+
+    classDef llm fill:#fbe3d9,stroke:#e2634a,color:#26231f
+    classDef code fill:#dcefe9,stroke:#2f7a6b,color:#26231f
+    classDef rule fill:#ece8df,stroke:#8a8377,color:#26231f
+    class MO,CD,SW,MVP,GTM,AS,RV llm
+    class WS,CI,OS,VS,CF,SP,VD code
+    class WSP,CT,EX,AP rule
 ```
 
 MVP and GTM have no dependency on each other, so they fan out from the viability stage
 and run concurrently, removing a full LLM round trip from every request's critical path.
+Every step is timed, and the steps, their durations and the models that served them are returned
+with the report as `pipelineTrace` (shown in the app as "How this report was made").
+
+### How a claim is checked
+
+Each section that cites sources is source-checked before it reaches the report, and the
+check records what it did:
+
+```mermaid
+flowchart LR
+    W[Writing step<br/>claims + source ids] --> V{Verification pass<br/>does the source text<br/>support the claim?}
+    V -->|supported| K[Keep the citation<br/>badge: Grounded]
+    V -->|not supported| R[Strip the citation, keep the claim<br/>badge: Inferred]
+    V -->|check could not run| N[Keep as written<br/>audit says: did not run]
+    K --> A[Evidence audit<br/>checked / held up / removed]
+    R --> A
+    N --> A
+    A --> UI[Report overview and PDF]
+```
+
+### Model routing
+
+LLM calls are routed per agent, then fall through a chain when a model is rate-limited. Groq
+limits are per organisation, so extra keys only add capacity when they belong to separate accounts:
+
+```mermaid
+flowchart TD
+    AG[Agent<br/>market, competitors, SWOT, MVP, GTM,<br/>assumptions, revenue, verification, advisor] --> P[Agent's primary model<br/>AGENT_MODEL_* override, else the split in llm.py]
+    P --> KP{Key pool<br/>skip keys cooling down<br/>after a rate limit}
+    KP -->|ok| OUT[Answer, checked for valid shape]
+    KP -->|limited| F1[gpt-oss-20b]
+    F1 --> F2[gpt-oss-120b]
+    F2 --> F3[Gemini flash models]
+    F3 -->|all cloud models exhausted| L{Email on file?}
+    L -->|yes| LOC[Local model, result emailed]
+    L -->|no| ASK[Ask for an email,<br/>report sent when ready]
+    F1 --> OUT
+    F2 --> OUT
+    F3 --> OUT
+    LOC --> OUT
+```
 
 ### System topology
 
@@ -151,13 +202,15 @@ flowchart LR
     U([Founder]) --> FE[React 19 + Tailwind 4<br/>Vite SPA]
     FE -->|REST + JSON| API[FastAPI service]
     API --> G[LangGraph<br/>validation pipeline]
-    API --> C[LangGraph<br/>advisor chat graph]
-    G --> S[Search providers<br/>Tavily / DDG / Wikipedia / HN]
-    G --> L[LLM router<br/>Groq primary, model fallback chain]
+    API --> C[LangGraph<br/>Ollie, the advisor chat]
+    G --> S[Search and enrichment<br/>Tavily, DuckDuckGo, Wikipedia,<br/>Hacker News, App Store, Product Hunt]
+    S --> WC[(Shared lookup cache)]
+    G --> L[LLM router<br/>per-agent models, key pool,<br/>Groq then Gemini fallback]
     C --> L
     API --> DB[(PostgreSQL<br/>SQLite locally)]
     API --> PDF[ReportLab<br/>PDF dossier]
     API --> M[SendGrid<br/>report email]
+    DB --- SS[Sessions, reports,<br/>accounts, events]
 ```
 
 ## Engineering principles
