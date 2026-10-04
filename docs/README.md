@@ -93,6 +93,7 @@ In addition to the 23 numbered modules above, the following detailed reference s
 - [`confidence-and-evidence-scoring-methodology.md`](confidence-and-evidence-scoring-methodology.md) — How the headline confidence % and each evidence tile are computed, and which population each measures.
 - [`known-limitations-and-future-work.md`](known-limitations-and-future-work.md) — Retention TTLs, free-tier Postgres expiry, missing email verification, local-model hardware needs, the duplicate-doc-set lesson, and the five-pillar gaps (PDF/email don't include the new sections, template economics, Google sign-in edge cases).
 - [`competitor-detection-and-confidence-scoring-proposal.md`](competitor-detection-and-confidence-scoring-proposal.md) — Proposal (not built): grounded LLM competitor extraction vs. NER vs. company APIs, and a more defensible confidence and competition score.
+- [`testing.md`](testing.md) — The test overview to show when asked how this is tested: suites and counts, what each group guards, manual checks, and what the tests do not prove.
 - [`load-testing-plan.md`](load-testing-plan.md) — How to load-test 5–6 concurrent users, what to measure, and the expected bottlenecks.
 - [`scaling-options.md`](scaling-options.md) — The types of scaling the load test can check and the options for each (instance size, workers/queue, LLM quota, database).
 - [`milestone4-verification.md`](milestone4-verification.md) — Dated log of bugs found in live testing in September 2026, with root causes, fixes and regression tests.

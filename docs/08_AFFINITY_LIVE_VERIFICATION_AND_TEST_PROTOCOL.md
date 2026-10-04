@@ -79,10 +79,14 @@ Run the real suite from `backend/`:
 python scripts/run_tests.py   # keyless: avoids loading real API keys from .env
 ```
 
-As of this writing: **51 tests passing** across `test_milestone2.py`,
-`test_milestone3.py`, `test_async_email.py`, `test_report_assembler.py`, and
-`test_integration.py` (unit, contract, async, and concurrency tests; the one
-real-provider test in `test_integration.py` only runs when `GROQ_API_KEY` is set).
+> **Updated 4 October 2026.** The suite has grown well past the early count that used to be
+> stated here: **679 backend tests (1 skipped) and 143 frontend tests**, all keyless. The full
+> breakdown, what each group guards and what the tests do not prove is in
+> [testing.md](testing.md). The paragraph below describes the original five modules only.
+
+Originally this covered `test_milestone2.py`, `test_milestone3.py`, `test_async_email.py`,
+`test_report_assembler.py`, and `test_integration.py` (unit, contract, async, and concurrency
+tests; the one real-provider test in `test_integration.py` only runs when `GROQ_API_KEY` is set).
 Escape-repair behavior specifically is covered by
 `test_milestone3.py::test_structured_parser_repairs_invalid_escape_sequences`;
 model-fallback switching is exercised through `agent/llm.py`'s

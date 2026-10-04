@@ -378,6 +378,8 @@ cd backend && python scripts/run_tests.py   # keyless; plain `python -m unittest
 cd frontend && npm test && npm run lint && npm run build
 ```
 
+The full breakdown of what is tested, and what is not, is in [`docs/testing.md`](docs/testing.md).
+
 GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the backend
 suite, frontend lint and production build on every push and pull request to `staging` and
 `main`. The real-provider integration test only runs when `GROQ_API_KEY` is set, so CI
