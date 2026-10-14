@@ -10,6 +10,7 @@ import logging
 
 from crewai import Agent, Crew, Process, Task
 
+from . import events
 from .deterministic_fallback import deterministic_assumptions
 from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback, primary_for, AGENT_MAX_EXECUTION_SECONDS, AGENT_MAX_ITER
 from .prompts.loader import load_prompt
@@ -148,4 +149,5 @@ def analyze_assumptions(
             "Assumption agent: LLM unavailable, using deterministic assumptions",
             exc_info=True,
         )
+        events.record("llm_fallback", node="assumption_tracker", detail={"errorType": type(exc).__name__})
         return deterministic_assumptions(idea, target_customer, problem, swot, market_opportunity, mvp)

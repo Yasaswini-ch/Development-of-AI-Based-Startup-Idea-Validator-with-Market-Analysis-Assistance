@@ -184,6 +184,7 @@ def get_platform_metrics(days: int = 30) -> dict:
     model_events = events.query("model_used", since=since)
     category_events = events.query("idea_category", since=since)
     error_events = events.query("pipeline_error", since=since, limit=200)
+    fallback_events = events.query("llm_fallback", since=since, limit=200)
     email_events = events.query("email_sent", since=since)
 
     needs_deep_analysis = sum(
@@ -237,16 +238,26 @@ def get_platform_metrics(days: int = 30) -> dict:
     email_sent_total = sum(v for k, v in email_outcomes.items() if k in ("sent",))
     email_attempted = sum(email_outcomes.values())
 
-    error_rows = [
-        {
+    # A model that gave up but whose section was filled by the rule-based
+    # fallback is not a crash, so it is logged as its own event type (and kept
+    # out of the success-rate maths) but belongs in this list: it is the most
+    # common way a run goes wrong, and the report still arrives.
+    def _error_row(e: dict, outcome: str) -> dict:
+        return {
+            "createdAt": e["createdAt"],
             "timestamp": datetime.fromtimestamp(e["createdAt"], tz=timezone.utc).isoformat(),
             "node": e["node"],
             "errorType": (e["detail"] or {}).get("errorType", "Unknown"),
             "modelChain": " → ".join((DEFAULT_MODEL, *FALLBACK_MODELS)),
-            "outcome": "Deep analysis fallback" if (e["detail"] or {}).get("errorType") == "NeedsDeepAnalysisError" else "Section unavailable",
+            "outcome": outcome,
         }
-        for e in error_events[:50]
-    ]
+
+    error_rows = [
+        _error_row(e, "Deep analysis fallback" if (e["detail"] or {}).get("errorType") == "NeedsDeepAnalysisError" else "Section unavailable")
+        for e in error_events
+    ] + [_error_row(e, "Rule-based fallback used") for e in fallback_events]
+    error_rows.sort(key=lambda row: row["createdAt"], reverse=True)
+    error_rows = [{k: v for k, v in row.items() if k != "createdAt"} for row in error_rows[:50]]
 
     return {
         "windowDays": days,

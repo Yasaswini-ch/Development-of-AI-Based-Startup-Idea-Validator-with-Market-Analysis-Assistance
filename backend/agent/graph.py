@@ -198,6 +198,7 @@ def web_search_node(state: PipelineState) -> PipelineState:
     except Exception as exc:
         logger.exception("[web_search] FAILED")
         metrics.increment("node.web_search.failure")
+        events.record("pipeline_error", node="web_search", detail={"errorType": type(exc).__name__})
 
         return {
             **state,
@@ -830,6 +831,7 @@ def contradiction_detector_node(state: PipelineState) -> PipelineState:
         )
     except Exception as exc:
         logger.exception("[contradiction_detector] FAILED")
+        _record_node_failure("contradiction_detector", exc)
         return {
             **state,
             "contradictions": None,
@@ -867,6 +869,7 @@ def experiment_generator_node(state: PipelineState) -> PipelineState:
         )
     except Exception as exc:
         logger.exception("[experiment_generator] FAILED")
+        _record_node_failure("experiment_generator", exc)
         return {
             **state,
             "experiments": None,
@@ -898,6 +901,7 @@ def action_plan_node(state: PipelineState) -> PipelineState:
         )
     except Exception as exc:
         logger.exception("[action_plan] FAILED")
+        _record_node_failure("action_plan", exc)
         return {
             **state,
             "actionPlan": None,

@@ -173,6 +173,18 @@ class PlatformMetricsAggregationTests(unittest.TestCase):
         self.assertEqual(len(result["recentErrors"]), 1)
         self.assertIn("→", result["recentErrors"][0]["modelChain"])
 
+    def test_rule_based_fallbacks_are_listed_but_not_counted_as_failures(self):
+        for _ in range(2):
+            events.record("node_latency", node="gtm_strategy", detail={"seconds": 1.0})
+        events.record("llm_fallback", node="gtm", detail={"errorType": "RateLimitError"})
+        events.record("pipeline_error", node="swot", detail={"errorType": "ValueError"})
+        result = get_platform_metrics()
+        outcomes = {row["node"]: row["outcome"] for row in result["recentErrors"]}
+        self.assertEqual(outcomes["gtm"], "Rule-based fallback used")
+        self.assertEqual(outcomes["swot"], "Section unavailable")
+        self.assertEqual(result["nodeSuccessRates"]["gtm"], 100.0)
+        self.assertNotIn("createdAt", result["recentErrors"][0])
+
     def test_no_data_does_not_crash(self):
         result = get_platform_metrics()
         self.assertEqual(result["kpis"]["totalValidations"], 0)
