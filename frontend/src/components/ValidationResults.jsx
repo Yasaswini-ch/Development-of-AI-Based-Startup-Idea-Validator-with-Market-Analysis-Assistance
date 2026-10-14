@@ -13,7 +13,7 @@ import EvidenceAudit from './EvidenceAudit'
 import PipelineReplay from './PipelineReplay'
 import ContradictionsBanner from './ContradictionsBanner'
 import ExperimentsActionPlan from './ExperimentsActionPlan'
-import { buildSourceMap } from '../lib/sources'
+import { buildSourceMap, citedBySection } from '../lib/sources'
 import IdeaDossier from './IdeaDossier'
 import CustomerPersonas from './CustomerPersonas'
 import StatsStrip from './StatsStrip'
@@ -25,7 +25,7 @@ import VerdictWhatIf from './VerdictWhatIf'
 import VoiceOfMarketSection from './VoiceOfMarketCard'
 import MvpDeliveryRoadmap from './MvpDeliveryRoadmap'
 
-const INITIAL_VISIBLE = 3
+const INITIAL_VISIBLE = 6
 const RESEARCH_ANGLES = [
   'Market size & trends',
   'Competitors',
@@ -92,29 +92,41 @@ function ScoreBadge({ score }) {
   )
 }
 
-function ResultCard({ r, isTop }) {
+function ResultCard({ r, isTop, citedIn = [] }) {
   return (
     <a
       href={r.url}
       target="_blank"
       rel="noreferrer"
-      className={`block rounded-2xl bg-panel p-5 transition-shadow duration-200 hover:shadow-md hover:shadow-black/5 ${
+      className={`flex h-full flex-col rounded-xl bg-panel p-3.5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:shadow-black/5 ${
         isTop ? 'border-[1.5px] border-accent' : 'border border-border-strong'
       }`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <h4 className="font-serif text-base font-semibold leading-snug text-text">{r.title}</h4>
+      <div className="flex items-start justify-between gap-2">
+        <h4 className="line-clamp-2 font-serif text-sm font-semibold leading-snug text-text">{r.title}</h4>
         <ScoreBadge score={r.score} />
       </div>
-      {r.snippet && <p className="mt-2 text-sm leading-relaxed text-muted">{r.snippet}</p>}
-      <p className="mt-3 truncate border-t border-border pt-2.5 font-mono text-[11px] uppercase tracking-wide text-muted/70">
+      {r.snippet && <p className="mt-1.5 line-clamp-3 text-xs leading-relaxed text-muted">{r.snippet}</p>}
+      <p className="mt-auto truncate border-t border-border pt-2 font-mono text-[10px] uppercase tracking-wide text-muted/70">
         {hostnameOf(r.url)}
       </p>
+      <div className="mt-2 flex flex-wrap items-center gap-1" data-testid="used-in">
+        <span className="text-[10px] text-muted">Used in</span>
+        {citedIn.length > 0 ? (
+          citedIn.map((label) => (
+            <span key={label} className="rounded bg-border px-1.5 py-0.5 font-mono text-[10px] text-muted-strong">
+              {label}
+            </span>
+          ))
+        ) : (
+          <span className="text-[10px] text-muted/70">not cited</span>
+        )}
+      </div>
     </a>
   )
 }
 
-function AngleGroup({ angle, items }) {
+function AngleGroup({ angle, items, citedMap }) {
   const [expanded, setExpanded] = useState(false)
   const Icon = iconForAngle(angle)
   const description = ANGLE_DESCRIPTIONS[angle.toLowerCase()]
@@ -171,10 +183,10 @@ function AngleGroup({ angle, items }) {
         )}
       </div>
 
-      <div className="space-y-3">
-        <ResultCard r={top} isTop />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <ResultCard r={top} isTop citedIn={citedMap?.get(top)} />
         {visibleRest.map((r, i) => (
-          <ResultCard key={r.url || i} r={r} />
+          <ResultCard key={r.url || i} r={r} citedIn={citedMap?.get(r)} />
         ))}
       </div>
     </div>
@@ -366,6 +378,19 @@ export default function ValidationResults({
 
   const competitorCount = competitors?.competitors?.length ?? 0
   const sourceMap = buildSourceMap(results)
+  // result object -> labels of the report sections that cite it
+  const citedMap = new Map()
+  citedBySection([
+    ['Market', marketOpportunity],
+    ['SWOT', swot],
+    ['MVP', mvp],
+    ['GTM', gtm],
+    ['Assumptions', assumptions],
+    ['Revenue', revenueModels],
+  ]).forEach((labels, id) => {
+    const result = sourceMap.get(id)
+    if (result) citedMap.set(result, labels)
+  })
 
   const segments = marketOpportunity?.segments ?? []
 
@@ -479,7 +504,7 @@ export default function ValidationResults({
         {activeTab === 'sources' && (
           <div className="space-y-8">
             {groups.length > 0 ? (
-              groups.map((g) => <AngleGroup key={g.angle} angle={g.angle} items={g.items} />)
+              groups.map((g) => <AngleGroup key={g.angle} angle={g.angle} items={g.items} citedMap={citedMap} />)
             ) : (
               <p className="rounded-2xl border border-border bg-panel p-6 text-center text-sm text-muted">
                 No research sources were returned.
