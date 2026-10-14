@@ -10,6 +10,7 @@ import re
 
 from crewai import Agent, Crew, Process, Task
 
+from . import events
 from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback, primary_for, AGENT_MAX_EXECUTION_SECONDS, AGENT_MAX_ITER
 from .prompts.loader import load_prompt
 from .structured_output import (
@@ -187,6 +188,7 @@ def analyze_revenue_models(
         # when there is nothing to build a fallback from.
         models = _fallback_models(competitors, valid_ids)
         if models:
+            events.record("llm_fallback", node="revenue_models", detail={"errorType": type(exc).__name__})
             logger.warning("Revenue agent: LLM unavailable, using competitor-pricing fallback", exc_info=True)
             return {"models": models, "degraded": True}
         if not allow_local:

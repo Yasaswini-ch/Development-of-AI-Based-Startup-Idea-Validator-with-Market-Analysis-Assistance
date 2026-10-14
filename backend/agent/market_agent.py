@@ -36,6 +36,7 @@ import logging
 
 from crewai import Agent, Crew, Process, Task
 
+from . import events
 from .deterministic_fallback import deterministic_market_opportunity
 from .llm import NeedsDeepAnalysisError, get_llm, kickoff_with_fallback, primary_for, AGENT_MAX_EXECUTION_SECONDS, AGENT_MAX_ITER
 from .verification import audit, strip_unsupported, verify_claims
@@ -316,4 +317,5 @@ def analyze_market_opportunity(
             "Market opportunity: LLM analysis unavailable, using deterministic evidence-based fallback",
             exc_info=True,
         )
+        events.record("llm_fallback", node="market_opportunity", detail={"errorType": type(exc).__name__})
         return deterministic_market_opportunity(idea, target_customer, problem, results)

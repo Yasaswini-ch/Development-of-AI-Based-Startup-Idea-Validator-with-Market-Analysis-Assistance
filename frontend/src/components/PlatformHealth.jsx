@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { authHeaders } from '../lib/auth'
 import { DonutChart, HBarChart, LineChart, StackedColumnChart, CHART_COLORS } from './charts'
 
@@ -12,10 +12,20 @@ function usePlatformMetrics(apiUrl, token, days) {
   const [data, setData] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [tick, setTick] = useState(0)
+  const loadedFor = useRef(null)
+
+  // Re-read every 30s so new errors appear without a manual reload; only a
+  // change of window (or the first load) shows the loading state.
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 30000)
+    return () => clearInterval(id)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
-    setIsLoading(true)
+    const windowKey = `${apiUrl}|${days}`
+    if (loadedFor.current !== windowKey) setIsLoading(true)
     setError(null)
     fetch(`${apiUrl}/admin/platform-metrics?days=${days}`, { headers: authHeaders(token) })
       .then((res) => {
@@ -24,10 +34,13 @@ function usePlatformMetrics(apiUrl, token, days) {
         return res.json()
       })
       .then((json) => {
-        if (!cancelled) setData(json)
+        if (!cancelled) {
+          loadedFor.current = windowKey
+          setData(json)
+        }
       })
       .catch((err) => {
-        if (!cancelled) setError(err.message)
+        if (!cancelled && (err.message === 'forbidden' || loadedFor.current !== windowKey)) setError(err.message)
       })
       .finally(() => {
         if (!cancelled) setIsLoading(false)
@@ -35,9 +48,9 @@ function usePlatformMetrics(apiUrl, token, days) {
     return () => {
       cancelled = true
     }
-  }, [apiUrl, token, days])
+  }, [apiUrl, token, days, tick])
 
-  return { data, isLoading, error }
+  return { data, isLoading, error, refresh: () => setTick((n) => n + 1) }
 }
 
 function Kpi({ label, value, sub, tone = 'accent' }) {
@@ -136,7 +149,7 @@ function latencyColor(seconds) {
 
 export default function PlatformHealth({ apiUrl, token, onBack }) {
   const [days, setDays] = useState(30)
-  const { data, isLoading, error } = usePlatformMetrics(apiUrl, token, days)
+  const { data, isLoading, error, refresh } = usePlatformMetrics(apiUrl, token, days)
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -158,6 +171,13 @@ export default function PlatformHealth({ apiUrl, token, onBack }) {
               </button>
             ))}
           </div>
+          <button
+            type="button"
+            onClick={refresh}
+            className="rounded-full border border-border bg-surface px-4 py-2 font-mono text-[11px] uppercase tracking-wide text-muted transition-colors hover:border-accent hover:text-accent"
+          >
+            Refresh
+          </button>
           {onBack && (
             <button
               type="button"

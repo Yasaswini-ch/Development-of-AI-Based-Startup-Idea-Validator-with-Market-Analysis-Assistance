@@ -37,3 +37,32 @@ export function extractInlineCitations(text) {
     .trim()
   return { text: cleaned, sourceIds }
 }
+
+// Which report sections cite each source: walks every section looking for the
+// `sourceIds` arrays the claims carry and returns Map<"src-N", [section label]>
+// in the order the sections are given. Sections that failed or are missing
+// simply contribute nothing.
+export function citedBySection(sections) {
+  const cited = new Map()
+  const visit = (node, label, seen) => {
+    if (!node || typeof node !== 'object' || seen.has(node)) return
+    seen.add(node)
+    if (Array.isArray(node)) {
+      node.forEach((child) => visit(child, label, seen))
+      return
+    }
+    for (const [key, value] of Object.entries(node)) {
+      if (key === 'sourceIds' && Array.isArray(value)) {
+        for (const id of value) {
+          if (typeof id !== 'string') continue
+          const labels = cited.get(id) || []
+          if (!labels.includes(label)) cited.set(id, [...labels, label])
+        }
+      } else {
+        visit(value, label, seen)
+      }
+    }
+  }
+  for (const [label, data] of sections) visit(data, label, new Set())
+  return cited
+}
