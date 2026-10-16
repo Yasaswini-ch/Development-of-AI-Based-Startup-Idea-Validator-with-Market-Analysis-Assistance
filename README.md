@@ -465,6 +465,10 @@ The [`docs/`](docs/README.md) folder holds the full engineering documentation:
 3. Open a pull request into `staging`.
 4. Verified changes are promoted from `staging` to `main`.
 
+## License
+
+Released under the [MIT License](LICENSE). Copyright (c) 2026 Yasaswini Chebolu.
+
 ---
 
 <div align="center">
